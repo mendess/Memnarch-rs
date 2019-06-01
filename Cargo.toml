@@ -1,0 +1,16 @@
+[package]
+name = "memnarch-rs"
+version = "0.1.0"
+authors = ["Mendess2526 <pedro.mendes.26@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+chrono = "*"
+serde = "*"
+serde_json ="*"
+
+[dependencies.serenity]
+# version = "0.6.0-rc.1"
+git = "https://github.com/serenity-rs/serenity"
+branch = "v0.6.x"
+feature = ["framework", "standard_framework"]
