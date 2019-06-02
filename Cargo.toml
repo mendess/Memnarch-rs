@@ -8,9 +8,10 @@ edition = "2018"
 chrono = "*"
 serde = "*"
 serde_json ="*"
+itertools = "0.8"
 
 [dependencies.serenity]
-# version = "0.6.0-rc.1"
+version = "0.6.0-rc.1"
 git = "https://github.com/serenity-rs/serenity"
 branch = "v0.6.x"
-feature = ["framework", "standard_framework"]
+features = ["framework", "standard_framework", "voice"]

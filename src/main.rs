@@ -1,28 +1,118 @@
-const FILES_DIR: &str = "files/";
-const NUMBERS: [&str; 10] = [
-    "0⃣", "1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣",
-];
+mod commands;
+mod consts;
 
-use std::collections::HashSet;
+use commands::general::GENERAL_GROUP;
+use commands::sfx::SFX_GROUP;
+use consts::FILES_DIR;
 
+use std::collections::{HashSet, VecDeque};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::thread;
+use std::time::Duration;
+
+use chrono::Duration as CDuration;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serenity::{
+    client::bridge::voice::ClientVoiceManager,
     framework::standard::{
-        help_commands,
-        macros::{check, command, group, help},
-        Args, CheckResult, CommandGroup, CommandOptions, CommandResult, DispatchError, HelpCommand,
-        HelpOptions, StandardFramework,
+        help_commands, macros::help, Args, CommandGroup, CommandResult, HelpOptions,
+        StandardFramework,
     },
-    model::{channel::Message, gateway::Ready, id::UserId, Permissions},
+    model::{
+        channel::{Channel, Message},
+        gateway::Ready,
+        id::{GuildId, UserId},
+        voice::VoiceState,
+    },
     prelude::*,
 };
 
 struct Handler;
 
 impl EventHandler for Handler {
+    fn voice_state_update(
+        &self,
+        ctx: Context,
+        _guild_id: Option<GuildId>,
+        _old: Option<VoiceState>,
+        new: VoiceState,
+    ) {
+        new.channel_id
+            .and_then(|id| id.to_channel(&ctx).ok())
+            .and_then(|ch| {
+                if let Channel::Guild(gc) = ch {
+                    Some(gc)
+                } else {
+                    None
+                }
+            })
+            .and_then(|_gc| Some(0));
+    }
+
     fn ready(&self, _: Context, _ready: Ready) {
         println!("Up and running");
     }
+}
+
+pub struct VoiceManager;
+
+impl TypeMapKey for VoiceManager {
+    type Value = Arc<Mutex<ClientVoiceManager>>;
+}
+
+type VoiceChannelQueue = VecDeque<(DateTime<Utc>, GuildId)>;
+#[derive(Clone)]
+pub struct VoiceAfkManager {
+    channels: Arc<Mutex<VoiceChannelQueue>>,
+    voice_manager: Arc<Mutex<ClientVoiceManager>>,
+}
+
+impl VoiceAfkManager {
+    fn new(voice_manager: Arc<Mutex<ClientVoiceManager>>) -> Self {
+        VoiceAfkManager {
+            channels: Default::default(),
+            voice_manager,
+        }
+    }
+
+    fn update(&mut self) {
+        let now = Utc::now();
+        let mut channels = self.channels.lock();
+        while let Some(_) = channels.front().filter(|(date, _)| *date < now) {
+            let (_, guild_id) = channels.pop_front().unwrap();
+            println!(
+                "[{:?}] Leaving guild's {} voice channel",
+                Utc::now().naive_utc(),
+                guild_id
+            );
+            let mut manager = self.voice_manager.lock();
+            manager.leave(guild_id);
+        }
+    }
+
+    pub fn shedule(&mut self, guild_id: GuildId) {
+        let mut channels = self.channels.lock();
+        channels.retain(|(_, gid)| guild_id != *gid);
+        channels.push_back((
+            Utc::now()
+                .checked_add_signed(CDuration::minutes(30))
+                .unwrap(),
+            guild_id,
+        ));
+        println!(
+            "[{:?}] Sheduling for guild: {}",
+            Utc::now().naive_utc(),
+            guild_id
+        );
+    }
+}
+
+impl TypeMapKey for VoiceAfkManager {
+    type Value = VoiceAfkManager;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -61,24 +151,64 @@ impl Config {
 fn main() -> std::io::Result<()> {
     let config = Config::new()?;
     let mut client = Client::new(&config.token, Handler).expect("Err creating client");
+    {
+        let mut data = client.data.write();
+        data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
+        data.insert::<VoiceAfkManager>(VoiceAfkManager::new(Arc::clone(&client.voice_manager)));
+    }
+    let (owners, bot_id) = match client.cache_and_http.http.get_current_application_info() {
+        Ok(info) => {
+            let mut owners = HashSet::new();
+            owners.insert(info.owner.id);
+
+            (owners, info.id)
+        }
+        Err(why) => panic!("Could not access application info: {:?}", why),
+    };
     client.with_framework(
         StandardFramework::new()
-            .configure(|c| c.prefix("|"))
+            .configure(|c| c.prefix("|").on_mention(Some(bot_id)).owners(owners))
+            .after(|ctx, msg, cmd_name, error| match error {
+                Ok(()) => println!("Processed command {}", cmd_name),
+                Err(why) => {
+                    let _ = msg.channel_id.say(ctx, &why.0);
+                    println!("Command {} failed with {:?}", cmd_name, why)
+                }
+            })
+            .on_dispatch_error(|ctx, msg, error| {
+                msg.channel_id
+                    .say(ctx, format!("{:?}", error))
+                    .expect("Couldn't communicate dispatch error");
+            })
             .group(&GENERAL_GROUP)
+            .group(&SFX_GROUP)
             .help(&MY_HELP_HELP_COMMAND),
     );
+    let mut voice_afk_manager = {
+        let v = client.data.read();
+        v.get::<VoiceAfkManager>()
+            .expect("Couldn't find Voice Afk Manager in ShareMap")
+            .clone()
+    };
+
+    // AFK Monitoring
+    let continue_ruining = Arc::new(AtomicBool::new(true));
+    let continue_ruining_clone = Arc::clone(&continue_ruining);
+    let thread_handle = thread::spawn(move || {
+        while continue_ruining_clone.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_secs(1));
+            voice_afk_manager.update();
+        }
+    });
 
     if let Err(why) = client.start() {
         println!("Sad face :(  {:?}", why);
     }
+
+    continue_ruining.store(false, Ordering::SeqCst);
+    thread_handle.join().unwrap();
     Ok(())
 }
-
-group!({
-    name: "General",
-    options: {},
-    commands: [ping, who_are_you, vote],
-});
 
 #[help]
 fn my_help(
@@ -90,56 +220,4 @@ fn my_help(
     owners: HashSet<UserId>,
 ) -> CommandResult {
     help_commands::with_embeds(context, msg, args, help_options, groups, owners)
-}
-
-#[command]
-fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
-    use chrono::Local;
-    if let Err(why) = msg.channel_id.say(
-        &ctx.http,
-        format!(
-            "Pong! {} ms",
-            (Local::now().timestamp_millis() - msg.timestamp.timestamp_millis()) as f32 / 1000_f32
-        ),
-    ) {
-        println!("Error ponging: {:?}", why)
-    }
-    Ok(())
-}
-
-#[command("whoareyou")]
-fn who_are_you(ctx: &mut Context, msg: &Message) -> CommandResult {
-    msg.channel_id.send_message(ctx, |m| {
-        m.embed(|e| {
-            e.title("I AM MEMNARCH")
-                .description("Sauce code: [GitHub](https://github.com/Mendess2526/Memnarch-rs)")
-                .image("https://img.scryfall.com/mci/scans/en/arc/112.jpg")
-        })
-    })?;
-    Ok(())
-}
-
-#[command]
-#[min_args(2)]
-#[max_args(9)]
-fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let message = msg.channel_id.send_message(&ctx.http, |m| {
-        m.embed(|e| {
-            e.title("Vote:");
-            let fs = args
-                .iter::<String>()
-                .filter_map(|x| x.ok())
-                .enumerate()
-                .map(|(a, i)| (a, i, true));
-            e.fields(fs)
-        });
-        m
-    })?;
-    args.restore();
-    (0..args.iter::<String>().filter_map(|x| x.ok()).count()).for_each(|n| {
-        while let Err(_) = message.react(ctx, NUMBERS[n]) {
-            continue;
-        }
-    });
-    Ok(())
 }
