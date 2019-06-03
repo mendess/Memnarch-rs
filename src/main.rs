@@ -37,20 +37,26 @@ impl EventHandler for Handler {
     fn voice_state_update(
         &self,
         ctx: Context,
-        _guild_id: Option<GuildId>,
-        _old: Option<VoiceState>,
-        new: VoiceState,
+        guild_id: Option<GuildId>,
+        old: Option<VoiceState>,
+        _new: VoiceState,
     ) {
-        new.channel_id
+        old.and_then(|vs| vs.channel_id)
             .and_then(|id| id.to_channel(&ctx).ok())
-            .and_then(|ch| {
-                if let Channel::Guild(gc) = ch {
-                    Some(gc)
-                } else {
-                    None
-                }
+            .and_then(Channel::guild)
+            .and_then(|gc| gc.read().members(&ctx).ok().map(|m| m.len()))
+            .iter()
+            .filter(|n_members| **n_members >= 1)
+            .for_each(|_| {
+                guild_id.map(|guild_id| {
+                    ctx.data
+                        .read()
+                        .get::<VoiceManager>()
+                        .expect("Couldn't find VoiceManager in ShareMap")
+                        .lock()
+                        .leave(guild_id);
+                });
             })
-            .and_then(|_gc| Some(0));
     }
 
     fn ready(&self, _: Context, _ready: Ready) {
