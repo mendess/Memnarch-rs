@@ -2,6 +2,7 @@ mod commands;
 mod consts;
 
 use commands::general::GENERAL_GROUP;
+use commands::owner::OWNER_GROUP;
 use commands::sfx::SFX_GROUP;
 use consts::FILES_DIR;
 
@@ -188,6 +189,7 @@ fn main() -> std::io::Result<()> {
             })
             .group(&GENERAL_GROUP)
             .group(&SFX_GROUP)
+            .group(&OWNER_GROUP)
             .help(&MY_HELP),
     );
     let mut voice_afk_manager = {
