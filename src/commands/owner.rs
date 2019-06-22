@@ -7,6 +7,7 @@ use serenity::{
     prelude::*,
 };
 
+use std::os::unix::process::CommandExt;
 use std::process::Command as Fork;
 
 group!({
@@ -18,10 +19,30 @@ group!({
 #[command]
 #[description("Update the bot")]
 fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
-    Fork::new("git fetch").spawn()?.wait()?;
-    let status = Fork::new("git status").output()?;
-    if String::from_utf8_lossy(status.stdout).contains("kkkkkkkkkkkkkk")
-        Ok(())
+    eprintln!("Fetching");
+    Fork::new("git").arg("fetch").spawn()?.wait()?;
+    eprintln!("Checking remote");
+    let status = Fork::new("git")
+        .args(&["rev-list", "--count", "master...master@{upstream}"])
+        .output()?;
+    if let 0 = String::from_utf8_lossy(&status.stdout)
+        .trim()
+        .parse::<i32>()?
+    {
+        msg.channel_id.say(&ctx, "No updates!").map(|_| ())?;
+    } else if !Fork::new("git").arg("pull").output()?.status.success() {
+        msg.channel_id.say(&ctx, "Error pulling!")?;
+    } else if !Fork::new("cargo")
+        .args(&["build", "--release"])
+        .output()?
+        .status
+        .success()
+    {
+        msg.channel_id.say(&ctx, "Build Error")?;
+    } else {
+        Err(Fork::new("cargo").args(&["run ", "--release"]).exec())?;
+    }
+    Ok(())
 }
 
 // fn creds(
