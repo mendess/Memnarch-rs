@@ -63,7 +63,7 @@ fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     })?;
     args.restore();
     (0..args.iter::<String>().filter_map(Result::ok).count()).for_each(|n| {
-        while let Err(_) = message.react(ctx, NUMBERS[n]) {
+        while let Err(_) = message.react(&ctx, NUMBERS[n]) {
             continue;
         }
     });

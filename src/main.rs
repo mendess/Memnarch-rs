@@ -188,7 +188,7 @@ fn main() -> std::io::Result<()> {
             })
             .group(&GENERAL_GROUP)
             .group(&SFX_GROUP)
-            .help(&MY_HELP_HELP_COMMAND),
+            .help(&MY_HELP),
     );
     let mut voice_afk_manager = {
         let v = client.data.read();

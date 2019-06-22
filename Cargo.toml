@@ -11,7 +11,7 @@ serde_json ="*"
 itertools = "0.8"
 
 [dependencies.serenity]
-version = "0.6.0-rc.1"
+version = "0.6.x"
 git = "https://github.com/serenity-rs/serenity"
-branch = "v0.6.x"
+branch = "current"
 features = ["framework", "standard_framework", "voice"]
