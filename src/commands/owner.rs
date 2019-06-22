@@ -40,7 +40,7 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
     {
         msg.channel_id.say(&ctx, "Build Error")?;
     } else {
-        Err(Fork::new("cargo").args(&["run ", "--release"]).exec())?;
+        Err(Fork::new("cargo").args(&["run", "--release"]).exec())?;
     }
     Ok(())
 }
