@@ -1,10 +1,13 @@
 use crate::consts::FILES_DIR;
 use crate::{VoiceAfkManager, VoiceManager};
 
-use std::fs::{self, OpenOptions};
+use std::collections::HashMap;
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
+use chrono::Utc;
 use itertools::Itertools;
 use serenity::{
     framework::standard::{
@@ -17,6 +20,7 @@ use serenity::{
 };
 
 const SFX_FILES_DIR: &str = "sfx";
+const SFX_STATS_FILE: &str = "sfx_stats.json";
 
 group!({
     name: "SFX",
@@ -25,6 +29,45 @@ group!({
     },
     commands: [list, add, play, delete, retreive],
 });
+
+#[derive(Debug, Clone)]
+pub struct SfxStats(Arc<Mutex<HashMap<String, usize>>>);
+
+impl TypeMapKey for SfxStats {
+    type Value = SfxStats;
+}
+
+impl SfxStats {
+    pub fn new() -> Self {
+        SfxStats(Arc::new(Mutex::new(
+            File::open(format!("{}/{}", FILES_DIR, SFX_STATS_FILE))
+                .ok()
+                .and_then(|f| serde_json::from_reader(f).ok())
+                .unwrap_or_else(Default::default),
+        )))
+    }
+
+    fn update(&mut self, sfx: &str) -> Result<(), String> {
+        let mut stats = self.0.lock().expect("Lock error");
+        stats
+            .entry(sfx.to_string())
+            .and_modify(|c| *c += 1)
+            .or_insert(0);
+        fn map_err<E: std::fmt::Debug>(sfx: &str, e: E) -> String {
+            format!(
+                "[SFX|{}] Failed to update {}, Error {:?}",
+                Utc::now().naive_utc(),
+                sfx,
+                e
+            )
+        };
+        let mf = |e| map_err(sfx, e);
+        let mj = |e| map_err(sfx, e);
+        File::create(format!("{}/{}", FILES_DIR, SFX_STATS_FILE))
+            .map_err(mf)
+            .and_then(|f| serde_json::to_writer(f, &*stats).map_err(mj))
+    }
+}
 
 #[command]
 #[min_args(1)]
@@ -39,7 +82,7 @@ fn play(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .get(&msg.author.id)
         .and_then(|voice_state| voice_state.channel_id)
         .ok_or_else(|| "Not in a voice channel".to_string())?;
-    {
+    let file = {
         let share_map = ctx.data.read();
         let manager_id = share_map
             .get::<VoiceManager>()
@@ -53,13 +96,21 @@ fn play(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         }?;
         let file = find_file(&args.single::<String>().unwrap())?;
         if let Some(handler) = manager.get_mut(guild_id) {
-            let source = voice::ffmpeg(file)?;
+            let source = voice::ffmpeg(&file)?;
             handler.play(source);
         } else {
             Err("Not in a voice channel".to_string())?;
         }
-    }
+        file
+    };
     let mut share_map = ctx.data.write();
+    share_map
+        .get_mut::<SfxStats>()
+        .expect("Expected SfxStats in ShareMap")
+        .update(file.as_os_str().to_str().unwrap())
+        .err()
+        .iter()
+        .for_each(|e| eprintln!("{}", e));
     share_map
         .get_mut::<VoiceAfkManager>()
         .expect("Expected VoiceManager in ShareMap")

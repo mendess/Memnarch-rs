@@ -3,7 +3,7 @@ mod consts;
 
 use commands::general::GENERAL_GROUP;
 use commands::owner::OWNER_GROUP;
-use commands::sfx::SFX_GROUP;
+use commands::sfx::{SfxStats, SFX_GROUP};
 use consts::FILES_DIR;
 
 use std::collections::{HashSet, VecDeque};
@@ -162,6 +162,7 @@ fn main() -> std::io::Result<()> {
         let mut data = client.data.write();
         data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
         data.insert::<VoiceAfkManager>(VoiceAfkManager::new(Arc::clone(&client.voice_manager)));
+        data.insert::<SfxStats>(SfxStats::new());
     }
     let (owners, bot_id) = match client.cache_and_http.http.get_current_application_info() {
         Ok(info) => {
