@@ -12,6 +12,4 @@ itertools = "0.8"
 
 [dependencies.serenity]
 version = "0.6.x"
-git = "https://github.com/serenity-rs/serenity"
-branch = "current"
 features = ["framework", "standard_framework", "voice"]

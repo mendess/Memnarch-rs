@@ -3,7 +3,7 @@ mod consts;
 
 use commands::general::GENERAL_GROUP;
 use commands::owner::OWNER_GROUP;
-use commands::sfx::{SfxStats, SFX_GROUP};
+use commands::sfx::{SfxStats, SFX_ALIASES_GROUP, SFX_GROUP};
 use consts::FILES_DIR;
 
 use std::collections::{HashSet, VecDeque};
@@ -42,21 +42,23 @@ impl EventHandler for Handler {
         old: Option<VoiceState>,
         _new: VoiceState,
     ) {
-        old.and_then(|vs| vs.channel_id)
+        if old
+            .and_then(|vs| vs.channel_id)
             .and_then(|id| id.to_channel(&ctx).ok())
             .and_then(Channel::guild)
             .and_then(|gc| gc.read().members(&ctx).ok().map(|m| m.len()))
             .filter(|n_members| *n_members >= 1)
-            .map(|_| {
-                guild_id.map(|guild_id| {
-                    ctx.data
-                        .read()
-                        .get::<VoiceManager>()
-                        .expect("Couldn't find VoiceManager in ShareMap")
-                        .lock()
-                        .leave(guild_id);
-                });
-            });
+            .is_some()
+        {
+            if let Some(guild_id) = guild_id {
+                ctx.data
+                    .read()
+                    .get::<VoiceManager>()
+                    .expect("Couldn't find VoiceManager in ShareMap")
+                    .lock()
+                    .leave(guild_id);
+            };
+        }
     }
 
     fn ready(&self, _: Context, _ready: Ready) {
@@ -189,6 +191,7 @@ fn main() -> std::io::Result<()> {
             })
             .group(&GENERAL_GROUP)
             .group(&SFX_GROUP)
+            .group(&SFX_ALIASES_GROUP)
             .group(&OWNER_GROUP)
             .help(&MY_HELP),
     );

@@ -30,6 +30,12 @@ group!({
     commands: [list, add, play, delete, retreive],
 });
 
+group!({
+    name: "SFX_Aliases",
+    options: {},
+    commands: [play],
+});
+
 #[derive(Debug, Clone)]
 pub struct SfxStats(Arc<Mutex<HashMap<String, usize>>>);
 
@@ -70,6 +76,7 @@ impl SfxStats {
 }
 
 #[command]
+#[aliases("s")]
 #[min_args(1)]
 fn play(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let guild = msg
@@ -131,18 +138,20 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
     msg.channel_id.send_message(&ctx.http, |m| {
         m.embed(|e| {
             e.title("List of sfx:");
-            match sounds {
-                Err(_) => e.fields(vec![("**No files :(**", "", false)]),
-                Ok(files) => e.fields(files.iter().chunks(12).into_iter().map(|x| {
-                    let f = x.collect::<Vec<_>>();
-                    let c1 = f[0].to_uppercase().chars().next().unwrap();
-                    let c2 = f[f.len() - 1].to_uppercase().chars().next().unwrap();
-                    (
-                        [c1, '-', c2].iter().collect::<String>(),
-                        f.iter().fold(String::new(), |acc, x| acc + "\n" + x),
-                        true,
-                    )
-                })),
+            match &sounds {
+                Ok(files) if !files.is_empty() => {
+                    e.fields(files.iter().chunks(12).into_iter().map(|x| {
+                        let f = x.collect::<Vec<_>>();
+                        let c1 = f[0].to_uppercase().chars().next().unwrap();
+                        let c2 = f[f.len() - 1].to_uppercase().chars().next().unwrap();
+                        (
+                            [c1, '-', c2].iter().collect::<String>(),
+                            f.iter().fold(String::new(), |acc, x| acc + "\n" + x),
+                            true,
+                        )
+                    }))
+                }
+                Err(_) | Ok(_) => e.description("**No files :(**"),
             }
         })
     })?;
