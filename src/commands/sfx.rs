@@ -27,7 +27,7 @@ group!({
     options: {
         prefixes: ["sfx"],
     },
-    commands: [list, add, play, delete, retreive],
+    commands: [list, add, play, delete, retreive, stats],
 });
 
 group!({
@@ -211,6 +211,40 @@ fn delete(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 fn retreive(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let file = find_file(&args.single::<String>().unwrap())?;
     msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
+    Ok(())
+}
+
+#[command]
+fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
+    msg.channel_id.send_message(&ctx, |m| {
+        m.embed(|e| {
+            e.title("Stats");
+            let mut stats = ctx
+                .data
+                .read()
+                .get::<SfxStats>()
+                .expect("Expected SfxStats in ShareMap")
+                .0
+                .lock()
+                .expect("Lock error")
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect::<Vec<(String, usize)>>();
+            stats.sort_unstable_by_key(|(_, v)| *v);
+            e.fields(stats.iter().chunks(12).into_iter().map(|x| {
+                let f = x.collect::<Vec<_>>();
+                let c1 = f[0].1.to_string();
+                let c2 = f[f.len() - 1].1.to_string();
+                (
+                    format!("{}-{}", c1, c2),
+                    f.iter().fold(String::new(), |acc, x| {
+                        acc + "\n" + &format!("{}\t{}", x.0, x.1)
+                    }),
+                    true,
+                )
+            }))
+        })
+    })?;
     Ok(())
 }
 
