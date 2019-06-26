@@ -43,55 +43,8 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
         msg.channel_id
             .say(ctx, "Pulled and compiled. Rebooting...")?;
         Err(Fork::new("cargo")
-            .args(&["run", "--release", "-r", &msg.channel_id.to_string()])
+            .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
             .exec())?;
     }
     Ok(())
 }
-
-// fn creds(
-//     _user: &str,
-//     user_from_url: Option<&str>,
-//     _cred: git2::CredentialType,
-// ) -> Result<Cred, git2::Error> {
-//     let home = dirs::home_dir().expect("No home dir");
-//     let pub_key =
-//         std::path::Path::new(&format!("{}/.ssh/id_rsa.pub", home.to_str().unwrap())).to_path_buf();
-//     let priv_key =
-//         std::path::Path::new(&format!("{}/.ssh/id_rsa", home.to_str().unwrap())).to_path_buf();
-//     match user_from_url {
-//         Some(user) => git2::Cred::ssh_key(user, Some(&pub_key), &priv_key, None),
-//         None => Err(git2::Error::from_str("Url does not contain username")),
-//     }
-// }
-
-// #[command]
-// #[description("Update the bot")]
-// fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
-//     let repo = Repository::open(".")?;
-//     let mut remote = repo.find_remote("origin")?;
-
-//     remote.connect_auth(
-//         Direction::Fetch,
-//         Some({
-//             let mut r = RemoteCallbacks::new();
-//             r.credentials(creds);
-//             r
-//         }),
-//         None,
-//     )?;
-//     remote.fetch(&["master"], None, None)?;
-//     for head in remote.list()? {
-//         msg.channel_id.say(
-//             &ctx,
-//             format!(
-//                 "HEAD:\n\tname: {}\n\toid: {}\n\tloid: {}\n",
-//                 head.name(),
-//                 head.oid(),
-//                 head.loid()
-//             ),
-//         )?;
-//     }
-
-//     Ok(())
-// }
