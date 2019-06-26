@@ -26,7 +26,7 @@ use serenity::{
     model::{
         channel::{Channel, Message},
         gateway::Ready,
-        id::{GuildId, UserId},
+        id::{ChannelId, GuildId, UserId},
         voice::VoiceState,
     },
     prelude::*,
@@ -61,8 +61,14 @@ impl EventHandler for Handler {
         }
     }
 
-    fn ready(&self, _: Context, _ready: Ready) {
+    fn ready(&self, ctx: Context, _ready: Ready) {
         println!("Up and running");
+        if let Some(id) = ctx.data.read().get::<UpdateNotify>() {
+            ChannelId::from(**id)
+                .send_message(&ctx, |m| m.content("Updated successfully!"))
+                .expect("Couldn't send update notification");
+        }
+        ctx.data.write().remove::<UpdateNotify>();
     }
 }
 
@@ -123,6 +129,12 @@ impl TypeMapKey for VoiceAfkManager {
     type Value = VoiceAfkManager;
 }
 
+struct UpdateNotify;
+
+impl TypeMapKey for UpdateNotify {
+    type Value = Arc<u64>;
+}
+
 #[derive(Serialize, Deserialize)]
 struct Config {
     token: String,
@@ -164,6 +176,13 @@ fn main() -> std::io::Result<()> {
         data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
         data.insert::<VoiceAfkManager>(VoiceAfkManager::new(Arc::clone(&client.voice_manager)));
         data.insert::<SfxStats>(SfxStats::new());
+        if let Some(id) = std::env::args()
+            .skip_while(|x| x != "-r")
+            .nth(1)
+            .and_then(|id| id.parse::<u64>().ok())
+        {
+            data.insert::<UpdateNotify>(Arc::new(id));
+        }
     }
     let (owners, bot_id) = match client.cache_and_http.http.get_current_application_info() {
         Ok(info) => {
