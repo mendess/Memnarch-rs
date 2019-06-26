@@ -46,9 +46,8 @@ impl EventHandler for Handler {
             .and_then(|id| id.to_channel(&ctx).ok())
             .and_then(Channel::guild)
             .and_then(|gc| gc.read().members(&ctx).ok().map(|m| m.len()))
-            .iter()
-            .filter(|n_members| **n_members >= 1)
-            .for_each(|_| {
+            .filter(|n_members| *n_members >= 1)
+            .map(|_| {
                 guild_id.map(|guild_id| {
                     ctx.data
                         .read()
@@ -57,7 +56,7 @@ impl EventHandler for Handler {
                         .lock()
                         .leave(guild_id);
                 });
-            })
+            });
     }
 
     fn ready(&self, _: Context, _ready: Ready) {
