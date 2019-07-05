@@ -19,11 +19,18 @@ group!({
 #[description("Ping me maybe")]
 fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
     use chrono::Local;
+    let one_trip_time =
+        (Local::now().timestamp_millis() - msg.timestamp.timestamp_millis()) as f32 / 1000_f32;
     if let Err(why) = msg.channel_id.say(
         &ctx.http,
         format!(
-            "Pong! {} ms",
-            (Local::now().timestamp_millis() - msg.timestamp.timestamp_millis()) as f32 / 1000_f32
+            "Pong! {} ms{}",
+            one_trip_time * 2.0,
+            if one_trip_time < 0.0 {
+                "\n*yes it's negative, idk why either*"
+            } else {
+                ""
+            }
         ),
     ) {
         println!("Error ponging: {:?}", why)

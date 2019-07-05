@@ -1,4 +1,5 @@
 use crate::consts::FILES_DIR;
+use crate::permissions::IS_FRIEND_CHECK;
 use crate::{VoiceAfkManager, VoiceManager};
 
 use std::collections::HashMap;
@@ -11,8 +12,8 @@ use chrono::Utc;
 use itertools::Itertools;
 use serenity::{
     framework::standard::{
-        macros::{check, command, group},
-        Args, CheckResult, CommandOptions, CommandResult, Reason,
+        macros::{command, group},
+        Args, CommandResult,
     },
     model::channel::Message,
     prelude::*,
@@ -156,24 +157,6 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
         })
     })?;
     Ok(())
-}
-
-#[check]
-#[name = "is_friend"]
-fn is_friend(_: &mut Context, msg: &Message, _: &mut Args, _: &CommandOptions) -> CheckResult {
-    msg.guild_id
-        .and_then(|id| {
-            if id.0 == 136_220_994_812_641_280 {
-                Some(CheckResult::Success)
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| {
-            CheckResult::Failure(Reason::User(
-                "You don't have permission to use that command!".to_string(),
-            ))
-        })
 }
 
 #[command]

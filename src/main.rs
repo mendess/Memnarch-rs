@@ -1,5 +1,6 @@
 mod commands;
 mod consts;
+mod permissions;
 
 use commands::general::GENERAL_GROUP;
 use commands::owner::OWNER_GROUP;
