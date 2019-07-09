@@ -9,6 +9,7 @@ use serenity::{
 
 use std::os::unix::process::CommandExt;
 use std::process::Command as Fork;
+use std::str;
 
 group!({
     name: "Owner",
@@ -19,9 +20,10 @@ group!({
 #[command]
 #[description("Update the bot")]
 fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
-    eprintln!("Fetching");
+    msg.channel_id.say(&ctx, "Fetching...")?;
     Fork::new("git").arg("fetch").spawn()?.wait()?;
-    eprintln!("Checking remote");
+
+    msg.channel_id.say(&ctx, "Checking remote...")?;
     let status = Fork::new("git")
         .args(&["rev-list", "--count", "master...master@{upstream}"])
         .output()?;
@@ -29,22 +31,40 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
         .trim()
         .parse::<i32>()?
     {
-        msg.channel_id.say(&ctx, "No updates!").map(|_| ())?;
-    } else if !Fork::new("git").arg("pull").output()?.status.success() {
-        msg.channel_id.say(&ctx, "Error pulling!")?;
-    } else if !Fork::new("cargo")
-        .args(&["build", "--release"])
-        .output()?
-        .status
-        .success()
-    {
-        msg.channel_id.say(&ctx, "Build Error")?;
-    } else {
-        msg.channel_id
-            .say(ctx, "Pulled and compiled. Rebooting...")?;
-        Err(Fork::new("cargo")
-            .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
-            .exec())?;
+        Err("No updates!".to_string())?;
     }
+
+    msg.channel_id.say(&ctx, "Pulling from remote...")?;
+    match &Fork::new("git").arg("pull").output()? {
+        out if !out.status.success() => Err(format!(
+            "Error pulling!
+            ```
+            ============= stdout =============
+            {}
+            ============= stderr =============
+            {}
+            ```",
+            str::from_utf8(&out.stdout)?,
+            str::from_utf8(&out.stderr)?
+        ))?,
+        _ => (),
+    }
+
+    msg.channel_id.say(&ctx, "Compiling...")?;
+    match &Fork::new("cargo").args(&["build", "--release"]).output()? {
+        out if !out.status.success() => Err(format!(
+            "Build Error!
+            ```
+            {}
+            ```",
+            str::from_utf8(&out.stderr)?
+        ))?,
+        _ => (),
+    }
+
+    msg.channel_id.say(ctx, "Rebooting...")?;
+    Err(Fork::new("cargo")
+        .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
+        .exec())?;
     Ok(())
 }
