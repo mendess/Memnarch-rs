@@ -10,6 +10,7 @@ serde = "*"
 serde_json ="*"
 itertools = "0.8"
 rand = "0.7"
+simsearch = "0.1.4"
 
 [dependencies.serenity]
 version = "0.6.x"

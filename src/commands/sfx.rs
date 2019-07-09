@@ -2,12 +2,6 @@ use crate::consts::FILES_DIR;
 use crate::permissions::IS_FRIEND_CHECK;
 use crate::{VoiceAfkManager, VoiceManager};
 
-use std::collections::HashMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-
 use chrono::Utc;
 use itertools::Itertools;
 use serenity::{
@@ -19,6 +13,12 @@ use serenity::{
     prelude::*,
     voice,
 };
+use simsearch::SimSearch;
+use std::collections::HashMap;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 const SFX_FILES_DIR: &str = "sfx";
 const SFX_STATS_FILE: &str = "sfx_stats.json";
@@ -79,7 +79,7 @@ impl SfxStats {
 #[command]
 #[aliases("s")]
 #[min_args(1)]
-fn play(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let guild = msg
         .guild(&ctx.cache)
         .ok_or_else(|| "Groups and DMs not supported".to_string())?;
@@ -102,7 +102,7 @@ fn play(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
                 .say(&ctx, &format!("Joined {}", connect_to.mention())),
             None => msg.channel_id.say(&ctx, "Error joining"),
         }?;
-        let file = find_file(&args.single::<String>().unwrap())?;
+        let file = find_file(&args)?;
         if let Some(handler) = manager.get_mut(guild_id) {
             let source = voice::ffmpeg(&file)?;
             handler.play(source);
@@ -182,8 +182,8 @@ fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[command]
 #[min_args(1)]
 #[owners_only]
-fn delete(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let file: PathBuf = find_file(&args.single::<String>().unwrap())?;
+fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+    let file: PathBuf = find_file(&args)?;
     msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
     fs::remove_file(&file)?;
     Ok(())
@@ -191,8 +191,8 @@ fn delete(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 
 #[command]
 #[min_args(1)]
-fn retreive(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let file = find_file(&args.single::<String>().unwrap())?;
+fn retreive(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+    let file = find_file(&args)?;
     msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
     Ok(())
 }
@@ -231,14 +231,25 @@ fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-fn find_file(search_string: &str) -> io::Result<PathBuf> {
+fn find_file(search_string: &Args) -> io::Result<PathBuf> {
     use std::io::{Error, ErrorKind::NotFound};
-    fs::read_dir(format!("{}/{}", FILES_DIR, SFX_FILES_DIR))?
+    let (search, vec) = fs::read_dir(format!("{}/{}", FILES_DIR, SFX_FILES_DIR))?
         .filter_map(Result::ok)
-        .find(|entry| match entry.file_name().to_str() {
-            Some(name) => name.contains(search_string),
-            None => false,
-        })
-        .ok_or_else(|| Error::new(NotFound, format!("No matches for {}", search_string)))
-        .map(|x| x.path())
+        .enumerate()
+        .fold(
+            (SimSearch::new(), Vec::new()),
+            |(mut search, mut vec), (id, name)| {
+                vec.push(name);
+                search.insert(id, vec[vec.len() - 1].file_name().to_str().unwrap());
+                (search, vec)
+            },
+        );
+    let search_string = search_string.rest();
+    match &search.search(search_string) {
+        v if !v.is_empty() => Ok(vec[v[0]].path()),
+        _ => Err(Error::new(
+            NotFound,
+            format!("No matches for {}", search_string),
+        )),
+    }
 }
