@@ -1,18 +1,25 @@
 use crate::consts::NUMBERS;
+use crate::cron::{CronSink, Task};
 
+use chrono::{DateTime, Duration, Utc};
+use lazy_static::lazy_static;
+use regex::{Match, Regex};
 use serenity::{
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::channel::Message,
+    http::raw::Http,
+    model::{channel::Message, id::UserId},
     prelude::*,
 };
+
+use std::sync::Arc;
 
 group!({
     name: "General",
     options: {},
-    commands: [ping, who_are_you, vote],
+    commands: [ping, who_are_you, vote, remindme],
 });
 
 #[command]
@@ -74,5 +81,70 @@ fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
             continue;
         }
     });
+    Ok(())
+}
+
+struct Reminder {
+    message: String,
+    when: DateTime<Utc>,
+    id: UserId,
+    http: Arc<Http>,
+}
+
+impl Task for Reminder {
+    fn when(&self) -> DateTime<Utc> {
+        self.when
+    }
+
+    fn call(&self) {
+        // TODO: Make this pretty
+        match self.id.create_dm_channel(&self.http) {
+            Ok(private_channel) => {
+                if let Err(e) = private_channel.say(&self.http, &self.message) {
+                    eprintln!("{}", e)
+                }
+            }
+            Err(e) => eprintln!("{}", e),
+        }
+    }
+}
+
+#[command]
+#[min_args(2)]
+fn remindme(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+    lazy_static! {
+        static ref SECONDS: Regex = Regex::new("(s|secs|seconds)$").unwrap();
+        static ref MINUTES: Regex = Regex::new("(m|mins|minutes)$").unwrap();
+        static ref HOURS: Regex = Regex::new("(h|hours)$").unwrap();
+        static ref DAYS: Regex = Regex::new("(d|days)$").unwrap();
+        static ref WEEKS: Regex = Regex::new("(w|weeks)$").unwrap();
+    };
+    let timeout = {
+        let time = args.raw().next().unwrap();
+        let parse = |m: Match| time[..m.start()].parse::<u32>();
+        if let Some(m) = SECONDS.find(time) {
+            Ok(Duration::seconds(i64::from(parse(m)?)))
+        } else if let Some(m) = MINUTES.find(time) {
+            Ok(Duration::minutes(i64::from(parse(m)?)))
+        } else if let Some(m) = HOURS.find(time) {
+            Ok(Duration::hours(i64::from(parse(m)?)))
+        } else if let Some(m) = DAYS.find(time) {
+            Ok(Duration::days(i64::from(parse(m)?)))
+        } else if let Some(m) = WEEKS.find(time) {
+            Ok(Duration::weeks(i64::from(parse(m)?)))
+        } else {
+            Err("Invalid time specifier")
+        }
+    }?;
+    let reminder = Reminder {
+        message: String::from(args.rest()),
+        when: Utc::now() + timeout,
+        id: msg.author.id,
+        http: Arc::clone(&ctx.http),
+    };
+    let map = ctx.data.read();
+    let cron = map.get::<CronSink>().unwrap();
+    cron.send(Box::new(reminder))?;
+    msg.channel_id.say(&ctx, "You shall be reminded!")?;
     Ok(())
 }

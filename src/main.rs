@@ -1,6 +1,8 @@
+#![feature(drain_filter)]
 mod commands;
 mod consts;
 mod permissions;
+mod cron;
 
 use commands::general::GENERAL_GROUP;
 use commands::owner::OWNER_GROUP;
@@ -137,6 +139,10 @@ impl TypeMapKey for UpdateNotify {
     type Value = Arc<u64>;
 }
 
+impl TypeMapKey for cron::CronSink {
+    type Value = cron::CronSink;
+}
+
 #[derive(Serialize, Deserialize)]
 struct Config {
     token: String,
@@ -172,12 +178,14 @@ impl Config {
 
 fn main() -> std::io::Result<()> {
     let config = Config::new()?;
+    let cron_sink = cron::start();
     let mut client = Client::new(&config.token, Handler).expect("Err creating client");
     {
         let mut data = client.data.write();
         data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
         data.insert::<VoiceAfkManager>(VoiceAfkManager::new(Arc::clone(&client.voice_manager)));
         data.insert::<SfxStats>(SfxStats::new());
+        data.insert::<cron::CronSink>(cron_sink);
         if let Some(id) = std::env::args()
             .skip_while(|x| x != "-r")
             .nth(1)
