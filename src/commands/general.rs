@@ -125,7 +125,7 @@ impl Task for Reminder {
 #[usage("delay message")]
 #[example("3s Remind me in 3 seconds")]
 #[example("4m Remind me in 4 minutes")]
-fn remindme(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     lazy_static! {
         static ref SECONDS: Regex = Regex::new("(s|secs|seconds)$").unwrap();
         static ref MINUTES: Regex = Regex::new("(m|mins|minutes)$").unwrap();
@@ -150,6 +150,7 @@ fn remindme(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
             Err("Invalid time specifier")
         }
     }?;
+    args.advance();
     let reminder = Reminder {
         message: String::from(args.rest()),
         when: Utc::now() + timeout,
