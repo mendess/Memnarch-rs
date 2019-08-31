@@ -4,6 +4,7 @@ use crate::cron::{CronSink, Task};
 use chrono::{DateTime, Duration, Utc};
 use lazy_static::lazy_static;
 use regex::{Match, Regex};
+use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -13,8 +14,6 @@ use serenity::{
     model::{channel::Message, id::UserId},
     prelude::*,
 };
-
-use std::sync::Arc;
 
 group!({
     name: "General",
@@ -60,15 +59,16 @@ fn who_are_you(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[min_args(2)]
-#[max_args(9)]
-#[description("Create a voting of up to 9 things")]
+#[max_args(10)]
+#[description("Create a voting of up to 10 things")]
+#[usage("[OPTION, ...]")]
+#[example("option1 \"option 2\"")]
 fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let message = msg.channel_id.send_message(&ctx.http, |m| {
         m.embed(|e| {
             e.title("Vote:");
             let fs = args
-                .iter::<String>()
-                .filter_map(Result::ok)
+                .raw_quoted()
                 .enumerate()
                 .map(|(i, a)| (a, NUMBERS[i], true));
             e.fields(fs)
@@ -84,11 +84,11 @@ fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
-struct Reminder {
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Serialize, Deserialize)]
+pub struct Reminder {
     message: String,
     when: DateTime<Utc>,
     id: UserId,
-    http: Arc<Http>,
 }
 
 impl Task for Reminder {
@@ -96,21 +96,35 @@ impl Task for Reminder {
         self.when
     }
 
-    fn call(&self) {
-        // TODO: Make this pretty
-        match self.id.create_dm_channel(&self.http) {
-            Ok(private_channel) => {
-                if let Err(e) = private_channel.say(&self.http, &self.message) {
-                    eprintln!("{}", e)
-                }
-            }
-            Err(e) => eprintln!("{}", e),
-        }
+    fn call(&self, http: &Http) {
+        let _ = self
+            .id
+            .create_dm_channel(http)
+            .map_err(|e| eprintln!("{}", e))
+            .and_then(|private_channel| {
+                private_channel
+                    .say(http, &self.message)
+                    .map_err(|e| eprintln!("{}", e))
+            });
     }
 }
 
 #[command]
 #[min_args(2)]
+#[aliases("remindeme")]
+#[description(
+    "Set a reminder for later.
+              The time parameters allowed are:
+              - seconds (s|secs|second)
+              - minutes (m|mins|minutes)
+              - hours (h|hours)
+              - days (d|days)
+              - weeks (w|weeks)
+              "
+)]
+#[usage("delay message")]
+#[example("3s Remind me in 3 seconds")]
+#[example("4m Remind me in 4 minutes")]
 fn remindme(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     lazy_static! {
         static ref SECONDS: Regex = Regex::new("(s|secs|seconds)$").unwrap();
@@ -140,11 +154,10 @@ fn remindme(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
         message: String::from(args.rest()),
         when: Utc::now() + timeout,
         id: msg.author.id,
-        http: Arc::clone(&ctx.http),
     };
     let map = ctx.data.read();
     let cron = map.get::<CronSink>().unwrap();
-    cron.send(Box::new(reminder))?;
+    cron.send(reminder.into())?;
     msg.channel_id.say(&ctx, "You shall be reminded!")?;
     Ok(())
 }

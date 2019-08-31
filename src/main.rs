@@ -1,8 +1,9 @@
 #![feature(drain_filter)]
+
 mod commands;
 mod consts;
-mod permissions;
 mod cron;
+mod permissions;
 
 use commands::general::GENERAL_GROUP;
 use commands::owner::OWNER_GROUP;
@@ -178,8 +179,8 @@ impl Config {
 
 fn main() -> std::io::Result<()> {
     let config = Config::new()?;
-    let cron_sink = cron::start();
     let mut client = Client::new(&config.token, Handler).expect("Err creating client");
+    let cron_sink = cron::start(Arc::clone(&client.cache_and_http.http));
     {
         let mut data = client.data.write();
         data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
@@ -252,6 +253,10 @@ fn main() -> std::io::Result<()> {
 }
 
 #[help]
+#[max_levenshtein_distance(5)]
+#[lacking_permissions("hide")]
+#[strikethrough_commands_tip_in_guild(" ")]
+#[strikethrough_commands_tip_in_dm(" ")]
 fn my_help(
     context: &mut Context,
     msg: &Message,

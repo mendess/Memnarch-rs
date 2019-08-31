@@ -33,6 +33,7 @@ group!({
 
 group!({
     name: "SFX_Aliases",
+    // help_available: false,
     options: {},
     commands: [play],
 });
@@ -79,6 +80,9 @@ impl SfxStats {
 #[command]
 #[aliases("s")]
 #[min_args(1)]
+#[description("Play a saved sfx!")]
+#[usage("part of name")]
+#[example("wow")]
 fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let guild = msg
         .guild(&ctx.cache)
@@ -107,7 +111,7 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
             let source = voice::ffmpeg(&file)?;
             handler.play(source);
         } else {
-            Err("Not in a voice channel".to_string())?;
+            return Err("Not in a voice channel".into());
         }
         file
     };
@@ -127,6 +131,8 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
+#[description("List the available sfx files")]
+#[usage("")]
 fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
     let sounds = fs::read_dir(format!("{}/{}", FILES_DIR, SFX_FILES_DIR)).map(|x| {
         let mut files = x
@@ -161,6 +167,8 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[checks("is_friend")]
+#[description("Saves a new sfx file")]
+#[usage("{Attatchment}")]
 fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
     for attachment in msg.attachments.iter() {
         if attachment.size > 204_800 {
@@ -182,6 +190,9 @@ fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[command]
 #[min_args(1)]
 #[owners_only]
+#[description("Remove an sfx file")]
+#[usage("part of name")]
+#[example("wow")]
 fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let file: PathBuf = find_file(&args)?;
     msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
@@ -190,7 +201,11 @@ fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
+#[aliases("get")]
 #[min_args(1)]
+#[description("Upload an sfx file to discord")]
+#[usage("part of name")]
+#[example("wow")]
 fn retreive(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let file = find_file(&args)?;
     msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
@@ -198,6 +213,8 @@ fn retreive(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
+#[description("Show the stats of the most played sfx")]
+#[usage("")]
 fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
     msg.channel_id.send_message(&ctx, |m| {
         m.embed(|e| {
