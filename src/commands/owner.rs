@@ -70,7 +70,10 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
             ============= stderr =============
             {}
             ```",
-            str::from_utf8(&out.stderr)?
+            {
+                let s = str::from_utf8(&out.stderr)?;
+                &s[s.len() - 1500..]
+            }
         )
         .into());
     }
