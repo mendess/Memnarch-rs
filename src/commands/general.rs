@@ -152,7 +152,7 @@ fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     }?;
     args.advance();
     let reminder = Reminder {
-        message: String::from(args.rest()),
+        message: format!("You asked me to remind you of this:\n{}", args.rest()),
         when: Utc::now() + timeout,
         id: msg.author.id,
     };
