@@ -17,3 +17,6 @@ lazy_static = "1"
 [dependencies.serenity]
 version = "0.7.0"
 features = ["framework", "standard_framework", "voice"]
+
+[features]
+nightly = []

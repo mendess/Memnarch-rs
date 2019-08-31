@@ -1,4 +1,4 @@
-#![feature(drain_filter)]
+#![cfg_attr(feature = "nightly", feature(drain_filter))]
 
 mod commands;
 mod consts;

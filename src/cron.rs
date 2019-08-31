@@ -96,6 +96,32 @@ impl Cron {
         }
     }
 
+    fn run_tasks(&mut self) {
+        #[cfg(feature = "nightly")]
+        {
+            let http_clone = &self.http;
+            self.tasks
+                .drain_filter(|t| t.when() < Utc::now())
+                .for_each(|t| {
+                    let http = Arc::clone(&http_clone);
+                    spawn(move || t.call(&http));
+                });
+        }
+        #[cfg(not(feature = "nightly"))]
+        {
+            let mut i = 0;
+            while i < self.tasks.len() {
+                if self.tasks[i].when() < Utc::now() {
+                    let t = self.tasks.remove(i);
+                    let http = Arc::clone(&self.http);
+                    spawn(move || t.call(&http));
+                } else {
+                    i += 1;
+                }
+            }
+        }
+    }
+
     fn serialize(&self) {
         File::create("files/cron.json")
             .map_err(|e| eprintln!("{:?}", e))
@@ -114,13 +140,7 @@ fn run_cron(mut c: Cron) {
         if TryRecvError::Disconnected == c.receive() && c.tasks.is_empty() {
             return;
         }
-        let http_clone = &c.http;
-        c.tasks
-            .drain_filter(|t| t.when() < Utc::now())
-            .for_each(|t| {
-                let http = Arc::clone(&http_clone);
-                spawn(move || t.call(&http));
-            });
+        c.run_tasks();
         c.serialize();
         match c.tasks.iter().map(|t| t.when()).min() {
             None => thread::park(),
