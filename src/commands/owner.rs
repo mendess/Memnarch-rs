@@ -28,14 +28,19 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
     } else {
         UPDATING.store(true, Ordering::SeqCst);
     }
-
-    msg.channel_id.say(&ctx, "Fetching...")?;
+    let check_msg = |mut m: Message| {
+        let new_msg = format!("{} :white_check_mark:", m.content);
+        m.edit(&ctx, |m| m.content(new_msg))
+    };
+    let message = msg.channel_id.say(&ctx, "Fetching...")?;
     Fork::new("git").arg("fetch").spawn()?.wait()?;
+    check_msg(message)?;
 
-    msg.channel_id.say(&ctx, "Checking remote...")?;
+    let message = msg.channel_id.say(&ctx, "Checking remote...")?;
     let status = Fork::new("git")
         .args(&["rev-list", "--count", "master...master@{upstream}"])
         .output()?;
+    check_msg(message)?;
 
     if 0 == String::from_utf8_lossy(&status.stdout)
         .trim()
@@ -44,7 +49,7 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
         return Err("No updates!".into());
     }
 
-    msg.channel_id.say(&ctx, "Pulling from remote...")?;
+    let message = msg.channel_id.say(&ctx, "Pulling from remote...")?;
     let out = &Fork::new("git").arg("pull").output()?;
     if !out.status.success() {
         return Err(format!(
@@ -60,8 +65,9 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
         )
         .into());
     }
+    check_msg(message)?;
 
-    msg.channel_id.say(&ctx, "Compiling...")?;
+    let message = msg.channel_id.say(&ctx, "Compiling...")?;
     let out = &Fork::new("cargo").args(&["build", "--release"]).output()?;
     if !out.status.success() {
         return Err(format!(
@@ -77,6 +83,7 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
         )
         .into());
     }
+    check_msg(message)?;
 
     msg.channel_id.say(ctx, "Rebooting...")?;
     Err(Fork::new("cargo")
