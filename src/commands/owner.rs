@@ -6,11 +6,12 @@ use serenity::{
     model::channel::Message,
     prelude::*,
 };
+use lazy_static::lazy_static;
 
 use std::os::unix::process::CommandExt;
 use std::process::Command as Fork;
 use std::str;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, TryLockError};
 
 group!({
     name: "Owner",
@@ -18,16 +19,17 @@ group!({
     commands: [update],
 });
 
-static UPDATING: AtomicBool = AtomicBool::new(false);
-
 #[command]
 #[description("Update the bot")]
 fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
-    if UPDATING.load(Ordering::SeqCst) {
-        return Err("Alreading updating".into());
-    } else {
-        UPDATING.store(true, Ordering::SeqCst);
-    }
+    lazy_static!{
+        static ref UPDATING: Mutex<()> = Mutex::new(());
+    };
+    let _ = match UPDATING.try_lock() {
+        Err(TryLockError::WouldBlock) => return Err("Alreading updating".into()),
+        Err(TryLockError::Poisoned(p)) => return Err(p.into()),
+        Ok(guard) => guard,
+    };
     let check_msg = |mut m: Message| {
         let new_msg = format!("{} :white_check_mark:", m.content);
         m.edit(&ctx, |m| m.content(new_msg))
@@ -86,8 +88,10 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
     check_msg(message)?;
 
     msg.channel_id.say(ctx, "Rebooting...")?;
-    Err(Fork::new("cargo")
+    std::env::set_var("RUST_BACKTRACE", "1");
+    let error = Fork::new("cargo")
         .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
-        .exec()
-        .into())
+        .exec();
+    std::env::remove_var("RUST_BACKTRACE");
+    Err(error.into())
 }
