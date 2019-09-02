@@ -12,7 +12,6 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    http::raw::Http,
     model::{channel::Message, id::GuildId},
     prelude::*,
     voice,
@@ -87,23 +86,26 @@ pub struct LeaveVoice {
     when: DateTime<Utc>,
 }
 
-impl Task<GuildId, Arc<Mutex<ClientVoiceManager>>> for LeaveVoice {
+impl Task for LeaveVoice {
+    type Id = GuildId;
+    type UserData = Arc<Mutex<ClientVoiceManager>>;
+
     fn when(&self) -> DateTime<Utc> {
         self.when
     }
 
-    fn call(&self, _: &Http) {
+    fn call(&self, data: Self::UserData) {
         println!(
             "[{:?}] Leaving guild's {} voice channel",
             Utc::now().naive_utc(),
             self.guild_id
         );
-        // let mut manager = self.voice_manager.lock();
-        // manager.leave(self.guild_id);
+        let mut manager = data.lock();
+        manager.leave(self.guild_id);
     }
 
-    fn check_id(&self, id: GuildId) -> bool {
-        self.guild_id == id
+    fn check_id(&self, id: &Self::Id) -> bool {
+        self.guild_id == *id
     }
 }
 
@@ -126,8 +128,8 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
         .ok_or_else(|| "Not in a voice channel".to_string())?;
     let file = {
         let share_map = ctx.data.read();
-        let cron_sink: &CronSink = share_map
-            .get::<CronSink>()
+        let cron_sink = share_map
+            .get::<CronSink<LeaveVoice>>()
             .expect("Expected VoiceManager in ShareMap");
         if let Some(gid) = msg.guild_id {
             cron_sink.cancel(gid)?;
@@ -152,12 +154,11 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
         if let Some(gid) = msg.guild_id {
             let leave = LeaveVoice {
                 when: Utc::now()
-                    .checked_add_signed(Duration::minutes(30))
+                    .checked_add_signed(Duration::seconds(30))
                     .unwrap(),
                 guild_id: gid,
-                voice_manager: share_map.get::<VoiceManager>().unwrap().clone(),
             };
-            cron_sink.send(leave.into())?;
+            cron_sink.send(leave)?;
         }
         file
     };

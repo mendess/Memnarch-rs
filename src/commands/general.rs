@@ -14,6 +14,7 @@ use serenity::{
     model::{channel::Message, id::UserId},
     prelude::*,
 };
+use std::sync::Arc;
 
 group!({
     name: "General",
@@ -91,19 +92,22 @@ pub struct Reminder {
     id: UserId,
 }
 
-impl Task<Http> for Reminder {
+impl Task for Reminder {
+    type Id = ();
+    type UserData = Arc<Http>;
+
     fn when(&self) -> DateTime<Utc> {
         self.when
     }
 
-    fn call(&self, http: &Http) {
+    fn call(&self, http: Self::UserData) {
         let _ = self
             .id
-            .create_dm_channel(http)
+            .create_dm_channel(&http)
             .map_err(|e| eprintln!("{}", e))
             .and_then(|private_channel| {
                 private_channel
-                    .say(http, &self.message)
+                    .say(&http, &self.message)
                     .map_err(|e| eprintln!("{}", e))
             });
     }
@@ -156,9 +160,11 @@ fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         when: Utc::now() + timeout,
         id: msg.author.id,
     };
-    let map = ctx.data.read();
-    let cron = map.get::<CronSink>().unwrap();
-    cron.send(reminder.into())?;
+    ctx.data
+        .read()
+        .get::<CronSink<Reminder>>()
+        .unwrap()
+        .send(reminder)?;
     msg.channel_id.say(&ctx, "You shall be reminded!")?;
     Ok(())
 }

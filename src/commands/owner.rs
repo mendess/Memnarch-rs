@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -6,7 +7,6 @@ use serenity::{
     model::channel::Message,
     prelude::*,
 };
-use lazy_static::lazy_static;
 
 use std::os::unix::process::CommandExt;
 use std::process::Command as Fork;
@@ -22,7 +22,7 @@ group!({
 #[command]
 #[description("Update the bot")]
 fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
-    lazy_static!{
+    lazy_static! {
         static ref UPDATING: Mutex<()> = Mutex::new(());
     };
     let _ = match UPDATING.try_lock() {

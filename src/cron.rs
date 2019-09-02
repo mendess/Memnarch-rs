@@ -1,35 +1,29 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_reader, to_writer};
 
 use std::fs::File;
 use std::sync::mpsc::{sync_channel, Receiver, SendError, SyncSender, TryRecvError};
-use std::sync::Arc;
 use std::thread::{self, spawn, JoinHandle};
 
-pub trait Task<U, I: PartialEq = DefaultTaskId> {
+pub trait Task {
+    type Id: Send;
+    type UserData: Clone + Send;
     fn when(&self) -> DateTime<Utc>;
-    fn call(&self, user_data: &U);
-    fn check_id(&self, id: I) -> bool {
+    fn call(&self, user_data: Self::UserData);
+    fn check_id(&self, _: &Self::Id) -> bool {
         false
     }
 }
 
-#[derive(PartialEq)]
-struct DefaultTaskId;
-
-pub struct CronSink<T: Task<U, I>, U, I: PartialEq = DefaultTaskId> {
+pub struct CronSink<T: Task> {
     channel: SyncSender<T>,
-    cancel: SyncSender<I>,
+    cancel: SyncSender<T::Id>,
     cron_handle: JoinHandle<()>,
 }
 
-impl<T: Task<U, I>, U, I: PartialEq> CronSink<T, I, U> {
-    fn new(
-        channel: SyncSender<T>,
-        cancel: SyncSender<I>,
-        cron_handle: JoinHandle<()>,
-    ) -> Self {
+impl<T: Task> CronSink<T> {
+    fn new(channel: SyncSender<T>, cancel: SyncSender<T::Id>, cron_handle: JoinHandle<()>) -> Self {
         Self {
             channel,
             cancel,
@@ -43,23 +37,25 @@ impl<T: Task<U, I>, U, I: PartialEq> CronSink<T, I, U> {
         Ok(())
     }
 
-    pub fn cancel(&self, task_id: I) -> Result<(), SendError<I>> {
-        let boxed = Box::new(task_id);
-        self.cancel.send(boxed)?;
+    pub fn cancel(&self, task_id: T::Id) -> Result<(), SendError<T::Id>> {
+        self.cancel.send(task_id)?;
         self.cron_handle.thread().unpark();
         Ok(())
     }
 }
 
-pub struct Cron<T: Task<U, I>, U, I: PartialEq = DefaultTaskId> {
+pub struct Cron<T: Task> {
     channel: Receiver<T>,
-    cancel: Receiver<I>,
-    user_data: U,
+    cancel: Receiver<T::Id>,
+    user_data: T::UserData,
     tasks: Vec<T>,
 }
 
-impl<T: Task, I: PartialEq, U> Cron<T, I, U> {
-    fn new(user_data: U, channel: Receiver<T>, cancel: Receiver<I>) -> Self {
+impl<T> Cron<T>
+where
+    T: Task + Send + Serialize + DeserializeOwned + 'static,
+{
+    fn new(user_data: T::UserData, channel: Receiver<T>, cancel: Receiver<T::Id>) -> Self {
         let tasks = File::open("files/cron.json")
             .map_err(|e| eprintln!("{:?}", e))
             .and_then(|f| from_reader(f).map_err(|e| eprintln!("{:?}", e)))
@@ -92,7 +88,7 @@ impl<T: Task, I: PartialEq, U> Cron<T, I, U> {
     fn cancel(&mut self) -> TryRecvError {
         loop {
             match self.cancel.try_recv() {
-                Ok(id) => self.tasks.retain(|t| !t.id().compare(&*id)),
+                Ok(id) => self.tasks.retain(|t| !t.check_id(&id)),
                 Err(TryRecvError::Empty) => break TryRecvError::Empty,
                 Err(e) => {
                     if self.tasks.is_empty() {
@@ -107,12 +103,12 @@ impl<T: Task, I: PartialEq, U> Cron<T, I, U> {
     fn run_tasks(&mut self) {
         #[cfg(feature = "nightly")]
         {
-            let http_clone = &self.http;
+            let user_data = &self.user_data;
             self.tasks
                 .drain_filter(|t| t.when() < Utc::now())
                 .for_each(|t| {
-                    let http = Arc::clone(&http_clone);
-                    spawn(move || t.call(&http));
+                    let clone = Clone::clone(&user_data);
+                    spawn(move || t.call(clone));
                 });
         }
         #[cfg(not(feature = "nightly"))]
@@ -121,8 +117,8 @@ impl<T: Task, I: PartialEq, U> Cron<T, I, U> {
             while i < self.tasks.len() {
                 if self.tasks[i].when() < Utc::now() {
                     let t = self.tasks.remove(i);
-                    let http = Arc::clone(&self.http);
-                    spawn(move || t.call(&http));
+                    let http = Clone::clone(&self.user_data);
+                    spawn(move || t.call(http));
                 } else {
                     i += 1;
                 }
@@ -139,6 +135,7 @@ impl<T: Task, I: PartialEq, U> Cron<T, I, U> {
 
     fn run(mut self) {
         loop {
+            eprintln!("I'm awake: {:?}", thread::current().id());
             if TryRecvError::Disconnected == self.receive() && self.tasks.is_empty() {
                 return;
             }
@@ -160,12 +157,15 @@ impl<T: Task, I: PartialEq, U> Cron<T, I, U> {
     }
 }
 
-pub fn start<T: Task, I: PartialEq, U>(user_data: U) -> CronSink<T, I, U> {
+pub fn start<T>(user_data: T::UserData) -> CronSink<T>
+where
+    T: Task + Serialize + DeserializeOwned + Send + 'static,
+{
     let (sender, receiver) = sync_channel(5);
     let (sender_cancel, receiver_cancel) = sync_channel(5);
     CronSink::new(
         sender,
         sender_cancel,
-        spawn(|| Cron::new(user_data, receiver, receiver_cancel).run()),
+        spawn(move || Cron::new(user_data, receiver, receiver_cancel).run()),
     )
 }

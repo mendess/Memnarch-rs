@@ -5,11 +5,12 @@ mod consts;
 mod cron;
 mod permissions;
 
-use commands::general::GENERAL_GROUP;
+use commands::general::{Reminder, GENERAL_GROUP};
 use commands::owner::OWNER_GROUP;
 use commands::quotes::QUOTES_GROUP;
-use commands::sfx::{SfxStats, SFX_ALIASES_GROUP, SFX_GROUP};
+use commands::sfx::{LeaveVoice, SfxStats, SFX_ALIASES_GROUP, SFX_GROUP};
 use consts::FILES_DIR;
+use cron::{CronSink, Task};
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::bridge::voice::ClientVoiceManager,
@@ -17,15 +18,17 @@ use serenity::{
         help_commands, macros::help, Args, CommandGroup, CommandResult, HelpOptions,
         StandardFramework,
     },
+    http::raw::Http,
     model::{
         channel::{Channel, Message},
         gateway::Ready,
+        guild::Member,
         id::{ChannelId, GuildId, UserId},
         voice::VoiceState,
     },
     prelude::*,
 };
-use std::collections::{HashSet, };
+use std::collections::HashSet;
 use std::fs::{DirBuilder, OpenOptions};
 use std::io::Write;
 use std::sync::Arc;
@@ -40,13 +43,24 @@ impl EventHandler for Handler {
         old: Option<VoiceState>,
         _new: VoiceState,
     ) {
+        let current_user = match Http::get_current_user(ctx.as_ref()) {
+            Ok(user) => user,
+            Err(e) => return eprintln!("{:?}", e),
+        };
+        let has_bot = |members: &Vec<Member>| {
+            members
+                .iter()
+                .map(|m| m.user_id())
+                .any(|u| current_user.id == u)
+        };
         if old
             .and_then(|vs| vs.channel_id)
             .and_then(|id| id.to_channel(&ctx).ok())
             .and_then(Channel::guild)
-            .and_then(|gc| gc.read().members(&ctx).ok().map(|m| m.len()))
-            .filter(|n_members| *n_members >= 1)
-            .is_some()
+            .and_then(|gc| gc.read().members(&ctx).ok())
+            .filter(has_bot)
+            .map(|m| m.len() == 1)
+            .unwrap_or(false)
         {
             if let Some(guild_id) = guild_id {
                 ctx.data
@@ -55,6 +69,13 @@ impl EventHandler for Handler {
                     .expect("Couldn't find VoiceManager in ShareMap")
                     .lock()
                     .leave(guild_id);
+                ctx.data
+                    .read()
+                    .get::<CronSink<LeaveVoice>>()
+                    .unwrap()
+                    .cancel(guild_id)
+                    .map_err(|e| eprintln!("{:?}", e))
+                    .ok();
             };
         }
     }
@@ -62,8 +83,7 @@ impl EventHandler for Handler {
     fn ready(&self, ctx: Context, _ready: Ready) {
         println!("Up and running");
         if let Some(id) = ctx.data.read().get::<UpdateNotify>() {
-            ChannelId::from(**id)
-                .send_message(&ctx, |m| m.content("Updated successfully!"))
+            id.send_message(&ctx, |m| m.content("Updated successfully!"))
                 .expect("Couldn't send update notification");
         }
         ctx.data.write().remove::<UpdateNotify>();
@@ -79,7 +99,7 @@ impl TypeMapKey for VoiceManager {
 struct UpdateNotify;
 
 impl TypeMapKey for UpdateNotify {
-    type Value = Arc<u64>;
+    type Value = ChannelId;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -113,21 +133,27 @@ impl Config {
     }
 }
 
+impl<T: Task + 'static> TypeMapKey for CronSink<T> {
+    type Value = Self;
+}
+
 fn main() -> std::io::Result<()> {
     let config = Config::new()?;
     let mut client = Client::new(&config.token, Handler).expect("Err creating client");
-    let cron_sink = cron::start(Arc::clone(&client.cache_and_http.http));
+    let re_cron_sink = cron::start::<Reminder>(Arc::clone(&client.cache_and_http.http));
+    let vc_cron_sink = cron::start::<LeaveVoice>(Arc::clone(&client.voice_manager));
     {
         let mut data = client.data.write();
         data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
         data.insert::<SfxStats>(SfxStats::new());
-        data.insert::<cron::CronSink>(cron_sink);
+        data.insert::<CronSink<Reminder>>(re_cron_sink);
+        data.insert::<CronSink<LeaveVoice>>(vc_cron_sink);
         if let Some(id) = std::env::args()
             .skip_while(|x| x != "-r")
             .nth(1)
-            .and_then(|id| id.parse::<u64>().ok())
+            .and_then(|id| id.parse::<ChannelId>().ok())
         {
-            data.insert::<UpdateNotify>(Arc::new(id));
+            data.insert::<UpdateNotify>(id);
         }
     }
     let (owners, bot_id) = match client.cache_and_http.http.get_current_application_info() {
