@@ -1,15 +1,19 @@
 use crate::consts::FILES_DIR;
+use crate::cron::{CronSink, Task};
 use crate::permissions::IS_FRIEND_CHECK;
-use crate::{VoiceAfkManager, VoiceManager};
+use crate::VoiceManager;
 
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use serenity::{
+    client::bridge::voice::ClientVoiceManager,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::channel::Message,
+    http::raw::Http,
+    model::{channel::Message, id::GuildId},
     prelude::*,
     voice,
 };
@@ -18,7 +22,7 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 const SFX_FILES_DIR: &str = "sfx";
 const SFX_STATS_FILE: &str = "sfx_stats.json";
@@ -56,7 +60,7 @@ impl SfxStats {
     }
 
     fn update(&mut self, sfx: &str) -> Result<(), String> {
-        let mut stats = self.0.lock().expect("Lock error");
+        let mut stats = self.0.lock();
         stats
             .entry(sfx.to_string())
             .and_modify(|c| *c += 1)
@@ -74,6 +78,32 @@ impl SfxStats {
         File::create(format!("{}/{}", FILES_DIR, SFX_STATS_FILE))
             .map_err(mf)
             .and_then(|f| serde_json::to_writer(f, &*stats).map_err(mj))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LeaveVoice {
+    guild_id: GuildId,
+    when: DateTime<Utc>,
+}
+
+impl Task<GuildId, Arc<Mutex<ClientVoiceManager>>> for LeaveVoice {
+    fn when(&self) -> DateTime<Utc> {
+        self.when
+    }
+
+    fn call(&self, _: &Http) {
+        println!(
+            "[{:?}] Leaving guild's {} voice channel",
+            Utc::now().naive_utc(),
+            self.guild_id
+        );
+        // let mut manager = self.voice_manager.lock();
+        // manager.leave(self.guild_id);
+    }
+
+    fn check_id(&self, id: GuildId) -> bool {
+        self.guild_id == id
     }
 }
 
@@ -96,6 +126,12 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
         .ok_or_else(|| "Not in a voice channel".to_string())?;
     let file = {
         let share_map = ctx.data.read();
+        let cron_sink: &CronSink = share_map
+            .get::<CronSink>()
+            .expect("Expected VoiceManager in ShareMap");
+        if let Some(gid) = msg.guild_id {
+            cron_sink.cancel(gid)?;
+        }
         let manager_id = share_map
             .get::<VoiceManager>()
             .expect("Expected VoiceManager in ShareMap");
@@ -113,6 +149,16 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
         } else {
             return Err("Not in a voice channel".into());
         }
+        if let Some(gid) = msg.guild_id {
+            let leave = LeaveVoice {
+                when: Utc::now()
+                    .checked_add_signed(Duration::minutes(30))
+                    .unwrap(),
+                guild_id: gid,
+                voice_manager: share_map.get::<VoiceManager>().unwrap().clone(),
+            };
+            cron_sink.send(leave.into())?;
+        }
         file
     };
     let mut share_map = ctx.data.write();
@@ -123,10 +169,7 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
         .err()
         .iter()
         .for_each(|e| eprintln!("{}", e));
-    share_map
-        .get_mut::<VoiceAfkManager>()
-        .expect("Expected VoiceManager in ShareMap")
-        .shedule(guild_id);
+
     Ok(())
 }
 
@@ -226,7 +269,6 @@ fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
                 .expect("Expected SfxStats in ShareMap")
                 .0
                 .lock()
-                .expect("Lock error")
                 .iter()
                 .map(|(k, v)| (k.clone(), *v))
                 .collect::<Vec<(String, usize)>>();

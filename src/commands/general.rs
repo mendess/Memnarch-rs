@@ -91,7 +91,7 @@ pub struct Reminder {
     id: UserId,
 }
 
-impl Task for Reminder {
+impl Task<Http> for Reminder {
     fn when(&self) -> DateTime<Utc> {
         self.when
     }

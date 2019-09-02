@@ -10,17 +10,6 @@ use commands::owner::OWNER_GROUP;
 use commands::quotes::QUOTES_GROUP;
 use commands::sfx::{SfxStats, SFX_ALIASES_GROUP, SFX_GROUP};
 use consts::FILES_DIR;
-
-use std::collections::{HashSet, VecDeque};
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use std::thread;
-use std::time::Duration;
-
-use chrono::Duration as CDuration;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::bridge::voice::ClientVoiceManager,
@@ -36,6 +25,10 @@ use serenity::{
     },
     prelude::*,
 };
+use std::collections::{HashSet, };
+use std::fs::{DirBuilder, OpenOptions};
+use std::io::Write;
+use std::sync::Arc;
 
 struct Handler;
 
@@ -83,65 +76,10 @@ impl TypeMapKey for VoiceManager {
     type Value = Arc<Mutex<ClientVoiceManager>>;
 }
 
-type VoiceChannelQueue = VecDeque<(DateTime<Utc>, GuildId)>;
-#[derive(Clone)]
-pub struct VoiceAfkManager {
-    channels: Arc<Mutex<VoiceChannelQueue>>,
-    voice_manager: Arc<Mutex<ClientVoiceManager>>,
-}
-
-impl VoiceAfkManager {
-    fn new(voice_manager: Arc<Mutex<ClientVoiceManager>>) -> Self {
-        VoiceAfkManager {
-            channels: Default::default(),
-            voice_manager,
-        }
-    }
-
-    fn update(&mut self) {
-        let now = Utc::now();
-        let mut channels = self.channels.lock();
-        while let Some(_) = channels.front().filter(|(date, _)| *date < now) {
-            let (_, guild_id) = channels.pop_front().unwrap();
-            println!(
-                "[{:?}] Leaving guild's {} voice channel",
-                Utc::now().naive_utc(),
-                guild_id
-            );
-            let mut manager = self.voice_manager.lock();
-            manager.leave(guild_id);
-        }
-    }
-
-    pub fn shedule(&mut self, guild_id: GuildId) {
-        let mut channels = self.channels.lock();
-        channels.retain(|(_, gid)| guild_id != *gid);
-        channels.push_back((
-            Utc::now()
-                .checked_add_signed(CDuration::minutes(30))
-                .unwrap(),
-            guild_id,
-        ));
-        println!(
-            "[{:?}] Sheduling for guild: {}",
-            Utc::now().naive_utc(),
-            guild_id
-        );
-    }
-}
-
-impl TypeMapKey for VoiceAfkManager {
-    type Value = VoiceAfkManager;
-}
-
 struct UpdateNotify;
 
 impl TypeMapKey for UpdateNotify {
     type Value = Arc<u64>;
-}
-
-impl TypeMapKey for cron::CronSink {
-    type Value = cron::CronSink;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -151,7 +89,6 @@ struct Config {
 
 impl Config {
     fn new() -> std::io::Result<Config> {
-        use std::fs::{DirBuilder, OpenOptions};
         DirBuilder::new().recursive(true).create(FILES_DIR)?;
         let file = OpenOptions::new()
             .read(true)
@@ -165,7 +102,6 @@ impl Config {
                 .expect("Couldn't open config for writing");
             let mut token = String::new();
             print!("Token: ");
-            use std::io::Write;
             let _ = std::io::stdout().lock().flush();
             std::io::stdin()
                 .read_line(&mut token)
@@ -184,7 +120,6 @@ fn main() -> std::io::Result<()> {
     {
         let mut data = client.data.write();
         data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
-        data.insert::<VoiceAfkManager>(VoiceAfkManager::new(Arc::clone(&client.voice_manager)));
         data.insert::<SfxStats>(SfxStats::new());
         data.insert::<cron::CronSink>(cron_sink);
         if let Some(id) = std::env::args()
@@ -208,10 +143,10 @@ fn main() -> std::io::Result<()> {
         StandardFramework::new()
             .configure(|c| c.prefix("|").on_mention(Some(bot_id)).owners(owners))
             .after(|ctx, msg, cmd_name, error| match error {
-                Ok(()) => println!("Processed command {}", cmd_name),
+                Ok(()) => println!("Processed command '{}' for user '{}'", cmd_name, msg.author),
                 Err(why) => {
                     let _ = msg.channel_id.say(ctx, &why.0);
-                    println!("Command {} failed with {:?}", cmd_name, why)
+                    println!("Command '{}' failed with {:?}", cmd_name, why)
                 }
             })
             .on_dispatch_error(|ctx, msg, error| {
@@ -226,29 +161,10 @@ fn main() -> std::io::Result<()> {
             .group(&QUOTES_GROUP)
             .help(&MY_HELP),
     );
-    let mut voice_afk_manager = {
-        let v = client.data.read();
-        v.get::<VoiceAfkManager>()
-            .expect("Couldn't find Voice Afk Manager in ShareMap")
-            .clone()
-    };
-
-    // AFK Monitoring
-    let continue_ruining = Arc::new(AtomicBool::new(true));
-    let continue_ruining_clone = Arc::clone(&continue_ruining);
-    let thread_handle = thread::spawn(move || {
-        while continue_ruining_clone.load(Ordering::SeqCst) {
-            thread::sleep(Duration::from_secs(1));
-            voice_afk_manager.update();
-        }
-    });
 
     if let Err(why) = client.start() {
         println!("Sad face :(  {:?}", why);
     }
-
-    continue_ruining.store(false, Ordering::SeqCst);
-    thread_handle.join().unwrap();
     Ok(())
 }
 
