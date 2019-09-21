@@ -215,8 +215,8 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[usage("{Attatchment}")]
 fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
     for attachment in msg.attachments.iter() {
-        if attachment.size > 204_800 {
-            return Err("File size too high, please keep it under 200Kb."
+        if attachment.size > 204_800 * 2 {
+            return Err("File size too high, please keep it under 400Kb."
                 .to_string()
                 .into());
         }
