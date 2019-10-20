@@ -20,3 +20,6 @@ features = ["framework", "standard_framework", "voice"]
 
 [features]
 nightly = []
+
+[profile.release]
+codegen-units = 1
