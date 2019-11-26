@@ -14,7 +14,7 @@ use serenity::{
     model::{channel::Message, id::UserId},
     prelude::*,
 };
-use std::sync::Arc;
+use std::{error::Error, sync::Arc};
 
 group!({
     name: "General",
@@ -94,22 +94,18 @@ pub struct Reminder {
 
 impl Task for Reminder {
     type Id = ();
-    type UserData = Arc<Http>;
+    type GlobalData = Arc<Http>;
 
     fn when(&self) -> DateTime<Utc> {
         self.when
     }
 
-    fn call(&self, http: Self::UserData) {
-        let _ = self
-            .id
+    fn call(&self, http: Self::GlobalData) -> Result<(), Box<dyn Error>> {
+        self.id
             .create_dm_channel(&http)
-            .map_err(|e| eprintln!("{}", e))
-            .and_then(|private_channel| {
-                private_channel
-                    .say(&http, &self.message)
-                    .map_err(|e| eprintln!("{}", e))
-            });
+            .and_then(|private_channel| private_channel.say(&http, &self.message))
+            .map(|_| ())
+            .map_err(|e| Box::new(e) as Box<dyn Error>)
     }
 }
 

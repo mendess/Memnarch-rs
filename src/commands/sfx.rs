@@ -17,11 +17,14 @@ use serenity::{
     voice,
 };
 use simsearch::SimSearch;
-use std::collections::HashMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs::{self, DirBuilder, File, OpenOptions},
+    io::{self, Write},
+    path::PathBuf,
+    sync::Arc,
+};
 
 const SFX_FILES_DIR: &str = "sfx";
 const SFX_STATS_FILE: &str = "sfx_stats.json";
@@ -49,11 +52,19 @@ impl TypeMapKey for SfxStats {
 }
 
 impl SfxStats {
+    fn path() -> PathBuf {
+        [FILES_DIR, SFX_STATS_FILE].iter().collect()
+    }
+
     pub fn new() -> Self {
         SfxStats(Arc::new(Mutex::new(
-            File::open(format!("{}/{}", FILES_DIR, SFX_STATS_FILE))
+            File::open(Self::path())
                 .ok()
-                .and_then(|f| serde_json::from_reader(f).ok())
+                .and_then(|f| {
+                    serde_json::from_reader(f)
+                        .map_err(|e| eprintln!("Error loading sfx stats: '{}", e))
+                        .ok()
+                })
                 .unwrap_or_else(Default::default),
         )))
     }
@@ -74,7 +85,12 @@ impl SfxStats {
         };
         let mf = |e| map_err(sfx, e);
         let mj = |e| map_err(sfx, e);
-        File::create(format!("{}/{}", FILES_DIR, SFX_STATS_FILE))
+        let path = Self::path();
+        DirBuilder::new()
+            .recursive(true)
+            .create(path.parent().unwrap())
+            .map_err(mf)?;
+        File::create(path)
             .map_err(mf)
             .and_then(|f| serde_json::to_writer(f, &*stats).map_err(mj))
     }
@@ -88,20 +104,22 @@ pub struct LeaveVoice {
 
 impl Task for LeaveVoice {
     type Id = GuildId;
-    type UserData = Arc<Mutex<ClientVoiceManager>>;
+    type GlobalData = Arc<Mutex<ClientVoiceManager>>;
 
     fn when(&self) -> DateTime<Utc> {
         self.when
     }
 
-    fn call(&self, data: Self::UserData) {
+    fn call(&self, data: Self::GlobalData) -> Result<(), Box<dyn Error>> {
         println!(
             "[{:?}] Leaving guild's {} voice channel",
             Utc::now().naive_utc(),
             self.guild_id
         );
         let mut manager = data.lock();
-        manager.leave(self.guild_id);
+        manager
+            .leave(self.guild_id)
+            .ok_or_else(|| "Couldn't leave channel".into())
     }
 
     fn check_id(&self, id: &Self::Id) -> bool {
@@ -145,6 +163,7 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
             None => msg.channel_id.say(&ctx, "Error joining"),
         }?;
         let file = find_file(&args)?;
+        eprintln!("Playing sfx: {:?}", file);
         if let Some(handler) = manager.get_mut(guild_id) {
             let source = voice::ffmpeg(&file)?;
             handler.play(source);
@@ -178,7 +197,7 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 #[description("List the available sfx files")]
 #[usage("")]
 fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let sounds = fs::read_dir(format!("{}/{}", FILES_DIR, SFX_FILES_DIR)).map(|x| {
+    let sounds = fs::read_dir(sfx_path::<&str,_>(None)).map(|x| {
         let mut files = x
             .filter_map(Result::ok)
             .map(|x| String::from(x.path().as_path().file_name().unwrap().to_string_lossy()))
@@ -221,10 +240,11 @@ fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
                 .into());
         }
         let bytes = attachment.download()?;
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(format!("{}/sfx/{}", FILES_DIR, attachment.filename))?;
+        let path = sfx_path(&attachment.filename);
+        DirBuilder::new()
+            .recursive(true)
+            .create(path.parent().unwrap())?;
+        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
         file.write_all(&bytes)?;
         msg.channel_id.say(&ctx, "File added!")?;
     }
@@ -238,7 +258,7 @@ fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[usage("part of name")]
 #[example("wow")]
 fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    let file: PathBuf = find_file(&args)?;
+    let file = find_file(&args)?;
     msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
     fs::remove_file(&file)?;
     Ok(())
@@ -293,7 +313,7 @@ fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 fn find_file(search_string: &Args) -> io::Result<PathBuf> {
     use std::io::{Error, ErrorKind::NotFound};
-    let (search, vec) = fs::read_dir(format!("{}/{}", FILES_DIR, SFX_FILES_DIR))?
+    let (search, vec) = fs::read_dir(sfx_path::<&str,_>(None))?
         .filter_map(Result::ok)
         .enumerate()
         .fold(
@@ -311,5 +331,12 @@ fn find_file(search_string: &Args) -> io::Result<PathBuf> {
             NotFound,
             format!("No matches for {}", search_string),
         )),
+    }
+}
+
+fn sfx_path<S: AsRef<str>, F: Into<Option<S>>>(file: F) -> PathBuf {
+    match file.into() {
+        Some(f) => [FILES_DIR, SFX_FILES_DIR, f.as_ref()].iter().collect(),
+        None => [FILES_DIR, SFX_FILES_DIR].iter().collect(),
     }
 }

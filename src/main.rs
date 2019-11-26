@@ -5,6 +5,9 @@ mod consts;
 mod cron;
 mod permissions;
 
+use chrono::{Duration, Utc};
+use commands::custom::MessageDecay;
+use commands::custom::{CustomCommands, CUSTOM_GROUP};
 use commands::general::{Reminder, GENERAL_GROUP};
 use commands::owner::OWNER_GROUP;
 use commands::quotes::QUOTES_GROUP;
@@ -116,18 +119,20 @@ impl Config {
             .create(true)
             .open(format!("{}/config.json", FILES_DIR))?;
         Ok(serde_json::from_reader(file).unwrap_or_else(|_| {
-            let mut file = OpenOptions::new()
+            let file = OpenOptions::new()
                 .write(true)
                 .open(format!("{}/config.json", FILES_DIR))
                 .expect("Couldn't open config for writing");
+
             let mut token = String::new();
             print!("Token: ");
             let _ = std::io::stdout().lock().flush();
             std::io::stdin()
                 .read_line(&mut token)
                 .expect("Couldn't read token from stdin");
+
             let config = Config { token };
-            let _ = file.write_all(serde_json::to_string(&config).unwrap().as_bytes());
+            let _ = serde_json::to_writer(file, &config).map_err(|e| eprintln!("{}", e));
             config
         }))
     }
@@ -140,14 +145,21 @@ impl<T: Task + 'static> TypeMapKey for CronSink<T> {
 fn main() -> std::io::Result<()> {
     let config = Config::new()?;
     let mut client = Client::new(&config.token, Handler).expect("Err creating client");
-    let re_cron_sink = cron::start::<Reminder>(Arc::clone(&client.cache_and_http.http));
-    let vc_cron_sink = cron::start::<LeaveVoice>(Arc::clone(&client.voice_manager));
+    let re_cron_sink =
+        cron::start::<Reminder>("reminders.json", Arc::clone(&client.cache_and_http.http));
+    let vc_cron_sink = cron::start::<LeaveVoice>("voice.json", Arc::clone(&client.voice_manager));
+    let md_cron_sink = cron::start::<MessageDecay>(
+        "message_decay.json",
+        Arc::clone(&client.cache_and_http.http),
+    );
     {
         let mut data = client.data.write();
         data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
         data.insert::<SfxStats>(SfxStats::new());
         data.insert::<CronSink<Reminder>>(re_cron_sink);
         data.insert::<CronSink<LeaveVoice>>(vc_cron_sink);
+        data.insert::<CronSink<MessageDecay>>(md_cron_sink);
+        data.insert::<CustomCommands>(Arc::new(RwLock::new(Default::default())));
         if let Some(id) = std::env::args()
             .skip_while(|x| x != "-r")
             .nth(1)
@@ -168,6 +180,38 @@ fn main() -> std::io::Result<()> {
     client.with_framework(
         StandardFramework::new()
             .configure(|c| c.prefix("|").on_mention(Some(bot_id)).owners(owners))
+            .normal_message(move |ctx, msg| {
+                if msg.author.id == bot_id {
+                    return;
+                }
+                let _ = msg
+                    .guild_id
+                    .ok_or_else(|| "guild_id is missing".to_string())
+                    .and_then(|g| {
+                        if let Some(o) = ctx
+                            .data
+                            .write()
+                            .get_mut::<CustomCommands>()
+                            .unwrap()
+                            .write()
+                            .execute(g, &msg.content.split_whitespace().next().unwrap()[1..])
+                            .map_err(|e| e.to_string())?
+                        {
+                            let m = msg.channel_id.say(&ctx, o).map_err(|e| e.to_string())?;
+                            let mut share_map = ctx.data.write();
+                            let cron = share_map.get_mut::<CronSink<MessageDecay>>().unwrap();
+                            cron.send(MessageDecay::new(m, Utc::now() + Duration::hours(1)))
+                                .map_err(|_| "Couldn't decay bot message".to_string())?;
+                            cron.send(MessageDecay::new(
+                                msg.clone(),
+                                Utc::now() + Duration::minutes(30),
+                            ))
+                            .map_err(|_| "Couldn't decay user message".to_string())?;
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| eprintln!("{}", e));
+            })
             .after(|ctx, msg, cmd_name, error| match error {
                 Ok(()) => println!("Processed command '{}' for user '{}'", cmd_name, msg.author),
                 Err(why) => {
@@ -185,6 +229,7 @@ fn main() -> std::io::Result<()> {
             .group(&SFX_ALIASES_GROUP)
             .group(&OWNER_GROUP)
             .group(&QUOTES_GROUP)
+            .group(&CUSTOM_GROUP)
             .help(&MY_HELP),
     );
 

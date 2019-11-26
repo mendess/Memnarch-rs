@@ -1,16 +1,22 @@
+use crate::consts::FILES_DIR;
 use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_reader, to_writer};
+use std::{
+    error::Error,
+    fs::{DirBuilder, File},
+    path::{Path, PathBuf},
+    sync::mpsc::{sync_channel, Receiver, SendError, SyncSender, TryRecvError},
+    thread::{self, spawn, JoinHandle},
+};
 
-use std::fs::File;
-use std::sync::mpsc::{sync_channel, Receiver, SendError, SyncSender, TryRecvError};
-use std::thread::{self, spawn, JoinHandle};
+const CRON_DIR: &str = "cron";
 
 pub trait Task {
     type Id: Send;
-    type UserData: Clone + Send;
+    type GlobalData: Clone + Send;
     fn when(&self) -> DateTime<Utc>;
-    fn call(&self, user_data: Self::UserData);
+    fn call(&self, user_data: Self::GlobalData) -> Result<(), Box<dyn Error>>;
     fn check_id(&self, _: &Self::Id) -> bool {
         false
     }
@@ -47,24 +53,34 @@ impl<T: Task> CronSink<T> {
 pub struct Cron<T: Task> {
     channel: Receiver<T>,
     cancel: Receiver<T::Id>,
-    user_data: T::UserData,
+    user_data: T::GlobalData,
     tasks: Vec<T>,
+    path: Box<Path>,
 }
 
 impl<T> Cron<T>
 where
     T: Task + Send + Serialize + DeserializeOwned + 'static,
 {
-    fn new(user_data: T::UserData, channel: Receiver<T>, cancel: Receiver<T::Id>) -> Self {
-        let tasks = File::open("files/cron.json")
+    fn new(
+        path: &str,
+        user_data: T::GlobalData,
+        channel: Receiver<T>,
+        cancel: Receiver<T::Id>,
+    ) -> Self {
+        let path = [FILES_DIR, CRON_DIR, path]
+            .iter()
+            .collect::<PathBuf>();
+        let tasks = File::open(&path)
             .map_err(|e| eprintln!("{:?}", e))
-            .and_then(|f| from_reader(f).map_err(|e| eprintln!("{:?}", e)))
+            .and_then(|f| from_reader(f).map_err(|e| eprintln!("Error parsing cron.json: {}", e)))
             .unwrap_or_else(|_| Vec::new());
         Self {
             channel,
             cancel,
             user_data,
             tasks,
+            path: path.into_boxed_path(),
         }
     }
 
@@ -118,7 +134,9 @@ where
                 if self.tasks[i].when() < Utc::now() {
                     let t = self.tasks.remove(i);
                     let http = Clone::clone(&self.user_data);
-                    spawn(move || t.call(http));
+                    spawn(move || {
+                        let _ = t.call(http).map_err(|e| eprintln!("{}", e));
+                    });
                 } else {
                     i += 1;
                 }
@@ -127,15 +145,18 @@ where
     }
 
     fn serialize(&self) {
-        File::create("files/cron.json")
-            .map_err(|e| eprintln!("{:?}", e))
-            .and_then(|d| to_writer(d, &self.tasks).map_err(|e| eprintln!("{:?}", e)))
-            .unwrap();
+        DirBuilder::new()
+            .recursive(true)
+            .create(self.path.parent().unwrap())
+            .and_then(|_| File::create(&self.path))
+            .and_then(|d| to_writer(d, &self.tasks).map_err(|e| e.into()))
+            .map_err(|e| eprintln!("{}", e))
+            .ok();
     }
 
     fn run(mut self) {
         loop {
-            eprintln!("I'm awake: {:?}", thread::current().id());
+            eprintln!("I'm awake: {:?}: {:?}", thread::current().id(), self.path);
             if TryRecvError::Disconnected == self.receive() && self.tasks.is_empty() {
                 return;
             }
@@ -157,15 +178,12 @@ where
     }
 }
 
-pub fn start<T>(user_data: T::UserData) -> CronSink<T>
+pub fn start<T>(path: &str, user_data: T::GlobalData) -> CronSink<T>
 where
     T: Task + Serialize + DeserializeOwned + Send + 'static,
 {
     let (sender, receiver) = sync_channel(5);
     let (sender_cancel, receiver_cancel) = sync_channel(5);
-    CronSink::new(
-        sender,
-        sender_cancel,
-        spawn(move || Cron::new(user_data, receiver, receiver_cancel).run()),
-    )
+    let cron = Cron::new(path, user_data, receiver, receiver_cancel);
+    CronSink::new(sender, sender_cancel, spawn(move || cron.run()))
 }
