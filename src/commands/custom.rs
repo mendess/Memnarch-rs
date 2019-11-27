@@ -1,5 +1,6 @@
 use crate::{consts::FILES_DIR, cron::Task};
 use chrono::{DateTime, Utc};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
@@ -30,10 +31,17 @@ group!({
 
 //#[min_args(2)]
 #[command]
-fn add(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let cmd = args.raw().next().unwrap().to_string();
-    args.advance();
-    let output = args.rest();
+fn add(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+    let mut args_it = args.raw();
+    let fst = args_it.next().unwrap();
+    let decay = if fst == "-d" || fst == "--decay" {
+        true
+    } else {
+        args_it = args.raw();
+        false
+    };
+    let cmd = args_it.next().unwrap().to_string();
+    let output = args_it.join(" ");
     ctx.data
         .write()
         .get_mut::<CustomCommands>()
@@ -42,7 +50,8 @@ fn add(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
         .add(
             msg.guild_id.ok_or_else(|| "guild_id is missing")?,
             cmd,
-            output.to_string(),
+            output,
+            decay,
         )?;
     msg.channel_id.say(&ctx, "Command added!")?;
     Ok(())
@@ -81,7 +90,7 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
             if let Some(cmds) = cmds {
                 let size_hint = cmds.size_hint().0;
                 e.description(cmds.fold(String::with_capacity(size_hint * 5), |d, s| {
-                    d + &format!("- {}\n", s)
+                    d + &format!("- {}\n", s.0)
                 }));
             }
             e.title("List of custom commands")
@@ -90,7 +99,8 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-type GuildCommands = HashMap<String, String>;
+pub type CommandPair = (String, bool);
+type GuildCommands = HashMap<String, CommandPair>;
 
 const CUSTOM_DIR: &str = "custom";
 
@@ -141,15 +151,25 @@ impl CustomCommands {
         Ok(())
     }
 
-    pub fn execute(&mut self, guild_id: GuildId, cmd: &str) -> Result<Option<&str>, IoError> {
+    pub fn execute(
+        &mut self,
+        guild_id: GuildId,
+        cmd: &str,
+    ) -> Result<Option<&CommandPair>, IoError> {
         match self.load(guild_id) {
             Err(e) if e.kind() == IoErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e),
-            Ok(gc) => Ok(gc.get(cmd).map(String::as_str)),
+            Err(e) => Err(dbg!(e)),
+            Ok(gc) => Ok(dbg!(gc.get(cmd))),
         }
     }
 
-    pub fn add(&mut self, guild_id: GuildId, cmd: String, ret: String) -> Result<(), IoError> {
+    pub fn add(
+        &mut self,
+        guild_id: GuildId,
+        cmd: String,
+        ret: String,
+        decay: bool,
+    ) -> Result<(), IoError> {
         let gc = match self.load(guild_id) {
             Ok(gc) => gc,
             Err(e) if e.kind() == IoErrorKind::NotFound => {
@@ -158,7 +178,7 @@ impl CustomCommands {
             }
             Err(e) => return Err(e),
         };
-        gc.insert(cmd, ret);
+        gc.insert(cmd, (ret, decay));
         self.save(guild_id)?;
         Ok(())
     }
@@ -167,18 +187,18 @@ impl CustomCommands {
         match self.load(guild_id) {
             Err(e) if e.kind() == IoErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
-            Ok(gc) => Ok(gc.remove(cmd)),
+            Ok(gc) => Ok(gc.remove(cmd).map(|c| c.0)),
         }
     }
 
     pub fn list(
         &mut self,
         guild_id: GuildId,
-    ) -> Result<Option<impl Iterator<Item = &str>>, IoError> {
+    ) -> Result<Option<impl Iterator<Item = &CommandPair>>, IoError> {
         match self.load(guild_id) {
             Err(e) if e.kind() == IoErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
-            Ok(gc) => Ok(Some(gc.values().map(String::as_str))),
+            Ok(gc) => Ok(Some(gc.values())),
         }
     }
 }

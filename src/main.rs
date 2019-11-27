@@ -184,13 +184,13 @@ fn main() -> std::io::Result<()> {
                 if msg.author.id == bot_id {
                     return;
                 }
+                println!("looking for command: {}", msg.content);
                 let _ = msg
                     .guild_id
                     .ok_or_else(|| "guild_id is missing".to_string())
                     .and_then(|g| {
-                        if let Some(o) = ctx
-                            .data
-                            .write()
+                        let mut share_map = ctx.data.write();
+                        let decay = if let Some((o, decay)) = share_map
                             .get_mut::<CustomCommands>()
                             .unwrap()
                             .write()
@@ -198,7 +198,11 @@ fn main() -> std::io::Result<()> {
                             .map_err(|e| e.to_string())?
                         {
                             let m = msg.channel_id.say(&ctx, o).map_err(|e| e.to_string())?;
-                            let mut share_map = ctx.data.write();
+                            Some((*decay, m))
+                        } else {
+                            None
+                        };
+                        if let Some((true, m)) = decay {
                             let cron = share_map.get_mut::<CronSink<MessageDecay>>().unwrap();
                             cron.send(MessageDecay::new(m, Utc::now() + Duration::hours(1)))
                                 .map_err(|_| "Couldn't decay bot message".to_string())?;
