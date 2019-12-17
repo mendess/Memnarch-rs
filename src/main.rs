@@ -184,6 +184,9 @@ fn main() -> std::io::Result<()> {
                 if msg.author.id == bot_id {
                     return;
                 }
+                if !msg.content.starts_with("|") {
+                    return;
+                }
                 println!("looking for command: {}", msg.content);
                 let _ = msg
                     .guild_id
@@ -194,7 +197,14 @@ fn main() -> std::io::Result<()> {
                             .get_mut::<CustomCommands>()
                             .unwrap()
                             .write()
-                            .execute(g, &msg.content.split_whitespace().next().unwrap()[1..])
+                            .execute(
+                                g,
+                                &msg.content
+                                    .split_whitespace()
+                                    .next()
+                                    .map(|s| &s[1..])
+                                    .unwrap_or(""),
+                            )
                             .map_err(|e| e.to_string())?
                         {
                             let m = msg.channel_id.say(&ctx, o).map_err(|e| e.to_string())?;
