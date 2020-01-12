@@ -84,14 +84,15 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
     let mut share_map = ctx.data.write();
     let mut cc = share_map.get_mut::<CustomCommands>().unwrap().write();
     let cmds = cc.list(msg.guild_id.ok_or_else(|| "guild_id is missing")?)?;
-    dbg!(cmds.is_some());
     msg.channel_id.send_message(&ctx, |m| {
         m.embed(|e| {
             if let Some(cmds) = cmds {
                 let size_hint = cmds.size_hint().0;
-                e.description(cmds.fold(String::with_capacity(size_hint * 5), |d, s| {
-                    d + &format!("- {}\n", s.0)
-                }));
+                e.description(
+                    cmds.fold(String::with_capacity(size_hint * 5), |d, (key, value)| {
+                        d + &format!("{} - {}\n", key, value)
+                    }),
+                );
             }
             e.title("List of custom commands")
         })
@@ -194,11 +195,11 @@ impl CustomCommands {
     pub fn list(
         &mut self,
         guild_id: GuildId,
-    ) -> Result<Option<impl Iterator<Item = &CommandPair>>, IoError> {
+    ) -> Result<Option<impl Iterator<Item = (&str, &str)>>, IoError> {
         match self.load(guild_id) {
             Err(e) if e.kind() == IoErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
-            Ok(gc) => Ok(Some(gc.values())),
+            Ok(gc) => Ok(Some(gc.iter().map(|(k, v)| (k.as_str(), v.0.as_str())))),
         }
     }
 }
