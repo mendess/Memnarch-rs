@@ -13,11 +13,10 @@ use std::process::Command as Fork;
 use std::str;
 use std::sync::{Mutex, TryLockError};
 
-group!({
-    name: "Owner",
-    options: {owners_only: true},
-    commands: [update],
-});
+#[group]
+#[owners_only]
+#[commands(update)]
+struct Owner;
 
 #[command]
 #[description("Update the bot")]

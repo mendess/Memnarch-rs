@@ -19,6 +19,12 @@ use std::{
 const QUOTES_DIR: &str = "quotes";
 const QUOTES_FILE: &str = "quotes.json";
 
+#[group]
+#[prefix("quote")]
+#[default_command(quote)]
+#[commands(add)]
+struct Quotes;
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct QuoteManager(Vec<String>);
@@ -57,15 +63,6 @@ impl QuoteManager {
 impl TypeMapKey for QuoteManager {
     type Value = Arc<Mutex<QuoteManager>>;
 }
-
-group!({
-    name: "Quotes",
-    options: {
-        prefixes: ["quote"],
-        default_command: quote,
-    },
-    commands: [add],
-});
 
 #[command]
 #[description("Quote briliant minds")]

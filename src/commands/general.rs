@@ -10,17 +10,15 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    http::raw::Http,
+    http::client::Http,
     model::{channel::Message, id::UserId},
     prelude::*,
 };
 use std::{error::Error, sync::Arc};
 
-group!({
-    name: "General",
-    options: {},
-    commands: [ping, who_are_you, vote, remindme],
-});
+#[group]
+#[commands(ping, who_are_you, vote, remindme)]
+struct General;
 
 #[command]
 #[description("Ping me maybe")]

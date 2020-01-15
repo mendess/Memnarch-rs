@@ -11,7 +11,7 @@ use commands::custom::{CustomCommands, CUSTOM_GROUP};
 use commands::general::{Reminder, GENERAL_GROUP};
 use commands::owner::OWNER_GROUP;
 use commands::quotes::QUOTES_GROUP;
-use commands::sfx::{LeaveVoice, SfxStats, SFX_ALIASES_GROUP, SFX_GROUP};
+use commands::sfx::{LeaveVoice, SfxStats, SFXALIASES_GROUP, SFX_GROUP};
 use consts::FILES_DIR;
 use cron::{CronSink, Task};
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ use serenity::{
         help_commands, macros::help, Args, CommandGroup, CommandResult, HelpOptions,
         StandardFramework,
     },
-    http::raw::Http,
+    http::client::Http,
     model::{
         channel::{Channel, Message},
         gateway::Ready,
@@ -31,10 +31,12 @@ use serenity::{
     },
     prelude::*,
 };
-use std::collections::HashSet;
-use std::fs::{DirBuilder, OpenOptions};
-use std::io::Write;
-use std::sync::Arc;
+use std::{
+collections::HashSet,
+fs::{DirBuilder, OpenOptions},
+io::Write,
+sync::Arc,
+};
 
 struct Handler;
 
@@ -240,7 +242,7 @@ fn main() -> std::io::Result<()> {
             })
             .group(&GENERAL_GROUP)
             .group(&SFX_GROUP)
-            .group(&SFX_ALIASES_GROUP)
+            .group(&SFXALIASES_GROUP)
             .group(&OWNER_GROUP)
             .group(&QUOTES_GROUP)
             .group(&CUSTOM_GROUP)

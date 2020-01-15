@@ -29,20 +29,14 @@ use std::{
 const SFX_FILES_DIR: &str = "sfx";
 const SFX_STATS_FILE: &str = "sfx_stats.json";
 
-group!({
-    name: "SFX",
-    options: {
-        prefixes: ["sfx"],
-    },
-    commands: [list, add, play, delete, retreive, stats],
-});
+#[group]
+#[prefix("sfx")]
+#[commands(list, add, play, delete, retreive, stats)]
+struct SFX;
 
-group!({
-    name: "SFX_Aliases",
-    // help_available: false,
-    options: {},
-    commands: [play],
-});
+#[group]
+#[commands(play)]
+struct SFXAliases;
 
 #[derive(Debug, Clone)]
 pub struct SfxStats(Arc<Mutex<HashMap<String, usize>>>);

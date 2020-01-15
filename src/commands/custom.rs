@@ -7,7 +7,7 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    http::raw::Http,
+    http::client::Http,
     model::{channel::Message, id::GuildId},
     prelude::*,
 };
@@ -21,13 +21,10 @@ use std::{
     sync::Arc,
 };
 
-group!({
-    name: "Custom",
-    options: {
-        prefixes: ["custom"],
-    },
-    commands: [add, remove, list],
-});
+#[group]
+#[prefix("custom")]
+#[commands(add, remove, list)]
+struct Custom;
 
 //#[min_args(2)]
 #[command]
