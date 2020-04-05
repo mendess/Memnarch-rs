@@ -22,7 +22,7 @@ use std::{
     error::Error,
     fs::{self, DirBuilder, File, OpenOptions},
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -150,13 +150,20 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
             .get::<VoiceManager>()
             .expect("Expected VoiceManager in ShareMap");
         let mut manager = manager_id.lock();
-        match manager.join(guild_id, connect_to) {
-            Some(_) => msg
-                .channel_id
-                .say(&ctx, &format!("Joined {}", connect_to.mention())),
-            None => msg.channel_id.say(&ctx, "Error joining"),
-        }?;
+        if let None = manager.join(guild_id, connect_to) {
+            msg.channel_id.say(&ctx, "Error joining")?;
+            return Err("Failed to join channel".into());
+        }
         let file = find_file(&args)?;
+        msg.channel_id.say(
+            &ctx,
+            &format!(
+                "Playing {}",
+                file.file_name()
+                    .unwrap_or(std::ffi::OsStr::new(""))
+                    .to_string_lossy()
+            ),
+        )?;
         eprintln!("Playing sfx: {:?}", file);
         if let Some(handler) = manager.get_mut(guild_id) {
             let source = voice::ffmpeg(&file)?;
@@ -191,7 +198,7 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 #[description("List the available sfx files")]
 #[usage("")]
 fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let sounds = fs::read_dir(sfx_path::<&str,_>(None)).map(|x| {
+    let sounds = fs::read_dir(sfx_path::<&str, _>(None)).map(|x| {
         let mut files = x
             .filter_map(Result::ok)
             .map(|x| String::from(x.path().as_path().file_name().unwrap().to_string_lossy()))
@@ -295,7 +302,12 @@ fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
                 (
                     format!("{}-{}", c1, c2),
                     f.iter().fold(String::new(), |acc, x| {
-                        acc + "\n" + &format!("{}\t{}", x.0, x.1)
+                        acc + "\n"
+                            + &format!(
+                                "{:<5}{}",
+                                x.1,
+                                Path::new(&x.0).file_name().unwrap().to_string_lossy()
+                            )
                     }),
                     true,
                 )
@@ -307,7 +319,7 @@ fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 fn find_file(search_string: &Args) -> io::Result<PathBuf> {
     use std::io::{Error, ErrorKind::NotFound};
-    let (search, vec) = fs::read_dir(sfx_path::<&str,_>(None))?
+    let (search, vec) = fs::read_dir(sfx_path::<&str, _>(None))?
         .filter_map(Result::ok)
         .enumerate()
         .fold(

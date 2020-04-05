@@ -113,11 +113,13 @@ impl Task for Reminder {
 #[description(
     "Set a reminder for later.
               The time parameters allowed are:
-              - seconds (s|secs|second)
-              - minutes (m|mins|minutes)
+              - seconds (s|sec|secs|seconds)
+              - minutes (m|min|mins|minutes)
               - hours (h|hours)
               - days (d|days)
               - weeks (w|weeks)
+              - months (month|months)
+              - years (year|years)
               "
 )]
 #[usage("delay message")]
@@ -125,11 +127,13 @@ impl Task for Reminder {
 #[example("4m Remind me in 4 minutes")]
 fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     lazy_static! {
-        static ref SECONDS: Regex = Regex::new("(s|secs|seconds)$").unwrap();
-        static ref MINUTES: Regex = Regex::new("(m|mins|minutes)$").unwrap();
+        static ref SECONDS: Regex = Regex::new("(s|sec|secs|seconds)$").unwrap();
+        static ref MINUTES: Regex = Regex::new("(m|min|mins|minutes)$").unwrap();
         static ref HOURS: Regex = Regex::new("(h|hours)$").unwrap();
         static ref DAYS: Regex = Regex::new("(d|days)$").unwrap();
         static ref WEEKS: Regex = Regex::new("(w|weeks)$").unwrap();
+        static ref MONTHS: Regex = Regex::new("months?$").unwrap();
+        static ref YEARS: Regex = Regex::new("years?$").unwrap();
     };
     let timeout = {
         let time = args.raw().next().unwrap();
@@ -144,6 +148,10 @@ fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
             Ok(Duration::days(i64::from(parse(m)?)))
         } else if let Some(m) = WEEKS.find(time) {
             Ok(Duration::weeks(i64::from(parse(m)?)))
+        } else if let Some(m) = MONTHS.find(time) {
+            Ok(Duration::days(30 * i64::from(parse(m)?)))
+        } else if let Some(m) = YEARS.find(time) {
+            Ok(Duration::days(365 * i64::from(parse(m)?)))
         } else {
             Err("Invalid time specifier")
         }
