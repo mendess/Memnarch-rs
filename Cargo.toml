@@ -15,7 +15,9 @@ regex = "1"
 lazy_static = "1"
 
 [dependencies.serenity]
-version = "0.8.0"
+version = "0.8.6"
+git = "https://github.com/mendess/serenity"
+branch = "current"
 features = ["framework", "standard_framework", "voice"]
 
 [features]

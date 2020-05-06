@@ -56,7 +56,7 @@ impl SfxStats {
                 .ok()
                 .and_then(|f| {
                     serde_json::from_reader(f)
-                        .map_err(|e| eprintln!("Error loading sfx stats: '{}", e))
+                        .map_err(|e| eprintln!("Error loading sfx stats: '{}'", e))
                         .ok()
                 })
                 .unwrap_or_else(Default::default),

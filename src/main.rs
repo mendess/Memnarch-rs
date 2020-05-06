@@ -32,10 +32,10 @@ use serenity::{
     prelude::*,
 };
 use std::{
-collections::HashSet,
-fs::{DirBuilder, OpenOptions},
-io::Write,
-sync::Arc,
+    collections::HashSet,
+    fs::{DirBuilder, OpenOptions},
+    io::Write,
+    sync::Arc,
 };
 
 struct Handler;
@@ -46,7 +46,7 @@ impl EventHandler for Handler {
         ctx: Context,
         guild_id: Option<GuildId>,
         old: Option<VoiceState>,
-        _new: VoiceState,
+        new: VoiceState,
     ) {
         let current_user = match Http::get_current_user(ctx.as_ref()) {
             Ok(user) => user,
@@ -82,6 +82,23 @@ impl EventHandler for Handler {
                     .map_err(|e| eprintln!("{:?}", e))
                     .ok();
             };
+        }
+        if let (Some(gid @ GuildId(352399774818762759)), Some(id @ ChannelId(707561909846802462))) =
+            (guild_id, new.channel_id)
+        {
+            id.to_channel(&ctx)
+                .and_then(|c| {
+                    c.guild()
+                        .ok_or_else(|| serenity::Error::Other("Not a guild channel"))
+                })
+                .and_then(|c| c.read().members(&ctx))
+                .and_then(|members| {
+                    members
+                        .iter()
+                        .try_for_each(|m| gid.disconnect_member(&ctx, m))
+                })
+                .map_err(|e| eprintln!("Failed to disconnect user: {}", e))
+                .ok();
         }
     }
 
