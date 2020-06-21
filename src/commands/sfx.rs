@@ -235,8 +235,8 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[usage("{Attatchment}")]
 fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
     for attachment in msg.attachments.iter() {
-        if attachment.size > 204_800 * 2 {
-            return Err("File size too high, please keep it under 400Kb."
+        if attachment.size > 1024 * 1024 {
+            return Err("File size too high, please keep it under 1Mb."
                 .to_string()
                 .into());
         }
@@ -254,7 +254,7 @@ fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[min_args(1)]
-#[owners_only]
+#[checks("is_friend")]
 #[description("Remove an sfx file")]
 #[usage("part of name")]
 #[example("wow")]
@@ -266,8 +266,7 @@ fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
-#[aliases("get")]
-#[min_args(1)]
+#[aliases("get")] #[min_args(1)]
 #[description("Upload an sfx file to discord")]
 #[usage("part of name")]
 #[example("wow")]
@@ -332,11 +331,13 @@ fn find_file(search_string: &Args) -> io::Result<PathBuf> {
         );
     let search_string = search_string.rest();
     match &search.search(search_string) {
-        v if !v.is_empty() => Ok(vec[v[0]].path()),
-        _ => Err(Error::new(
+        match v.get(0) {
+            Some(i) => { Ok(vec[i].path()) },
+            None =>Err(Error::new(
             NotFound,
             format!("No matches for {}", search_string),
-        )),
+        ))
+        }
     }
 }
 
