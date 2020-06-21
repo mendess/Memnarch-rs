@@ -202,6 +202,7 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
         let mut files = x
             .filter_map(Result::ok)
             .map(|x| String::from(x.path().as_path().file_name().unwrap().to_string_lossy()))
+            .map(unicase::UniCase::new)
             .collect::<Vec<_>>();
         files.sort_unstable();
         files
@@ -266,7 +267,8 @@ fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
-#[aliases("get")] #[min_args(1)]
+#[aliases("get")]
+#[min_args(1)]
 #[description("Upload an sfx file to discord")]
 #[usage("part of name")]
 #[example("wow")]
@@ -330,14 +332,12 @@ fn find_file(search_string: &Args) -> io::Result<PathBuf> {
             },
         );
     let search_string = search_string.rest();
-    match &search.search(search_string) {
-        match v.get(0) {
-            Some(i) => { Ok(vec[i].path()) },
-            None =>Err(Error::new(
+    match search.search(search_string).get(0) {
+        Some(&i) => Ok(vec[i].path()),
+        None => Err(Error::new(
             NotFound,
             format!("No matches for {}", search_string),
-        ))
-        }
+        )),
     }
 }
 

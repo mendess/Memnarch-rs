@@ -557,6 +557,7 @@ dependencies = [
  "serde_json 1.0.52 (registry+https://github.com/rust-lang/crates.io-index)",
  "serenity 0.8.6 (git+https://github.com/mendess/serenity?branch=current)",
  "simsearch 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicase 2.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
