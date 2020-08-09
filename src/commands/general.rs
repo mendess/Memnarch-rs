@@ -3,7 +3,7 @@ use crate::cron::{CronSink, Task};
 
 use chrono::{DateTime, Duration, Utc};
 use lazy_static::lazy_static;
-use regex::{Match, Regex};
+use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
@@ -127,30 +127,33 @@ impl Task for Reminder {
 #[example("4m Remind me in 4 minutes")]
 fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     lazy_static! {
-        static ref SECONDS: Regex = Regex::new("(s|sec|secs|seconds)$").unwrap();
-        static ref MINUTES: Regex = Regex::new("(m|min|mins|minutes)$").unwrap();
-        static ref HOURS: Regex = Regex::new("(h|hours)$").unwrap();
-        static ref DAYS: Regex = Regex::new("(d|days)$").unwrap();
-        static ref WEEKS: Regex = Regex::new("(w|weeks)$").unwrap();
-        static ref MONTHS: Regex = Regex::new("months?$").unwrap();
-        static ref YEARS: Regex = Regex::new("years?$").unwrap();
+        static ref SECONDS: Regex = Regex::new(r"\d+(s|sec|secs|seconds?|segundos?)$").unwrap();
+        static ref MINUTES: Regex = Regex::new(r"\d+(m|min|mins|minutes?|minutos?)$").unwrap();
+        static ref HOURS: Regex = Regex::new(r"\d+(h|hours?|horas?)$").unwrap();
+        static ref DAYS: Regex = Regex::new(r"\d+(d|days?|dias?)$").unwrap();
+        static ref WEEKS: Regex = Regex::new(r"\d+(w|weeks?|semanas?)$").unwrap();
+        static ref MONTHS: Regex = Regex::new(r"\d+(months?|mes(es)?)$").unwrap();
+        static ref YEARS: Regex = Regex::new(r"\d+(y|year|years)$").unwrap();
     };
     let timeout = {
         let time = args.raw().next().unwrap();
-        let parse = |m: Match| time[..m.start()].parse::<u32>();
-        if let Some(m) = SECONDS.find(time) {
+        let parse = |c: Captures| {
+            c.get(0).unwrap().as_str();
+            time[..c.get(1).unwrap().start()].parse::<u32>()
+        };
+        if let Some(m) = SECONDS.captures(time) {
             Ok(Duration::seconds(i64::from(parse(m)?)))
-        } else if let Some(m) = MINUTES.find(time) {
+        } else if let Some(m) = MINUTES.captures(time) {
             Ok(Duration::minutes(i64::from(parse(m)?)))
-        } else if let Some(m) = HOURS.find(time) {
+        } else if let Some(m) = HOURS.captures(time) {
             Ok(Duration::hours(i64::from(parse(m)?)))
-        } else if let Some(m) = DAYS.find(time) {
+        } else if let Some(m) = DAYS.captures(time) {
             Ok(Duration::days(i64::from(parse(m)?)))
-        } else if let Some(m) = WEEKS.find(time) {
+        } else if let Some(m) = WEEKS.captures(time) {
             Ok(Duration::weeks(i64::from(parse(m)?)))
-        } else if let Some(m) = MONTHS.find(time) {
+        } else if let Some(m) = MONTHS.captures(time) {
             Ok(Duration::days(30 * i64::from(parse(m)?)))
-        } else if let Some(m) = YEARS.find(time) {
+        } else if let Some(m) = YEARS.captures(time) {
             Ok(Duration::days(365 * i64::from(parse(m)?)))
         } else {
             Err("Invalid time specifier")
