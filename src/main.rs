@@ -6,12 +6,14 @@ mod cron;
 mod permissions;
 
 use chrono::{Duration, Utc};
-use commands::custom::MessageDecay;
-use commands::custom::{CustomCommands, CUSTOM_GROUP};
-use commands::general::{Reminder, GENERAL_GROUP};
-use commands::owner::OWNER_GROUP;
-use commands::quotes::QUOTES_GROUP;
-use commands::sfx::{LeaveVoice, SfxStats, SFXALIASES_GROUP, SFX_GROUP};
+use commands::{
+    custom::{CustomCommands, MessageDecay, CUSTOM_GROUP},
+    general::{Reminder, GENERAL_GROUP},
+    owner::OWNER_GROUP,
+    quotes::QUOTES_GROUP,
+    sfx::{LeaveVoice, SfxStats, SFXALIASES_GROUP, SFX_GROUP},
+    interrail::{INTERRAIL_GROUP, InterrailConfig},
+};
 use consts::FILES_DIR;
 use cron::{CronSink, Task};
 use serde::{Deserialize, Serialize};
@@ -83,6 +85,7 @@ impl EventHandler for Handler {
                     .ok();
             };
         }
+        // Disconnect channel of mirrodin
         if let (Some(gid @ GuildId(352399774818762759)), Some(id @ ChannelId(707561909846802462))) =
             (guild_id, new.channel_id)
         {
@@ -179,6 +182,7 @@ fn main() -> std::io::Result<()> {
         data.insert::<CronSink<LeaveVoice>>(vc_cron_sink);
         data.insert::<CronSink<MessageDecay>>(md_cron_sink);
         data.insert::<CustomCommands>(Arc::new(RwLock::new(Default::default())));
+        data.insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())));
         if let Some(id) = std::env::args()
             .skip_while(|x| x != "-r")
             .nth(1)
@@ -263,6 +267,7 @@ fn main() -> std::io::Result<()> {
             .group(&OWNER_GROUP)
             .group(&QUOTES_GROUP)
             .group(&CUSTOM_GROUP)
+            .group(&INTERRAIL_GROUP)
             .help(&MY_HELP),
     );
 
