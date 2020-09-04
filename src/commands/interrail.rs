@@ -40,9 +40,10 @@ impl TypeMapKey for InterrailConfig {
 struct Interrail;
 
 #[command]
-#[description("Make the bot send a message to a specific channel")]
+#[description("Create a new story")]
 #[usage("message")]
 #[checks("is_interrail_channel")]
+#[aliases("n")]
 #[min_args(2)]
 pub fn new(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     if let Some(config) = ctx.data.read().get::<InterrailConfig>() {
@@ -54,9 +55,10 @@ pub fn new(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
-#[description("Edit a message sent by the bot")]
+#[description("Edit an existing story")]
 #[usage("#message_id message")]
 #[checks("is_interrail_channel")]
+#[aliases("e")]
 #[min_args(2)]
 pub fn edit(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let msg_id = args.single::<u64>()?;
