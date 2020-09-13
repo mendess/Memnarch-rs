@@ -67,21 +67,22 @@ where
         user_data: T::GlobalData,
         channel: Receiver<T>,
         cancel: Receiver<T::Id>,
-    ) -> Self {
-        let path = [FILES_DIR, CRON_DIR, path]
-            .iter()
-            .collect::<PathBuf>();
+    ) -> std::io::Result<Self> {
+        let path = [FILES_DIR, CRON_DIR, path].iter().collect::<PathBuf>();
+        DirBuilder::new()
+            .recursive(true)
+            .create(path.parent().unwrap())?;
         let tasks = File::open(&path)
-            .map_err(|e| eprintln!("{:?}", e))
+            .map_err(|e| eprintln!("Failed to open tasks file for {}: {:?}", path.display(), e))
             .and_then(|f| from_reader(f).map_err(|e| eprintln!("Error parsing cron.json: {}", e)))
             .unwrap_or_else(|_| Vec::new());
-        Self {
+        Ok(Self {
             channel,
             cancel,
             user_data,
             tasks,
             path: path.into_boxed_path(),
-        }
+        })
     }
 
     fn receive(&mut self) -> TryRecvError {
@@ -93,7 +94,7 @@ where
                     if self.tasks.is_empty() {
                         // If the channel has been disconnected and there are no
                         // more tasks we can terminate this thread.
-                        eprintln!("{:?}", e);
+                        eprintln!("Channel disconnected for {}: {:?}", self.path.display(), e);
                         break TryRecvError::Disconnected;
                     }
                 }
@@ -108,7 +109,7 @@ where
                 Err(TryRecvError::Empty) => break TryRecvError::Empty,
                 Err(e) => {
                     if self.tasks.is_empty() {
-                        eprintln!("{:?}", e);
+                        eprintln!("Cancel channel disconneted for {}: {:?}", self.path.display(), e);
                         break TryRecvError::Disconnected;
                     }
                 }
@@ -185,5 +186,12 @@ where
     let (sender, receiver) = sync_channel(5);
     let (sender_cancel, receiver_cancel) = sync_channel(5);
     let cron = Cron::new(path, user_data, receiver, receiver_cancel);
-    CronSink::new(sender, sender_cancel, spawn(move || cron.run()))
+    CronSink::new(
+        sender,
+        sender_cancel,
+        spawn(move || match cron {
+            Ok(cron) => cron.run(),
+            Err(e) => eprintln!("Warning: cron is not running: {:?}", e),
+        }),
+    )
 }

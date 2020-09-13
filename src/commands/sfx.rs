@@ -46,13 +46,18 @@ impl TypeMapKey for SfxStats {
 }
 
 impl SfxStats {
-    fn path() -> PathBuf {
-        [FILES_DIR, SFX_STATS_FILE].iter().collect()
+    fn path() -> io::Result<PathBuf> {
+        let p = [FILES_DIR, SFX_STATS_FILE].iter().collect::<PathBuf>();
+        DirBuilder::new()
+            .recursive(true)
+            .create(p.parent().expect("This path always has enough components"))?;
+        Ok(p)
     }
 
     pub fn new() -> Self {
         SfxStats(Arc::new(Mutex::new(
-            File::open(Self::path())
+            Self::path()
+                .and_then(|p| File::open(p))
                 .ok()
                 .and_then(|f| {
                     serde_json::from_reader(f)
@@ -68,7 +73,7 @@ impl SfxStats {
         stats
             .entry(sfx.to_string())
             .and_modify(|c| *c += 1)
-            .or_insert(0);
+            .or_insert(1);
         fn map_err<E: std::fmt::Debug>(sfx: &str, e: E) -> String {
             format!(
                 "[SFX|{}] Failed to update {}, Error {:?}",
@@ -79,12 +84,8 @@ impl SfxStats {
         };
         let mf = |e| map_err(sfx, e);
         let mj = |e| map_err(sfx, e);
-        let path = Self::path();
-        DirBuilder::new()
-            .recursive(true)
-            .create(path.parent().unwrap())
-            .map_err(mf)?;
-        File::create(path)
+        Self::path()
+            .and_then(|path| File::create(path))
             .map_err(mf)
             .and_then(|f| serde_json::to_writer(f, &*stats).map_err(mj))
     }
@@ -198,7 +199,7 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 #[description("List the available sfx files")]
 #[usage("")]
 fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let sounds = fs::read_dir(sfx_path::<&str, _>(None)).map(|x| {
+    let sounds = fs::read_dir(sfx_path::<&str, _>(None)?).map(|x| {
         let mut files = x
             .filter_map(Result::ok)
             .map(|x| String::from(x.path().as_path().file_name().unwrap().to_string_lossy()))
@@ -242,10 +243,7 @@ fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
                 .into());
         }
         let bytes = attachment.download()?;
-        let path = sfx_path(&attachment.filename);
-        DirBuilder::new()
-            .recursive(true)
-            .create(path.parent().unwrap())?;
+        let path = sfx_path(&attachment.filename)?;
         let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
         file.write_all(&bytes)?;
         msg.channel_id.say(&ctx, "File added!")?;
@@ -320,7 +318,7 @@ fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 fn find_file(search_string: &Args) -> io::Result<PathBuf> {
     use std::io::{Error, ErrorKind::NotFound};
-    let (search, vec) = fs::read_dir(sfx_path::<&str, _>(None))?
+    let (search, vec) = fs::read_dir(sfx_path::<&str, _>(None)?)?
         .filter_map(Result::ok)
         .enumerate()
         .fold(
@@ -341,9 +339,17 @@ fn find_file(search_string: &Args) -> io::Result<PathBuf> {
     }
 }
 
-fn sfx_path<S: AsRef<str>, F: Into<Option<S>>>(file: F) -> PathBuf {
-    match file.into() {
+fn sfx_path<S: AsRef<str>, F: Into<Option<S>>>(file: F) -> io::Result<PathBuf> {
+    let p: PathBuf = match file.into() {
         Some(f) => [FILES_DIR, SFX_FILES_DIR, f.as_ref()].iter().collect(),
         None => [FILES_DIR, SFX_FILES_DIR].iter().collect(),
-    }
+    };
+    DirBuilder::new()
+        .recursive(true)
+        .create(if p.components().count() > 2 {
+            p.parent().unwrap()
+        } else {
+            p.as_path()
+        })?;
+    Ok(p)
 }

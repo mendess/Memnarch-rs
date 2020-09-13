@@ -30,12 +30,19 @@ struct Quotes;
 pub struct QuoteManager(Vec<String>);
 
 impl QuoteManager {
-    fn path() -> PathBuf {
-        [FILES_DIR, QUOTES_DIR, QUOTES_FILE].iter().collect()
+    fn path() -> std::io::Result<PathBuf> {
+        let p = [FILES_DIR, QUOTES_DIR, QUOTES_FILE]
+            .iter()
+            .collect::<PathBuf>();
+        DirBuilder::new()
+            .recursive(true)
+            .create(p.parent().expect("This path always has enough components"))?;
+        Ok(p)
     }
 
     fn load() -> Self {
-        File::open(Self::path())
+        Self::path()
+            .and_then(|p| File::open(p))
             .and_then(|file| {
                 serde_json::from_reader(file).map_err(|e| {
                     eprintln!("Error parsing quotes");
@@ -51,11 +58,8 @@ impl QuoteManager {
 
     fn add(&mut self, quote: String) -> std::io::Result<()> {
         self.0.push(quote);
-        let path = Self::path();
+        let path = Self::path()?;
         println!("Quote add: {:?}", path);
-        DirBuilder::new()
-            .recursive(true)
-            .create(path.parent().unwrap())?;
         serde_json::to_writer(File::create(path)?, self).map_err(Into::into)
     }
 }

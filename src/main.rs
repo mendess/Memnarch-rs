@@ -9,10 +9,10 @@ use chrono::{Duration, Utc};
 use commands::{
     custom::{CustomCommands, MessageDecay, CUSTOM_GROUP},
     general::{Reminder, GENERAL_GROUP},
+    interrail::{InterrailConfig, INTERRAIL_GROUP},
     owner::OWNER_GROUP,
     quotes::QUOTES_GROUP,
     sfx::{LeaveVoice, SfxStats, SFXALIASES_GROUP, SFX_GROUP},
-    interrail::{INTERRAIL_GROUP, InterrailConfig},
 };
 use consts::FILES_DIR;
 use cron::{CronSink, Task};
@@ -52,7 +52,7 @@ impl EventHandler for Handler {
     ) {
         let current_user = match Http::get_current_user(ctx.as_ref()) {
             Ok(user) => user,
-            Err(e) => return eprintln!("{:?}", e),
+            Err(e) => return eprintln!("Failed to get current user {:?}", e),
         };
         let has_bot = |members: &Vec<Member>| {
             members
@@ -81,7 +81,7 @@ impl EventHandler for Handler {
                     .get::<CronSink<LeaveVoice>>()
                     .unwrap()
                     .cancel(guild_id)
-                    .map_err(|e| eprintln!("{:?}", e))
+                    .map_err(|e| eprintln!("Failed to cancel a leave voice cron {:?}", e))
                     .ok();
             };
         }

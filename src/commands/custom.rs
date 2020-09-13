@@ -112,17 +112,21 @@ impl TypeMapKey for CustomCommands {
 }
 
 impl CustomCommands {
-    fn save_path(guild_id: GuildId) -> PathBuf {
-        [FILES_DIR, CUSTOM_DIR, &format!("{}.json", guild_id)]
+    fn save_path(guild_id: GuildId) -> Result<PathBuf, IoError> {
+        let p = [FILES_DIR, CUSTOM_DIR, &format!("{}.json", guild_id)]
             .iter()
-            .collect()
+            .collect::<PathBuf>();
+        DirBuilder::new()
+            .recursive(true)
+            .create(p.parent().expect("This path always has enough components"))?;
+        Ok(p)
     }
 
     fn load(&mut self, guild_id: GuildId) -> Result<&mut GuildCommands, IoError> {
         let commands = match self.cmds.entry(guild_id) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
-                let path = Self::save_path(guild_id);
+                let path = Self::save_path(guild_id)?;
                 let gc = serde_json::from_reader(File::open(&path)?).map_err(|e| {
                     eprintln!("Error parsing custom commands: '{}'", e);
                     e
@@ -139,10 +143,10 @@ impl CustomCommands {
             .create([FILES_DIR, CUSTOM_DIR].iter().collect::<PathBuf>())?;
         match guild_id.into() {
             Some(g) => {
-                serde_json::to_writer(File::create(Self::save_path(g))?, &self.cmds[&g])?;
+                serde_json::to_writer(File::create(Self::save_path(g)?)?, &self.cmds[&g])?;
             }
             None => self.cmds.keys().try_for_each(|k| -> Result<(), IoError> {
-                serde_json::to_writer(File::create(Self::save_path(*k))?, &self.cmds[k])
+                serde_json::to_writer(File::create(Self::save_path(*k)?)?, &self.cmds[k])
                     .map_err(|e| e.into())
             })?,
         }
