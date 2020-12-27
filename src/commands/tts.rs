@@ -14,9 +14,9 @@ use std::{error::Error, sync::RwLock};
 use crate::commands::sfx::STOP_COMMAND;
 
 #[group]
-#[commands(tts, save, config, list, stop)]
+#[commands(say, save, config, list, stop)]
 #[prefix("tts")]
-#[default_command(tts)]
+#[default_command(say)]
 struct Tts;
 
 #[command]
@@ -24,7 +24,7 @@ struct Tts;
 #[description("play a tts message over voice")]
 #[usage("text")]
 #[example("pogchamp")]
-pub fn tts(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+pub fn say(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     crate::commands::sfx::play_sfx(ctx, msg, || {
         let text = args.rest();
         let tts_link = generate_tts(
