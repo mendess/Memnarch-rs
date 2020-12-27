@@ -31,7 +31,7 @@ const SFX_STATS_FILE: &str = "sfx_stats.json";
 
 #[group]
 #[prefix("sfx")]
-#[commands(list, add, play, delete, retreive, stats)]
+#[commands(list, add, play, delete, retreive, stats, stop)]
 struct SFX;
 
 #[group]
@@ -123,6 +123,23 @@ impl Task for LeaveVoice {
 }
 
 #[command]
+#[description("Stops everything")]
+pub fn stop(ctx: &mut Context, msg: &Message) -> CommandResult {
+    let guild_id = msg.guild_id.ok_or_else(|| String::from("Not in a guild"))?;
+    let share_map = ctx.data.read();
+    let manager_id = share_map
+        .get::<VoiceManager>()
+        .expect("Expected VoiceManager in ShareMap");
+    let mut manager = manager_id.lock();
+    if let Some(handler) = manager.get_mut(guild_id) {
+        handler.stop();
+    } else {
+        return Err("Not in a voice channel".into());
+    }
+    Ok(())
+}
+
+#[command]
 #[aliases("s")]
 #[min_args(1)]
 #[description("Play a saved sfx!")]
@@ -190,7 +207,7 @@ where
     if let Some(gid) = msg.guild_id {
         let leave = LeaveVoice {
             when: Utc::now()
-                .checked_add_signed(Duration::seconds(30))
+                .checked_add_signed(Duration::minutes(30))
                 .unwrap(),
             guild_id: gid,
         };

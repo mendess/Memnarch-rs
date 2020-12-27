@@ -15,8 +15,21 @@ use std::sync::{Mutex, TryLockError};
 
 #[group]
 #[owners_only]
-#[commands(update)]
+#[commands(update, restart)]
 struct Owner;
+
+#[command]
+#[description("Reboots the bot")]
+#[aliases("reboot")]
+fn restart(ctx: &mut Context, msg: &Message) -> CommandResult {
+    msg.channel_id.say(ctx, "Rebooting...")?;
+    std::env::set_var("RUST_BACKTRACE", "1");
+    let error = Fork::new("cargo")
+        .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
+        .exec();
+    std::env::remove_var("RUST_BACKTRACE");
+    Err(error.into())
+}
 
 #[command]
 #[description("Update the bot")]
@@ -88,11 +101,5 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
     }
     check_msg(message)?;
 
-    msg.channel_id.say(ctx, "Rebooting...")?;
-    std::env::set_var("RUST_BACKTRACE", "1");
-    let error = Fork::new("cargo")
-        .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
-        .exec();
-    std::env::remove_var("RUST_BACKTRACE");
-    Err(error.into())
+    restart(ctx, msg, _args)
 }
