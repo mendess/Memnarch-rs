@@ -13,6 +13,7 @@ use commands::{
     owner::OWNER_GROUP,
     quotes::QUOTES_GROUP,
     sfx::{LeaveVoice, SfxStats, SFXALIASES_GROUP, SFX_GROUP},
+    tts::TTS_GROUP,
 };
 use consts::FILES_DIR;
 use cron::{CronSink, Task};
@@ -268,6 +269,7 @@ fn main() -> std::io::Result<()> {
             .group(&QUOTES_GROUP)
             .group(&CUSTOM_GROUP)
             .group(&INTERRAIL_GROUP)
+            .group(&TTS_GROUP)
             .help(&MY_HELP),
     );
 

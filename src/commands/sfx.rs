@@ -128,33 +128,8 @@ impl Task for LeaveVoice {
 #[description("Play a saved sfx!")]
 #[usage("part of name")]
 #[example("wow")]
-fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    let guild = msg
-        .guild(&ctx.cache)
-        .ok_or_else(|| "Groups and DMs not supported".to_string())?;
-    let guild_id = { guild.read().id };
-    let connect_to = guild
-        .read()
-        .voice_states
-        .get(&msg.author.id)
-        .and_then(|voice_state| voice_state.channel_id)
-        .ok_or_else(|| "Not in a voice channel".to_string())?;
-    let file = {
-        let share_map = ctx.data.read();
-        let cron_sink = share_map
-            .get::<CronSink<LeaveVoice>>()
-            .expect("Expected VoiceManager in ShareMap");
-        if let Some(gid) = msg.guild_id {
-            cron_sink.cancel(gid)?;
-        }
-        let manager_id = share_map
-            .get::<VoiceManager>()
-            .expect("Expected VoiceManager in ShareMap");
-        let mut manager = manager_id.lock();
-        if let None = manager.join(guild_id, connect_to) {
-            msg.channel_id.say(&ctx, "Error joining")?;
-            return Err("Failed to join channel".into());
-        }
+pub fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+    play_sfx(ctx, msg, || {
         let file = find_file(&args)?;
         msg.channel_id.say(
             &ctx,
@@ -166,31 +141,61 @@ fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
             ),
         )?;
         eprintln!("Playing sfx: {:?}", file);
-        if let Some(handler) = manager.get_mut(guild_id) {
-            let source = voice::ffmpeg(&file)?;
-            handler.play(source);
-        } else {
-            return Err("Not in a voice channel".into());
-        }
-        if let Some(gid) = msg.guild_id {
-            let leave = LeaveVoice {
-                when: Utc::now()
-                    .checked_add_signed(Duration::seconds(30))
-                    .unwrap(),
-                guild_id: gid,
-            };
-            cron_sink.send(leave)?;
-        }
-        file
-    };
-    let mut share_map = ctx.data.write();
-    share_map
-        .get_mut::<SfxStats>()
-        .expect("Expected SfxStats in ShareMap")
-        .update(file.as_os_str().to_str().unwrap())
-        .err()
-        .iter()
-        .for_each(|e| eprintln!("{}", e));
+        let mut share_map = ctx.data.write();
+        share_map
+            .get_mut::<SfxStats>()
+            .expect("Expected SfxStats in ShareMap")
+            .update(file.as_os_str().to_str().unwrap())
+            .err()
+            .iter()
+            .for_each(|e| eprintln!("{}", e));
+        Ok(voice::ffmpeg(&file)?)
+    })
+}
+
+pub fn play_sfx<F>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
+where
+    F: FnOnce() -> Result<Box<dyn voice::AudioSource>, Box<dyn Error>>,
+{
+    let guild = msg
+        .guild(&ctx.cache)
+        .ok_or_else(|| "Groups and DMs not supported".to_string())?;
+    let guild_id = { guild.read().id };
+    let connect_to = guild
+        .read()
+        .voice_states
+        .get(&msg.author.id)
+        .and_then(|voice_state| voice_state.channel_id)
+        .ok_or_else(|| "Not in a voice channel".to_string())?;
+    let share_map = ctx.data.read();
+    let cron_sink = share_map
+        .get::<CronSink<LeaveVoice>>()
+        .expect("Expected VoiceManager in ShareMap");
+    if let Some(gid) = msg.guild_id {
+        cron_sink.cancel(gid)?;
+    }
+    let manager_id = share_map
+        .get::<VoiceManager>()
+        .expect("Expected VoiceManager in ShareMap");
+    let mut manager = manager_id.lock();
+    if let None = manager.join(guild_id, connect_to) {
+        msg.channel_id.say(&ctx, "Error joining")?;
+        return Err("Failed to join channel".into());
+    }
+    if let Some(handler) = manager.get_mut(guild_id) {
+        handler.play(audio_source()?);
+    } else {
+        return Err("Not in a voice channel".into());
+    }
+    if let Some(gid) = msg.guild_id {
+        let leave = LeaveVoice {
+            when: Utc::now()
+                .checked_add_signed(Duration::seconds(30))
+                .unwrap(),
+            guild_id: gid,
+        };
+        cron_sink.send(leave)?;
+    }
 
     Ok(())
 }

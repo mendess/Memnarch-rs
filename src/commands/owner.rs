@@ -69,7 +69,9 @@ fn update(ctx: &mut Context, msg: &Message) -> CommandResult {
     check_msg(message)?;
 
     let message = msg.channel_id.say(&ctx, "Compiling...")?;
-    let out = &Fork::new("cargo").args(&["build", "--release", "-j", "1"]).output()?;
+    let out = &Fork::new("cargo")
+        .args(&["build", "--release", "-j", "1"])
+        .output()?;
     if !out.status.success() {
         return Err(format!(
             "Build Error!

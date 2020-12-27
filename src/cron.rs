@@ -109,7 +109,11 @@ where
                 Err(TryRecvError::Empty) => break TryRecvError::Empty,
                 Err(e) => {
                     if self.tasks.is_empty() {
-                        eprintln!("Cancel channel disconneted for {}: {:?}", self.path.display(), e);
+                        eprintln!(
+                            "Cancel channel disconneted for {}: {:?}",
+                            self.path.display(),
+                            e
+                        );
                         break TryRecvError::Disconnected;
                     }
                 }
