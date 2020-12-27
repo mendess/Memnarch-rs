@@ -146,8 +146,9 @@ pub fn stop(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[usage("part of name")]
 #[example("wow")]
 pub fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+    let mut file = PathBuf::new();
     play_sfx(ctx, msg, || {
-        let file = find_file(&args)?;
+        file = find_file(&args)?;
         msg.channel_id.say(
             &ctx,
             &format!(
@@ -158,16 +159,17 @@ pub fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
             ),
         )?;
         eprintln!("Playing sfx: {:?}", file);
-        let mut share_map = ctx.data.write();
-        share_map
-            .get_mut::<SfxStats>()
-            .expect("Expected SfxStats in ShareMap")
-            .update(file.as_os_str().to_str().unwrap())
-            .err()
-            .iter()
-            .for_each(|e| eprintln!("{}", e));
         Ok(voice::ffmpeg(&file)?)
-    })
+    })?;
+    let mut share_map = ctx.data.write();
+    share_map
+        .get_mut::<SfxStats>()
+        .expect("Expected SfxStats in ShareMap")
+        .update(file.as_os_str().to_str().unwrap())
+        .err()
+        .iter()
+        .for_each(|e| eprintln!("{}", e));
+    Ok(())
 }
 
 pub fn play_sfx<F>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
