@@ -1,0 +1,35 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+    tags:
+      - '*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: run tests
+      run: cargo test
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: install cross
+      run: cargo install cross
+    - name: cross compile
+      run: |
+        docker build -t crossbuild:local .
+        cross build --release --target armv7-unknown-linux-gnueabihf
+    - name: test
+      run: echo ${{ github.ref }}
+    - name: release
+      uses: ncipollo/release-action@v1.8.6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        artifacts: ./target/armv7-unknown-linux-gnueabihf/release/memnarch-rs
