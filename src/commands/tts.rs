@@ -24,7 +24,7 @@ struct Tts;
 #[description("play a tts message over voice")]
 #[usage("text")]
 #[example("pogchamp")]
-pub fn say(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+pub async fn say(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     crate::commands::sfx::play_sfx(ctx, msg, || {
         let text = args.rest();
         let tts_link = generate_tts(
@@ -45,7 +45,7 @@ lazy_static! {
 #[min_args(2)]
 #[description("change tts defaults")]
 #[usage("Polly Brian")]
-pub fn config(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+pub async fn config(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let service = args.single::<String>()?;
     let voice = args.single::<String>()?;
     msg.channel_id.say(
@@ -96,7 +96,7 @@ fn generate_tts(
 #[description("generates a tss audio file")]
 #[usage("text")]
 #[example("pogchamp")]
-pub fn save(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+pub async fn save(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let text = args.rest();
     let tts_link = generate_tts(
         Some(&*CURRENT_SERVICE.read().unwrap()),
@@ -108,7 +108,7 @@ pub fn save(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
-pub fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
+pub async fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
     msg.channel_id.say(&ctx, "not implemented yet")?;
     Ok(())
 }
