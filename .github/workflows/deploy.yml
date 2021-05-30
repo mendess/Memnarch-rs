@@ -25,11 +25,7 @@ jobs:
     - name: install cross
       run: cargo install cross
     - name: cross compile
-      run: |
-        docker build -t crossbuild:local .
-        cross build --release --target armv7-unknown-linux-gnueabihf
-    - name: test
-      run: echo ${{ github.ref }}
+      run: ./rpi-compile.sh
     - name: release
       uses: ncipollo/release-action@v1.8.6
       with:

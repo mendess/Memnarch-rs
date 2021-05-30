@@ -14,11 +14,13 @@ use std::{
     cmp::Reverse,
     fs,
     io::Write,
-    os::unix::process::CommandExt,
+    os::unix::{fs::PermissionsExt, process::CommandExt},
     process::Command as Fork,
     str,
     sync::{Mutex, TryLockError},
 };
+
+const EXE_NAME: &str = "memnarch-rs";
 
 #[group]
 #[owners_only]
@@ -43,8 +45,11 @@ fn cargo_restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult
 fn restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
     msg.channel_id.say(ctx, "Rebooting...")?;
     std::env::set_var("RUST_BACKTRACE", "1");
-    let error = Fork::new("./memnarch-rs")
-        .args(&["-r", &msg.channel_id.to_string()])
+    let error = Fork::new("bash")
+        .args(&[
+            "-c",
+            &format!("exec ./{} -r {}", EXE_NAME, &msg.channel_id.to_string()),
+        ])
         .exec();
     std::env::remove_var("RUST_BACKTRACE");
     Err(error.into())
@@ -163,7 +168,7 @@ fn update(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
         .send()?
         .json::<Vec<Asset>>()?
         .into_iter()
-        .find(|x| x.name == "memnarch-rs")
+        .find(|x| x.name == EXE_NAME)
         .map(|x| x.browser_download_url)
         .ok_or("Release doesn't contain executable")?;
 
@@ -176,7 +181,12 @@ fn update(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
         .bytes()?;
     temp.write_all(&bytes)?;
     println!("Renaming");
-    fs::rename(&temp, "memnarch-rs")?;
+    fs::rename(&temp, EXE_NAME)?;
+    let mut perm = fs::metadata(EXE_NAME)?.permissions();
+    let mode = perm.mode() | 0o700;
+    println!("Setting mode: {:o} => {:o}", perm.mode(), mode);
+    perm.set_mode(mode);
+    fs::set_permissions(EXE_NAME, perm)?;
 
     println!("Restaring");
     restart(ctx, msg, _args)
