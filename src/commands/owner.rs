@@ -1,6 +1,6 @@
 use chrono::DateTime;
 use lazy_static::lazy_static;
-use reqwest::{blocking::Client, header};
+use reqwest::{Client, header};
 use serde::Deserialize;
 use serenity::{
     framework::standard::{
@@ -29,7 +29,7 @@ struct Owner;
 
 #[command]
 #[description("Reboots the bot")]
-fn cargo_restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
+async fn cargo_restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
     msg.channel_id.say(ctx, "Rebooting...")?;
     std::env::set_var("RUST_BACKTRACE", "1");
     let error = Fork::new("cargo")
@@ -42,7 +42,7 @@ fn cargo_restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult
 #[command]
 #[description("Reboots the bot")]
 #[aliases("reboot")]
-fn restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
+async fn restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
     msg.channel_id.say(ctx, "Rebooting...")?;
     std::env::set_var("RUST_BACKTRACE", "1");
     let error = Fork::new("bash")
@@ -61,7 +61,7 @@ lazy_static! {
 
 #[command]
 #[description("Update the bot")]
-fn pull_update(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn pull_update(ctx: &mut Context, msg: &Message) -> CommandResult {
     let _ = match UPDATING.try_lock() {
         Err(TryLockError::WouldBlock) => return Err("Alreading updating".into()),
         Err(TryLockError::Poisoned(p)) => return Err(p.into()),
@@ -131,7 +131,7 @@ fn pull_update(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[description("Update the bot")]
-fn update(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
+async fn update(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
     let _ = match UPDATING.try_lock() {
         Err(TryLockError::WouldBlock) => return Err("Alreading updating".into()),
         Err(TryLockError::Poisoned(p)) => return Err(p.into()),

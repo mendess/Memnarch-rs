@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{

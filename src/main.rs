@@ -1,3 +1,6 @@
+#![warn(unused_crate_dependencies)]
+#![warn(unused_features)]
+#![deny(unused_results)]
 #![cfg_attr(feature = "nightly", feature(drain_filter))]
 
 mod commands;
