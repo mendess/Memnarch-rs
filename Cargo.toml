@@ -15,6 +15,7 @@ regex = "1"
 lazy_static = "1"
 unicase = "*"
 reqwest = { features = ["blocking"], version = "0.10" }
+tempfile = "3"
 
 [dependencies.serenity]
 version = "0.8.6"

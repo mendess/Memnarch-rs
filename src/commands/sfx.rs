@@ -81,7 +81,7 @@ impl SfxStats {
                 sfx,
                 e
             )
-        };
+        }
         let mf = |e| map_err(sfx, e);
         let mj = |e| map_err(sfx, e);
         Self::path()
