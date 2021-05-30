@@ -124,7 +124,7 @@ impl Task for LeaveVoice {
 
 #[command]
 #[description("Stops everything")]
-pub fn stop(ctx: &mut Context, msg: &Message) -> CommandResult {
+pub async fn stop(ctx: &mut Context, msg: &Message) -> CommandResult {
     let guild_id = msg.guild_id.ok_or_else(|| String::from("Not in a guild"))?;
     let share_map = ctx.data.read();
     let manager_id = share_map
@@ -145,7 +145,7 @@ pub fn stop(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[description("Play a saved sfx!")]
 #[usage("part of name")]
 #[example("wow")]
-pub fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+pub async fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let mut file = PathBuf::new();
     play_sfx(ctx, msg, || {
         file = find_file(&args)?;
@@ -172,7 +172,7 @@ pub fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     Ok(())
 }
 
-pub fn play_sfx<F>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
+pub async fn play_sfx<F>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
 where
     F: FnOnce() -> Result<Box<dyn voice::AudioSource>, Box<dyn Error>>,
 {
@@ -222,7 +222,7 @@ where
 #[command]
 #[description("List the available sfx files")]
 #[usage("")]
-fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
     let sounds = fs::read_dir(sfx_path::<&str, _>(None)?).map(|x| {
         let mut files = x
             .filter_map(Result::ok)
@@ -259,7 +259,7 @@ fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[checks("is_friend")]
 #[description("Saves a new sfx file")]
 #[usage("{Attatchment}")]
-fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
     for attachment in msg.attachments.iter() {
         if attachment.size > 1024 * 1024 {
             return Err("File size too high, please keep it under 1Mb."
@@ -281,7 +281,7 @@ fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[description("Remove an sfx file")]
 #[usage("part of name")]
 #[example("wow")]
-fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+async fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let file = find_file(&args)?;
     msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
     fs::remove_file(&file)?;
@@ -294,7 +294,7 @@ fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 #[description("Upload an sfx file to discord")]
 #[usage("part of name")]
 #[example("wow")]
-fn retreive(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+async fn retreive(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let file = find_file(&args)?;
     msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
     Ok(())
@@ -303,7 +303,7 @@ fn retreive(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 #[command]
 #[description("Show the stats of the most played sfx")]
 #[usage("")]
-fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
     msg.channel_id.send_message(&ctx, |m| {
         m.embed(|e| {
             e.title("Stats");
@@ -340,7 +340,7 @@ fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-fn find_file(search_string: &Args) -> io::Result<PathBuf> {
+async fn find_file(search_string: &Args) -> io::Result<PathBuf> {
     use std::io::{Error, ErrorKind::NotFound};
     let (search, vec) = fs::read_dir(sfx_path::<&str, _>(None)?)?
         .filter_map(Result::ok)
@@ -363,7 +363,7 @@ fn find_file(search_string: &Args) -> io::Result<PathBuf> {
     }
 }
 
-fn sfx_path<S: AsRef<str>, F: Into<Option<S>>>(file: F) -> io::Result<PathBuf> {
+async fn sfx_path<S: AsRef<str>, F: Into<Option<S>>>(file: F) -> io::Result<PathBuf> {
     let p: PathBuf = match file.into() {
         Some(f) => [FILES_DIR, SFX_FILES_DIR, f.as_ref()].iter().collect(),
         None => [FILES_DIR, SFX_FILES_DIR].iter().collect(),

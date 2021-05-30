@@ -29,8 +29,8 @@ struct Owner;
 
 #[command]
 #[description("Reboots the bot")]
-async fn cargo_restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
-    msg.channel_id.say(ctx, "Rebooting...")?;
+async fn cargo_restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+    msg.channel_id.say(ctx, "Rebooting...").await?;
     std::env::set_var("RUST_BACKTRACE", "1");
     let error = Fork::new("cargo")
         .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
@@ -42,7 +42,7 @@ async fn cargo_restart(ctx: &mut Context, msg: &Message, _args: Args) -> Command
 #[command]
 #[description("Reboots the bot")]
 #[aliases("reboot")]
-async fn restart(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
+async fn restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     msg.channel_id.say(ctx, "Rebooting...")?;
     std::env::set_var("RUST_BACKTRACE", "1");
     let error = Fork::new("bash")
@@ -61,7 +61,7 @@ lazy_static! {
 
 #[command]
 #[description("Update the bot")]
-async fn pull_update(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
     let _ = match UPDATING.try_lock() {
         Err(TryLockError::WouldBlock) => return Err("Alreading updating".into()),
         Err(TryLockError::Poisoned(p)) => return Err(p.into()),
@@ -131,7 +131,7 @@ async fn pull_update(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[description("Update the bot")]
-async fn update(ctx: &mut Context, msg: &Message, _args: Args) -> CommandResult {
+async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let _ = match UPDATING.try_lock() {
         Err(TryLockError::WouldBlock) => return Err("Alreading updating".into()),
         Err(TryLockError::Poisoned(p)) => return Err(p.into()),

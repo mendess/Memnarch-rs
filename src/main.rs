@@ -1,6 +1,8 @@
 #![warn(unused_crate_dependencies)]
 #![warn(unused_features)]
 #![deny(unused_results)]
+// TODO: remove
+#![allow(unused_imports)]
 #![cfg_attr(feature = "nightly", feature(drain_filter))]
 
 mod commands;
@@ -15,14 +17,13 @@ use commands::{
     interrail::{InterrailConfig, INTERRAIL_GROUP},
     owner::OWNER_GROUP,
     quotes::QUOTES_GROUP,
-    sfx::{LeaveVoice, SfxStats, SFXALIASES_GROUP, SFX_GROUP},
-    tts::TTS_GROUP,
+    // sfx::{LeaveVoice, SfxStats, SFXALIASES_GROUP, SFX_GROUP},
+    // tts::TTS_GROUP,
 };
 use consts::FILES_DIR;
 use cron::{CronSink, Task};
 use serde::{Deserialize, Serialize};
 use serenity::{
-    client::bridge::voice::ClientVoiceManager,
     framework::standard::{
         help_commands, macros::help, Args, CommandGroup, CommandResult, HelpOptions,
         StandardFramework,
@@ -43,11 +44,13 @@ use std::{
     io::Write,
     sync::Arc,
 };
+use songbird::SerenityInit;
 
 struct Handler;
 
+#[serenity::async_trait]
 impl EventHandler for Handler {
-    fn voice_state_update(
+    async fn voice_state_update(
         &self,
         ctx: Context,
         guild_id: Option<GuildId>,
@@ -61,12 +64,12 @@ impl EventHandler for Handler {
         let has_bot = |members: &Vec<Member>| {
             members
                 .iter()
-                .map(|m| m.user_id())
+                .map(|m| m.user.id)
                 .any(|u| current_user.id == u)
         };
         if old
             .and_then(|vs| vs.channel_id)
-            .and_then(|id| id.to_channel(&ctx).ok())
+            .and_then(|id| id.to_channel(&ctx).await.ok())
             .and_then(Channel::guild)
             .and_then(|gc| gc.read().members(&ctx).ok())
             .filter(has_bot)
@@ -75,13 +78,13 @@ impl EventHandler for Handler {
         {
             if let Some(guild_id) = guild_id {
                 ctx.data
-                    .read()
+                    .read().await
                     .get::<VoiceManager>()
                     .expect("Couldn't find VoiceManager in ShareMap")
                     .lock()
                     .leave(guild_id);
                 ctx.data
-                    .read()
+                    .read().await
                     .get::<CronSink<LeaveVoice>>()
                     .unwrap()
                     .cancel(guild_id)
@@ -109,20 +112,14 @@ impl EventHandler for Handler {
         }
     }
 
-    fn ready(&self, ctx: Context, _ready: Ready) {
+    async fn ready(&self, ctx: Context, _ready: Ready) {
         println!("Up and running");
-        if let Some(id) = ctx.data.read().get::<UpdateNotify>() {
-            id.send_message(&ctx, |m| m.content("Updated successfully!"))
+        if let Some(id) = ctx.data.read().await.get::<UpdateNotify>() {
+            id.send_message(&ctx, |m| m.content("Updated successfully!")).await
                 .expect("Couldn't send update notification");
         }
-        ctx.data.write().remove::<UpdateNotify>();
+        ctx.data.write().await.remove::<UpdateNotify>();
     }
-}
-
-pub struct VoiceManager;
-
-impl TypeMapKey for VoiceManager {
-    type Value = Arc<Mutex<ClientVoiceManager>>;
 }
 
 struct UpdateNotify;
@@ -180,7 +177,7 @@ fn main() -> std::io::Result<()> {
     );
     {
         let mut data = client.data.write();
-        data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
+        // data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
         data.insert::<SfxStats>(SfxStats::new());
         data.insert::<CronSink<Reminder>>(re_cron_sink);
         data.insert::<CronSink<LeaveVoice>>(vc_cron_sink);
@@ -206,6 +203,7 @@ fn main() -> std::io::Result<()> {
     };
     client.with_framework(
         StandardFramework::new()
+            .register_songbird()
             .configure(|c| c.prefix("|").on_mention(Some(bot_id)).owners(owners))
             .normal_message(move |ctx, msg| {
                 if msg.author.id == bot_id {
@@ -287,7 +285,7 @@ fn main() -> std::io::Result<()> {
 #[lacking_permissions("hide")]
 #[strikethrough_commands_tip_in_guild(" ")]
 #[strikethrough_commands_tip_in_dm(" ")]
-fn my_help(
+async fn my_help(
     context: &mut Context,
     msg: &Message,
     args: Args,

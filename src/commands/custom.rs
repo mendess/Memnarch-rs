@@ -28,7 +28,7 @@ struct Custom;
 
 //#[min_args(2)]
 #[command]
-fn add(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+async fn add(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let mut args_it = args.raw();
     let fst = args_it.next().unwrap();
     let decay = if fst == "-d" || fst == "--decay" {
@@ -56,7 +56,7 @@ fn add(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 
 // #[min_args(1)]
 #[command]
-fn remove(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+async fn remove(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let cmd = args.raw().next().unwrap();
     let output = ctx
         .data
@@ -77,7 +77,7 @@ fn remove(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
-fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
     let mut share_map = ctx.data.write();
     let mut cc = share_map.get_mut::<CustomCommands>().unwrap().write();
     let cmds = cc.list(msg.guild_id.ok_or_else(|| "guild_id is missing")?)?;

@@ -786,6 +786,7 @@ name = "memnarch-rs"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures",
  "itertools",
  "lazy_static",
  "rand 0.7.3",
@@ -1751,6 +1752,7 @@ dependencies = [
  "mio",
  "num_cpus",
  "once_cell",
+ "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "tokio-macros",

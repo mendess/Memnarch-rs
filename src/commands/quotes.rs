@@ -1,5 +1,6 @@
 use crate::consts::FILES_DIR;
-use crate::permissions::IS_FRIEND_CHECK;
+// use crate::permissions::IS_FRIEND_CHECK;
+use futures::prelude::*;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -10,10 +11,11 @@ use serenity::{
     model::channel::Message,
     prelude::*,
 };
-use std::{
+use std::{path::PathBuf, sync::Arc};
+use tokio::{
     fs::{DirBuilder, File},
-    path::PathBuf,
-    sync::{Arc, Mutex},
+    io::{AsyncWriteExt, AsyncReadExt },
+    sync::Mutex,
 };
 
 const QUOTES_DIR: &str = "quotes";
@@ -30,25 +32,30 @@ struct Quotes;
 pub struct QuoteManager(Vec<String>);
 
 impl QuoteManager {
-    fn path() -> std::io::Result<PathBuf> {
+    async fn path() -> std::io::Result<PathBuf> {
         let p = [FILES_DIR, QUOTES_DIR, QUOTES_FILE]
             .iter()
             .collect::<PathBuf>();
         DirBuilder::new()
             .recursive(true)
-            .create(p.parent().expect("This path always has enough components"))?;
+            .create(p.parent().expect("This path always has enough components"))
+            .await?;
         Ok(p)
     }
 
-    fn load() -> Self {
+    async fn load() -> Self {
         Self::path()
             .and_then(|p| File::open(p))
-            .and_then(|file| {
-                serde_json::from_reader(file).map_err(|e| {
+            .and_then(|mut file| {
+                let mut s = String::new();
+                // TODO: don't read to a string
+                let content = file.read_to_string(&mut s);
+                future::ready(serde_json::from_str(&s).map_err(|e| {
                     eprintln!("Error parsing quotes");
                     e.into()
-                })
+                }))
             })
+            .await
             .unwrap_or_default()
     }
 
@@ -56,11 +63,13 @@ impl QuoteManager {
         self.0.choose(&mut rand::thread_rng()).map(|x| x.as_str())
     }
 
-    fn add(&mut self, quote: String) -> std::io::Result<()> {
+    async fn add(&mut self, quote: String) -> std::io::Result<()> {
         self.0.push(quote);
-        let path = Self::path()?;
+        let path = Self::path().await?;
         println!("Quote add: {:?}", path);
-        serde_json::to_writer(File::create(path)?, self).map_err(Into::into)
+        // TODO: don't write to a string
+        let content = serde_json::to_string(self)?;
+        File::create(path).await?.write_all(content.as_bytes()).await
     }
 }
 
@@ -70,31 +79,31 @@ impl TypeMapKey for QuoteManager {
 
 #[command]
 #[description("Quote briliant minds")]
-fn quote(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let quotes = fetch_quotes(ctx);
+async fn quote(ctx: &Context, msg: &Message) -> CommandResult {
+    let quotes = fetch_quotes(ctx).await;
     msg.channel_id
-        .say(&ctx, quotes.lock()?.choose().unwrap_or("No quotes found!"))?;
+        .say(&ctx, quotes.lock().await.choose().unwrap_or("No quotes found!")).await?;
     Ok(())
 }
 
 #[command]
 #[description("Add a quote")]
 #[min_args(1)]
-#[checks("is_friend")]
-fn add(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    let quotes = fetch_quotes(ctx);
+//TODO: #[checks("is_friend")]
+async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    let quotes = fetch_quotes(ctx).await;
     let quote = args.rest();
-    quotes.lock()?.add(quote.to_owned())?;
-    msg.channel_id.say(ctx, "Quote added")?;
+    quotes.lock().await.add(quote.to_owned()).await?;
+    msg.channel_id.say(ctx, "Quote added").await?;
     Ok(())
 }
 
-fn fetch_quotes(ctx: &mut Context) -> Arc<Mutex<QuoteManager>> {
-    let mut share_map = ctx.data.write();
+async fn fetch_quotes(ctx: &Context) -> Arc<Mutex<QuoteManager>> {
+    let mut share_map = ctx.data.write().await;
     match share_map.get::<QuoteManager>() {
         Some(quotes) => Arc::clone(quotes),
         None => {
-            share_map.insert::<QuoteManager>(Arc::new(Mutex::new(QuoteManager::load())));
+            share_map.insert::<QuoteManager>(Arc::new(Mutex::new(QuoteManager::load().await)));
             Arc::clone(share_map.get_mut::<QuoteManager>().unwrap())
         }
     }

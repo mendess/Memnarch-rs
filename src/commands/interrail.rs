@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
         macros::{check, command, group},
-        Args, CheckResult, CommandResult, Reason,
+        Args, CommandResult, Reason,
     },
     model::{channel::Message, id::ChannelId},
     prelude::*,
@@ -45,7 +45,7 @@ struct Interrail;
 #[checks("is_interrail_channel")]
 #[aliases("n")]
 #[min_args(2)]
-pub fn new(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+pub async fn new(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     if let Some(config) = ctx.data.read().get::<InterrailConfig>() {
         config.read().stories.say(&ctx.http, args.rest())?;
     } else {
@@ -60,7 +60,7 @@ pub fn new(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 #[checks("is_interrail_channel")]
 #[aliases("e")]
 #[min_args(2)]
-pub fn edit(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+pub async fn edit(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let msg_id = args.single::<u64>()?;
     if let Some(config) = ctx.data.read().get::<InterrailConfig>() {
         let mut message = config.read().stories.message(&ctx.http, msg_id)?;
@@ -76,7 +76,7 @@ pub fn edit(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
 #[usage("#talk_channel #stories_channel")]
 #[owners_only]
 #[min_args(2)]
-pub fn config(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+pub async fn config(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let talk = args.single::<ChannelId>()?;
     let stories = args.single::<ChannelId>()?;
     *ctx.data
@@ -90,18 +90,14 @@ pub fn config(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult
 
 #[check]
 #[name = "is_interrail_channel"]
-fn is_interrail_channel(ctx: &mut Context, msg: &Message, _: &mut Args) -> CheckResult {
+async fn is_interrail_channel(
+    ctx: &mut Context,
+    msg: &Message,
+    _: &mut Args,
+) -> Result<(), Reason> {
     ctx.data
         .read()
         .get::<InterrailConfig>()
-        .and_then(|ic| {
-            if msg.channel_id == ic.read().talk {
-                Some(CheckResult::Success)
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| {
-            CheckResult::Failure(Reason::User("You can't use this command here".into()))
-        })
+        .and_then(|ic| (msg.channel_id == ic.read().talk).then(|| Ok(())))
+        .unwrap_or_else(|| Err(Reason::User("You can't use this command here".into())))
 }

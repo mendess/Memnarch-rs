@@ -22,7 +22,7 @@ struct General;
 
 #[command]
 #[description("Ping me maybe")]
-fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
     use chrono::Local;
     let one_trip_time =
         (Local::now().timestamp_millis() - msg.timestamp.timestamp_millis()) as f32 / 1000_f32;
@@ -45,7 +45,7 @@ fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 #[command("whoareyou")]
 #[description("Find out more about me")]
-fn who_are_you(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn who_are_you(ctx: &mut Context, msg: &Message) -> CommandResult {
     msg.channel_id.send_message(ctx, |m| {
         m.embed(|e| {
             e.title("I AM MEMNARCH")
@@ -62,7 +62,7 @@ fn who_are_you(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[description("Create a voting of up to 10 things")]
 #[usage("[OPTION, ...]")]
 #[example("option1 \"option 2\"")]
-fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     let message = msg.channel_id.send_message(&ctx.http, |m| {
         m.embed(|e| {
             e.title("Vote:");
@@ -125,7 +125,7 @@ impl Task for Reminder {
 #[usage("delay message")]
 #[example("3s Remind me in 3 seconds")]
 #[example("4m Remind me in 4 minutes")]
-fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
     lazy_static! {
         static ref SECONDS: Regex = Regex::new(r"\d+(s|sec|secs|seconds?|segundos?)$").unwrap();
         static ref MINUTES: Regex = Regex::new(r"\d+(m|min|mins|minutes?|minutos?)$").unwrap();
