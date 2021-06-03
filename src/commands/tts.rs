@@ -1,3 +1,4 @@
+use crate::commands::sfx::STOP_COMMAND;
 use lazy_static::lazy_static;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -8,10 +9,9 @@ use serenity::{
     },
     model::channel::Message,
     prelude::*,
-    voice,
 };
-use std::{error::Error, sync::RwLock};
-use crate::commands::sfx::STOP_COMMAND;
+use std::error::Error;
+use tokio::sync::RwLock;
 
 #[group]
 #[commands(say, save, config, list, stop)]
@@ -24,16 +24,16 @@ struct Tts;
 #[description("play a tts message over voice")]
 #[usage("text")]
 #[example("pogchamp")]
-pub async fn say(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    crate::commands::sfx::play_sfx(ctx, msg, || {
-        let text = args.rest();
-        let tts_link = generate_tts(
-            Some(&*CURRENT_SERVICE.read().unwrap()),
-            Some(&*CURRENT_VOICE.read().unwrap()),
-            text,
-        )?;
-        Ok(voice::ytdl(&tts_link)?)
-    })
+pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    // TODO: Fix after reimplementing voice
+    // crate::commands::sfx::play_sfx(ctx, msg, || {
+    //     let text = args.rest();
+    //     let service = CURRENT_SERVICE.read().unwrap();
+    //     let voice = CURRENT_VOICE.read().unwrap();
+    //     let tts_link = generate_tts(Some(service), Some(voice), text).await?;
+    //     Ok(voice::ytdl(&tts_link)?)
+    // })
+    Ok(())
 }
 
 lazy_static! {
@@ -45,26 +45,28 @@ lazy_static! {
 #[min_args(2)]
 #[description("change tts defaults")]
 #[usage("Polly Brian")]
-pub async fn config(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+pub async fn config(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let service = args.single::<String>()?;
     let voice = args.single::<String>()?;
-    msg.channel_id.say(
-        &ctx,
-        format!(
-            "Defaults change to service = {} and voice = {}",
-            service, voice,
-        ),
-    )?;
-    *CURRENT_SERVICE.write().unwrap() = service;
-    *CURRENT_VOICE.write().unwrap() = voice;
+    msg.channel_id
+        .say(
+            &ctx,
+            format!(
+                "Defaults change to service = {} and voice = {}",
+                service, voice,
+            ),
+        )
+        .await?;
+    *CURRENT_SERVICE.write().await = service;
+    *CURRENT_VOICE.write().await = voice;
     Ok(())
 }
 
-fn generate_tts(
+async fn generate_tts(
     service: Option<&str>,
     voice: Option<&str>,
     text: &str,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<String, Box<dyn Error + Send + Sync + 'static>> {
     lazy_static! {
         static ref CLIENT: Client = Client::new();
     }
@@ -74,19 +76,16 @@ fn generate_tts(
     let response = CLIENT
         .post("https://lazypy.ro/tts/proxy.php")
         .header("content-type", "application/x-www-form-urlencoded")
-        .body(format!(
-            "service={}&voice={}&text={}",
-            service,
-            voice,
-            text
-        ))
-        .send()?
-        .json::<TtsResponse>()?;
+        .body(format!("service={}&voice={}&text={}", service, voice, text))
+        .send()
+        .await?
+        .json::<TtsResponse>()
+        .await?;
     match response {
         TtsResponse::Success { speak_url, .. } => {
             eprintln!("[tts] Playing {}", speak_url);
             Ok(speak_url)
-        },
+        }
         TtsResponse::Error { error } => Err(error.into()),
     }
 }
@@ -96,20 +95,18 @@ fn generate_tts(
 #[description("generates a tss audio file")]
 #[usage("text")]
 #[example("pogchamp")]
-pub async fn save(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+pub async fn save(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let text = args.rest();
-    let tts_link = generate_tts(
-        Some(&*CURRENT_SERVICE.read().unwrap()),
-        Some(&*CURRENT_VOICE.read().unwrap()),
-        text,
-    )?;
-    msg.channel_id.say(&ctx, tts_link)?;
+    let service = CURRENT_SERVICE.read().await;
+    let voice = CURRENT_VOICE.read().await;
+    let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
+    msg.channel_id.say(&ctx, tts_link).await?;
     Ok(())
 }
 
 #[command]
-pub async fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(&ctx, "not implemented yet")?;
+pub async fn list(ctx: &Context, msg: &Message) -> CommandResult {
+    msg.channel_id.say(&ctx, "not implemented yet").await?;
     Ok(())
 }
 

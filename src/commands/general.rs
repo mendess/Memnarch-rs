@@ -1,7 +1,7 @@
-use crate::consts::NUMBERS;
-use crate::cron::{CronSink, Task};
-
+use crate::{consts::NUMBERS, daemons::DaemonManager, reminders};
 use chrono::{DateTime, Duration, Utc};
+use daemons::Daemon;
+use futures::prelude::*;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
@@ -11,9 +11,13 @@ use serenity::{
         Args, CommandResult,
     },
     http::client::Http,
-    model::{channel::Message, id::UserId},
+    model::{
+        channel::{Message, ReactionType},
+        id::UserId,
+    },
     prelude::*,
 };
+use std::time::Duration as StdDuration;
 use std::{error::Error, sync::Arc};
 
 #[group]
@@ -22,22 +26,26 @@ struct General;
 
 #[command]
 #[description("Ping me maybe")]
-async fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
     use chrono::Local;
     let one_trip_time =
         (Local::now().timestamp_millis() - msg.timestamp.timestamp_millis()) as f32 / 1000_f32;
-    if let Err(why) = msg.channel_id.say(
-        &ctx.http,
-        format!(
-            "Pong! {} ms{}",
-            one_trip_time * 2.0,
-            if one_trip_time < 0.0 {
-                "\n*yes it's negative, idk why either*"
-            } else {
-                ""
-            }
-        ),
-    ) {
+    if let Err(why) = msg
+        .channel_id
+        .say(
+            &ctx.http,
+            format!(
+                "Pong! {} ms{}",
+                one_trip_time * 2.0,
+                if one_trip_time < 0.0 {
+                    "\n*yes it's negative, idk why either*"
+                } else {
+                    ""
+                }
+            ),
+        )
+        .await
+    {
         println!("Error ponging: {:?}", why)
     }
     Ok(())
@@ -45,14 +53,18 @@ async fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
 
 #[command("whoareyou")]
 #[description("Find out more about me")]
-async fn who_are_you(ctx: &mut Context, msg: &Message) -> CommandResult {
-    msg.channel_id.send_message(ctx, |m| {
-        m.embed(|e| {
-            e.title("I AM MEMNARCH")
-                .description("Sauce code: [GitHub](https://github.com/Mendess2526/Memnarch-rs)")
-                .image("https://img.scryfall.com/mci/scans/en/arc/112.jpg")
+async fn who_are_you(ctx: &Context, msg: &Message) -> CommandResult {
+    msg.channel_id
+        .send_message(ctx, |m| {
+            m.embed(|e| {
+                e.title("I AM MEMNARCH")
+                    .description(
+                        "Sauce code: [GitHub](https://github.com/Mendess2526/Memnarch-rs)",
+                    )
+                    .image("https://img.scryfall.com/mci/scans/en/arc/112.jpg")
+            })
         })
-    })?;
+        .await?;
     Ok(())
 }
 
@@ -62,49 +74,31 @@ async fn who_are_you(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[description("Create a voting of up to 10 things")]
 #[usage("[OPTION, ...]")]
 #[example("option1 \"option 2\"")]
-async fn vote(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
-    let message = msg.channel_id.send_message(&ctx.http, |m| {
-        m.embed(|e| {
-            e.title("Vote:");
-            let fs = args
-                .raw_quoted()
-                .enumerate()
-                .map(|(i, a)| (a, NUMBERS[i], true));
-            e.fields(fs)
-        });
-        m
-    })?;
+async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let message = msg
+        .channel_id
+        .send_message(&ctx.http, |m| {
+            m.embed(|e| {
+                e.title("Vote:");
+                let fs = args
+                    .raw_quoted()
+                    .enumerate()
+                    .map(|(i, a)| (a, NUMBERS[i], true));
+                e.fields(fs)
+            });
+            m
+        })
+        .await?;
     args.restore();
-    (0..args.iter::<String>().filter_map(Result::ok).count()).for_each(|n| {
-        while let Err(_) = message.react(&ctx, NUMBERS[n]) {
+    for n in 0..args.iter::<String>().filter_map(Result::ok).count() {
+        while let Err(_) = message
+            .react(&ctx, NUMBERS[n].parse::<ReactionType>().unwrap())
+            .await
+        {
             continue;
         }
-    });
+    }
     Ok(())
-}
-
-#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Serialize, Deserialize)]
-pub struct Reminder {
-    message: String,
-    when: DateTime<Utc>,
-    id: UserId,
-}
-
-impl Task for Reminder {
-    type Id = ();
-    type GlobalData = Arc<Http>;
-
-    fn when(&self) -> DateTime<Utc> {
-        self.when
-    }
-
-    fn call(&self, http: Self::GlobalData) -> Result<(), Box<dyn Error>> {
-        self.id
-            .create_dm_channel(&http)
-            .and_then(|private_channel| private_channel.say(&http, &self.message))
-            .map(|_| ())
-            .map_err(|e| Box::new(e) as Box<dyn Error>)
-    }
 }
 
 #[command]
@@ -125,7 +119,7 @@ impl Task for Reminder {
 #[usage("delay message")]
 #[example("3s Remind me in 3 seconds")]
 #[example("4m Remind me in 4 minutes")]
-async fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn remindme(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     lazy_static! {
         static ref SECONDS: Regex = Regex::new(r"\d+(s|sec|secs|seconds?|segundos?)$").unwrap();
         static ref MINUTES: Regex = Regex::new(r"\d+(m|min|mins|minutes?|minutos?)$").unwrap();
@@ -160,16 +154,15 @@ async fn remindme(ctx: &mut Context, msg: &Message, mut args: Args) -> CommandRe
         }
     }?;
     args.advance();
-    let reminder = Reminder {
-        message: format!("You asked me to remind you of this:\n{}", args.rest()),
-        when: Utc::now() + timeout,
-        id: msg.author.id,
-    };
-    ctx.data
-        .read()
-        .get::<CronSink<Reminder>>()
-        .unwrap()
-        .send(reminder)?;
-    msg.channel_id.say(&ctx, "You shall be reminded!")?;
+    let data = ctx.data.read().await;
+    let mut dm = data.get::<DaemonManager>().unwrap().lock().await;
+    reminders::remind(
+        &mut *dm,
+        format!("You asked me to remind you of this:\n{}", args.rest()),
+        Utc::now() + timeout,
+        msg.author.id,
+    )
+    .await?;
+    msg.channel_id.say(&ctx, "You shall be reminded!").await?;
     Ok(())
 }

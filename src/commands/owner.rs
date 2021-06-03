@@ -1,6 +1,6 @@
 use chrono::DateTime;
 use lazy_static::lazy_static;
-use reqwest::{Client, header};
+use reqwest::{header, Client};
 use serde::Deserialize;
 use serenity::{
     framework::standard::{
@@ -12,11 +12,14 @@ use serenity::{
 };
 use std::{
     cmp::Reverse,
-    fs,
-    io::Write,
     os::unix::{fs::PermissionsExt, process::CommandExt},
-    process::Command as Fork,
+    process::Command as StdFork,
     str,
+};
+use tokio::{
+    fs::{self, File},
+    io::AsyncWriteExt,
+    process::Command as Fork,
     sync::{Mutex, TryLockError},
 };
 
@@ -32,7 +35,7 @@ struct Owner;
 async fn cargo_restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     msg.channel_id.say(ctx, "Rebooting...").await?;
     std::env::set_var("RUST_BACKTRACE", "1");
-    let error = Fork::new("cargo")
+    let error = StdFork::new("cargo")
         .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
         .exec();
     std::env::remove_var("RUST_BACKTRACE");
@@ -43,9 +46,9 @@ async fn cargo_restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResu
 #[description("Reboots the bot")]
 #[aliases("reboot")]
 async fn restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
-    msg.channel_id.say(ctx, "Rebooting...")?;
+    msg.channel_id.say(ctx, "Rebooting...").await?;
     std::env::set_var("RUST_BACKTRACE", "1");
-    let error = Fork::new("bash")
+    let error = StdFork::new("bash")
         .args(&[
             "-c",
             &format!("exec ./{} -r {}", EXE_NAME, &msg.channel_id.to_string()),
@@ -63,23 +66,23 @@ lazy_static! {
 #[description("Update the bot")]
 async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
     let _ = match UPDATING.try_lock() {
-        Err(TryLockError::WouldBlock) => return Err("Alreading updating".into()),
-        Err(TryLockError::Poisoned(p)) => return Err(p.into()),
+        Err(_) => return Err("Alreading updating".into()),
         Ok(guard) => guard,
     };
-    let check_msg = |mut m: Message| {
+    async fn check_msg(mut m: Message, ctx: &Context) -> serenity::Result<()> {
         let new_msg = format!("{} :white_check_mark:", m.content);
-        m.edit(&ctx, |m| m.content(new_msg))
-    };
-    let message = msg.channel_id.say(&ctx, "Fetching...")?;
-    Fork::new("git").arg("fetch").spawn()?.wait()?;
-    check_msg(message)?;
+        m.edit(ctx, |m| m.content(new_msg)).await
+    }
+    let message = msg.channel_id.say(&ctx, "Fetching...").await?;
+    Fork::new("git").arg("fetch").spawn()?.wait().await?;
+    check_msg(message, ctx).await?;
 
-    let message = msg.channel_id.say(&ctx, "Checking remote...")?;
+    let message = msg.channel_id.say(&ctx, "Checking remote...").await?;
     let status = Fork::new("git")
         .args(&["rev-list", "--count", "master...master@{upstream}"])
-        .output()?;
-    check_msg(message)?;
+        .output()
+        .await?;
+    check_msg(message, ctx).await?;
 
     if 0 == String::from_utf8_lossy(&status.stdout)
         .trim()
@@ -88,8 +91,8 @@ async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
         return Err("No updates!".into());
     }
 
-    let message = msg.channel_id.say(&ctx, "Pulling from remote...")?;
-    let out = &Fork::new("git").arg("pull").output()?;
+    let message = msg.channel_id.say(&ctx, "Pulling from remote...").await?;
+    let out = &Fork::new("git").arg("pull").output().await?;
     if !out.status.success() {
         return Err(format!(
             "Error pulling!
@@ -104,12 +107,13 @@ async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
         )
         .into());
     }
-    check_msg(message)?;
+    check_msg(message, ctx).await?;
 
-    let message = msg.channel_id.say(&ctx, "Compiling...")?;
+    let message = msg.channel_id.say(&ctx, "Compiling...").await?;
     let out = &Fork::new("cargo")
         .args(&["build", "--release", "-j", "1"])
-        .output()?;
+        .output()
+        .await?;
     if !out.status.success() {
         return Err(format!(
             "Build Error!
@@ -124,17 +128,16 @@ async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
         )
         .into());
     }
-    check_msg(message)?;
+    check_msg(message, ctx).await?;
 
-    cargo_restart(ctx, msg, _args)
+    cargo_restart(ctx, msg, _args).await
 }
 
 #[command]
 #[description("Update the bot")]
 async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let _ = match UPDATING.try_lock() {
-        Err(TryLockError::WouldBlock) => return Err("Alreading updating".into()),
-        Err(TryLockError::Poisoned(p)) => return Err(p.into()),
+        Err(_) => return Err("Alreading updating".into()),
         Ok(guard) => guard,
     };
 
@@ -149,8 +152,10 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let asset_url = client
         .get("https://api.github.com/repos/mendess/Memnarch-rs/releases")
         .header(header::USER_AGENT, "mendess")
-        .send()?
-        .json::<Vec<Release>>()?
+        .send()
+        .await?
+        .json::<Vec<Release>>()
+        .await?
         .into_iter()
         .min_by_key(|x| Reverse(x.created_at))
         .ok_or_else(|| "No new releases")?
@@ -165,29 +170,33 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let executable_url = client
         .get(&asset_url)
         .header(header::USER_AGENT, "mendess")
-        .send()?
-        .json::<Vec<Asset>>()?
+        .send()
+        .await?
+        .json::<Vec<Asset>>()
+        .await?
         .into_iter()
         .find(|x| x.name == EXE_NAME)
         .map(|x| x.browser_download_url)
         .ok_or("Release doesn't contain executable")?;
 
     println!("Downloading lattest release");
-    let mut temp = tempfile::NamedTempFile::new_in(".")?;
+    let (mut temp_file, temp_path) = tempfile::NamedTempFile::new_in(".")?.into_parts();
     let bytes = client
         .get(&executable_url)
         .header(header::USER_AGENT, "mendess")
-        .send()?
-        .bytes()?;
-    temp.write_all(&bytes)?;
+        .send()
+        .await?
+        .bytes()
+        .await?;
+    File::from_std(temp_file).write_all(&bytes).await?;
     println!("Renaming");
-    fs::rename(&temp, EXE_NAME)?;
-    let mut perm = fs::metadata(EXE_NAME)?.permissions();
+    fs::rename(&temp_path, EXE_NAME).await?;
+    let mut perm = fs::metadata(EXE_NAME).await?.permissions();
     let mode = perm.mode() | 0o700;
     println!("Setting mode: {:o} => {:o}", perm.mode(), mode);
     perm.set_mode(mode);
-    fs::set_permissions(EXE_NAME, perm)?;
+    fs::set_permissions(EXE_NAME, perm).await?;
 
     println!("Restaring");
-    restart(ctx, msg, _args)
+    restart(ctx, msg, _args).await
 }

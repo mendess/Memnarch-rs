@@ -1,5 +1,5 @@
 use crate::consts::FILES_DIR;
-// use crate::permissions::IS_FRIEND_CHECK;
+use crate::permissions::*;
 use futures::prelude::*;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ use serenity::{
 use std::{path::PathBuf, sync::Arc};
 use tokio::{
     fs::{DirBuilder, File},
-    io::{AsyncWriteExt, AsyncReadExt },
+    io::{AsyncReadExt, AsyncWriteExt},
     sync::Mutex,
 };
 
@@ -43,20 +43,17 @@ impl QuoteManager {
         Ok(p)
     }
 
-    async fn load() -> Self {
-        Self::path()
-            .and_then(|p| File::open(p))
-            .and_then(|mut file| {
-                let mut s = String::new();
-                // TODO: don't read to a string
-                let content = file.read_to_string(&mut s);
-                future::ready(serde_json::from_str(&s).map_err(|e| {
-                    eprintln!("Error parsing quotes");
-                    e.into()
-                }))
+    async fn load() -> std::io::Result<Self> {
+        let path = Self::path().await?;
+        let mut file = File::open(path).await?;
+        let mut s = String::new();
+        // TODO: don't read to a string
+        file.read_to_string(&mut s).await.and_then(|_| {
+            serde_json::from_str(&s).map_err(|e| {
+                eprintln!("Error parsing quotes");
+                e.into()
             })
-            .await
-            .unwrap_or_default()
+        })
     }
 
     fn choose(&self) -> Option<&str> {
@@ -69,7 +66,10 @@ impl QuoteManager {
         println!("Quote add: {:?}", path);
         // TODO: don't write to a string
         let content = serde_json::to_string(self)?;
-        File::create(path).await?.write_all(content.as_bytes()).await
+        File::create(path)
+            .await?
+            .write_all(content.as_bytes())
+            .await
     }
 }
 
@@ -82,14 +82,18 @@ impl TypeMapKey for QuoteManager {
 async fn quote(ctx: &Context, msg: &Message) -> CommandResult {
     let quotes = fetch_quotes(ctx).await;
     msg.channel_id
-        .say(&ctx, quotes.lock().await.choose().unwrap_or("No quotes found!")).await?;
+        .say(
+            &ctx,
+            quotes.lock().await.choose().unwrap_or("No quotes found!"),
+        )
+        .await?;
     Ok(())
 }
 
 #[command]
 #[description("Add a quote")]
 #[min_args(1)]
-//TODO: #[checks("is_friend")]
+#[checks("is_friend")]
 async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let quotes = fetch_quotes(ctx).await;
     let quote = args.rest();
@@ -103,7 +107,9 @@ async fn fetch_quotes(ctx: &Context) -> Arc<Mutex<QuoteManager>> {
     match share_map.get::<QuoteManager>() {
         Some(quotes) => Arc::clone(quotes),
         None => {
-            share_map.insert::<QuoteManager>(Arc::new(Mutex::new(QuoteManager::load().await)));
+            share_map.insert::<QuoteManager>(Arc::new(Mutex::new(
+                QuoteManager::load().await.unwrap_or_default(),
+            )));
             Arc::clone(share_map.get_mut::<QuoteManager>().unwrap())
         }
     }

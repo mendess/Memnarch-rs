@@ -1,5 +1,6 @@
-use crate::{consts::FILES_DIR, cron::Task};
+use crate::consts::FILES_DIR;
 use chrono::{DateTime, Utc};
+use daemons::Daemon;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -19,6 +20,7 @@ use std::{
     io::ErrorKind as IoErrorKind,
     path::PathBuf,
     sync::Arc,
+    time::{Duration, Instant},
 };
 
 #[group]
@@ -26,9 +28,9 @@ use std::{
 #[commands(add, remove, list)]
 struct Custom;
 
-//#[min_args(2)]
 #[command]
-async fn add(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+#[min_args(2)]
+async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let mut args_it = args.raw();
     let fst = args_it.next().unwrap();
     let decay = if fst == "-d" || fst == "--decay" {
@@ -41,59 +43,69 @@ async fn add(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
     let output = args_it.join(" ");
     ctx.data
         .write()
+        .await
         .get_mut::<CustomCommands>()
         .unwrap()
         .write()
+        .await
         .add(
             msg.guild_id.ok_or_else(|| "guild_id is missing")?,
             cmd,
             output,
             decay,
         )?;
-    msg.channel_id.say(&ctx, "Command added!")?;
+    msg.channel_id.say(&ctx, "Command added!").await?;
     Ok(())
 }
 
-// #[min_args(1)]
 #[command]
-async fn remove(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
+#[min_args(1)]
+async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let cmd = args.raw().next().unwrap();
     let output = ctx
         .data
         .write()
+        .await
         .get_mut::<CustomCommands>()
         .unwrap()
         .write()
+        .await
         .remove(msg.guild_id.ok_or_else(|| "guild_id is missing")?, cmd)?;
     match output {
-        Some(output) => msg
-            .channel_id
-            .say(&ctx, format!("Command removed: {} => '{}'!", cmd, output))?,
-        None => msg
-            .channel_id
-            .say(&ctx, format!("Command {} doesn't exist!", cmd))?,
+        Some(output) => {
+            msg.channel_id
+                .say(&ctx, format!("Command removed: {} => '{}'!", cmd, output))
+                .await?
+        }
+        None => {
+            msg.channel_id
+                .say(&ctx, format!("Command {} doesn't exist!", cmd))
+                .await?
+        }
     };
     Ok(())
 }
 
 #[command]
-async fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let mut share_map = ctx.data.write();
-    let mut cc = share_map.get_mut::<CustomCommands>().unwrap().write();
+async fn list(ctx: &Context, msg: &Message) -> CommandResult {
+    let mut share_map = ctx.data.write().await;
+    let mut cc = share_map.get_mut::<CustomCommands>().unwrap().write().await;
     let cmds = cc.list(msg.guild_id.ok_or_else(|| "guild_id is missing")?)?;
-    msg.channel_id.send_message(&ctx, |m| {
-        m.embed(|e| {
-            if let Some(cmds) = cmds {
-                let size_hint = cmds.size_hint().0;
-                e.description(
-                    cmds.fold(String::with_capacity(size_hint * 5), |d, (key, value)| {
-                        d + &format!("{} - {}\n", key, value)
-                    }),
-                );
-            }
-            e.title("List of custom commands")
+    msg.channel_id
+        .send_message(&ctx, |m| {
+            m.embed(|e| {
+                if let Some(cmds) = cmds {
+                    let size_hint = cmds.size_hint().0;
+                    e.description(
+                        cmds.fold(String::with_capacity(size_hint * 5), |d, (key, value)| {
+                            d + &format!("{} - {}\n", key, value)
+                        }),
+                    );
+                }
+                e.title("List of custom commands")
+            })
         })
-    })?;
+        .await?;
     Ok(())
 }
 
@@ -205,7 +217,7 @@ impl CustomCommands {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MessageDecay {
     id: Message,
     when: DateTime<Utc>,
@@ -217,20 +229,22 @@ impl MessageDecay {
     }
 }
 
-impl Task for MessageDecay {
-    type Id = Message;
-    type GlobalData = Arc<Http>;
-    fn when(&self) -> DateTime<Utc> {
-        self.when
+#[serenity::async_trait]
+impl Daemon for MessageDecay {
+    type Data = serenity::CacheAndHttp;
+
+    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
+        if let Err(e) = self.id.delete(data).await {
+            eprintln!("{}", e);
+        }
+        daemons::ControlFlow::Break
     }
 
-    fn call(&self, data: Self::GlobalData) -> Result<(), Box<dyn Error>> {
-        self.id
-            .delete(&*data)
-            .map_err(|e| Box::new(e) as Box<dyn Error>)
+    async fn name(&self) -> String {
+        format!("{:?}", self)
     }
 
-    fn check_id(&self, id: &Self::Id) -> bool {
-        self.id.id == id.id
+    async fn interval(&self) -> Duration {
+        (self.when - Utc::now()).to_std().unwrap_or_default()
     }
 }

@@ -18,6 +18,7 @@ reqwest = "0.11"
 tempfile = "3"
 songbird = "0.1"
 futures = "0.3"
+daemons = { git = "https://github.com/mendess/daemons", version = "0.5" }
 
 [dependencies.serenity]
 version = "0.10"

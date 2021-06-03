@@ -1,20 +1,17 @@
-use crate::consts::FILES_DIR;
-use crate::cron::{CronSink, Task};
-use crate::permissions::IS_FRIEND_CHECK;
-use crate::VoiceManager;
+use crate::{permissions::*, daemons::DaemonManager, consts::FILES_DIR };
+// use crate::VoiceManager;
 
+use daemons::Daemon;
 use chrono::{DateTime, Duration, Utc};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serenity::{
-    client::bridge::voice::ClientVoiceManager,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
     model::{channel::Message, id::GuildId},
     prelude::*,
-    voice,
 };
 use simsearch::SimSearch;
 use std::{
@@ -24,6 +21,7 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration as StdDuration,
 };
 
 const SFX_FILES_DIR: &str = "sfx";
@@ -68,8 +66,8 @@ impl SfxStats {
         )))
     }
 
-    fn update(&mut self, sfx: &str) -> Result<(), String> {
-        let mut stats = self.0.lock();
+    async fn update(&mut self, sfx: &str) -> Result<(), String> {
+        let mut stats = self.0.lock().await;
         stats
             .entry(sfx.to_string())
             .and_modify(|c| *c += 1)
@@ -97,45 +95,47 @@ pub struct LeaveVoice {
     when: DateTime<Utc>,
 }
 
-impl Task for LeaveVoice {
-    type Id = GuildId;
-    type GlobalData = Arc<Mutex<ClientVoiceManager>>;
+#[serenity::async_trait]
+impl Daemon for LeaveVoice {
+    type Data = serenity::CacheAndHttp;
 
-    fn when(&self) -> DateTime<Utc> {
-        self.when
+    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
+        // TODO: Fix after reimplementing voice
+        // println!(
+        //     "[{:?}] Leaving guild's {} voice channel",
+        //     Utc::now().naive_utc(),
+        //     self.guild_id
+        // );
+        // manager
+        //     .leave(self.guild_id)
+        //     .ok_or_else(|| "Couldn't leave channel".into());
+        daemons::ControlFlow::Break
     }
 
-    fn call(&self, data: Self::GlobalData) -> Result<(), Box<dyn Error>> {
-        println!(
-            "[{:?}] Leaving guild's {} voice channel",
-            Utc::now().naive_utc(),
-            self.guild_id
-        );
-        let mut manager = data.lock();
-        manager
-            .leave(self.guild_id)
-            .ok_or_else(|| "Couldn't leave channel".into())
+    async fn interval(&self) -> StdDuration {
+        (self.when - Utc::now()).to_std().unwrap_or_default()
     }
 
-    fn check_id(&self, id: &Self::Id) -> bool {
-        self.guild_id == *id
+    async fn name(&self) -> String {
+        format!("{:?}", self)
     }
 }
 
 #[command]
 #[description("Stops everything")]
-pub async fn stop(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.ok_or_else(|| String::from("Not in a guild"))?;
-    let share_map = ctx.data.read();
-    let manager_id = share_map
-        .get::<VoiceManager>()
-        .expect("Expected VoiceManager in ShareMap");
-    let mut manager = manager_id.lock();
-    if let Some(handler) = manager.get_mut(guild_id) {
-        handler.stop();
-    } else {
-        return Err("Not in a voice channel".into());
-    }
+pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
+    // TODO: Fix after reimplementing voice
+    // let guild_id = msg.guild_id.ok_or_else(|| String::from("Not in a guild"))?;
+    // let share_map = ctx.data.read().await;
+    // let manager_id = share_map
+    //     .get::<VoiceManager>()
+    //     .expect("Expected VoiceManager in ShareMap");
+    // let mut manager = manager_id.lock();
+    // if let Some(handler) = manager.get_mut(guild_id) {
+    //     handler.stop();
+    // } else {
+    //     return Err("Not in a voice channel".into());
+    // }
     Ok(())
 }
 
@@ -145,85 +145,87 @@ pub async fn stop(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[description("Play a saved sfx!")]
 #[usage("part of name")]
 #[example("wow")]
-pub async fn play(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    let mut file = PathBuf::new();
-    play_sfx(ctx, msg, || {
-        file = find_file(&args)?;
-        msg.channel_id.say(
-            &ctx,
-            &format!(
-                "Playing {}",
-                file.file_name()
-                    .unwrap_or(std::ffi::OsStr::new(""))
-                    .to_string_lossy()
-            ),
-        )?;
-        eprintln!("Playing sfx: {:?}", file);
-        Ok(voice::ffmpeg(&file)?)
-    })?;
-    let mut share_map = ctx.data.write();
-    share_map
-        .get_mut::<SfxStats>()
-        .expect("Expected SfxStats in ShareMap")
-        .update(file.as_os_str().to_str().unwrap())
-        .err()
-        .iter()
-        .for_each(|e| eprintln!("{}", e));
+pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    // TODO: Fix after reimplementing voice
+    // let mut file = PathBuf::new();
+    // play_sfx(ctx, msg, || {
+    //     file = find_file(&args)?;
+    //     msg.channel_id.say(
+    //         &ctx,
+    //         &format!(
+    //             "Playing {}",
+    //             file.file_name()
+    //                 .unwrap_or(std::ffi::OsStr::new(""))
+    //                 .to_string_lossy()
+    //         ),
+    //     )?;
+    //     eprintln!("Playing sfx: {:?}", file);
+    //     Ok(voice::ffmpeg(&file)?)
+    // })?;
+    // let mut share_map = ctx.data.write();
+    // share_map
+    //     .get_mut::<SfxStats>()
+    //     .expect("Expected SfxStats in ShareMap")
+    //     .update(file.as_os_str().to_str().unwrap())
+    //     .err()
+    //     .iter()
+    //     .for_each(|e| eprintln!("{}", e));
     Ok(())
 }
 
-pub async fn play_sfx<F>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
-where
-    F: FnOnce() -> Result<Box<dyn voice::AudioSource>, Box<dyn Error>>,
-{
-    let guild = msg
-        .guild(&ctx.cache)
-        .ok_or_else(|| "Groups and DMs not supported".to_string())?;
-    let guild_id = { guild.read().id };
-    let connect_to = guild
-        .read()
-        .voice_states
-        .get(&msg.author.id)
-        .and_then(|voice_state| voice_state.channel_id)
-        .ok_or_else(|| "Not in a voice channel".to_string())?;
-    let share_map = ctx.data.read();
-    let cron_sink = share_map
-        .get::<CronSink<LeaveVoice>>()
-        .expect("Expected VoiceManager in ShareMap");
-    if let Some(gid) = msg.guild_id {
-        cron_sink.cancel(gid)?;
-    }
-    let manager_id = share_map
-        .get::<VoiceManager>()
-        .expect("Expected VoiceManager in ShareMap");
-    let mut manager = manager_id.lock();
-    if let None = manager.join(guild_id, connect_to) {
-        msg.channel_id.say(&ctx, "Error joining")?;
-        return Err("Failed to join channel".into());
-    }
-    if let Some(handler) = manager.get_mut(guild_id) {
-        handler.play(audio_source()?);
-    } else {
-        return Err("Not in a voice channel".into());
-    }
-    if let Some(gid) = msg.guild_id {
-        let leave = LeaveVoice {
-            when: Utc::now()
-                .checked_add_signed(Duration::minutes(30))
-                .unwrap(),
-            guild_id: gid,
-        };
-        cron_sink.send(leave)?;
-    }
+// TODO: Fix after reimplementing voice
+// pub async fn play_sfx<F>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
+// where
+//     F: FnOnce() -> Result<Box<dyn voice::AudioSource>, Box<dyn Error>>,
+// {
+//     let guild = msg
+//         .guild(&ctx.cache)
+//         .ok_or_else(|| "Groups and DMs not supported".to_string())?;
+//     let guild_id = { guild.read().id };
+//     let connect_to = guild
+//         .read()
+//         .voice_states
+//         .get(&msg.author.id)
+//         .and_then(|voice_state| voice_state.channel_id)
+//         .ok_or_else(|| "Not in a voice channel".to_string())?;
+//     let share_map = ctx.data.read();
+//     let cron_sink = share_map
+//         .get::<CronSink<LeaveVoice>>()
+//         .expect("Expected VoiceManager in ShareMap");
+//     if let Some(gid) = msg.guild_id {
+//         cron_sink.cancel(gid)?;
+//     }
+//     let manager_id = share_map
+//         .get::<VoiceManager>()
+//         .expect("Expected VoiceManager in ShareMap");
+//     let mut manager = manager_id.lock();
+//     if let None = manager.join(guild_id, connect_to) {
+//         msg.channel_id.say(&ctx, "Error joining")?;
+//         return Err("Failed to join channel".into());
+//     }
+//     if let Some(handler) = manager.get_mut(guild_id) {
+//         handler.play(audio_source()?);
+//     } else {
+//         return Err("Not in a voice channel".into());
+//     }
+//     if let Some(gid) = msg.guild_id {
+//         let leave = LeaveVoice {
+//             when: Utc::now()
+//                 .checked_add_signed(Duration::minutes(30))
+//                 .unwrap(),
+//             guild_id: gid,
+//         };
+//         cron_sink.send(leave)?;
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 #[command]
 #[description("List the available sfx files")]
 #[usage("")]
-async fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
-    let sounds = fs::read_dir(sfx_path::<&str, _>(None)?).map(|x| {
+async fn list(ctx: &Context, msg: &Message) -> CommandResult {
+    let sounds = fs::read_dir(sfx_path::<&str, _>(None).await?).map(|x| {
         let mut files = x
             .filter_map(Result::ok)
             .map(|x| String::from(x.path().as_path().file_name().unwrap().to_string_lossy()))
@@ -232,26 +234,28 @@ async fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
         files.sort_unstable();
         files
     });
-    msg.channel_id.send_message(&ctx.http, |m| {
-        m.embed(|e| {
-            e.title("List of sfx:");
-            match &sounds {
-                Ok(files) if !files.is_empty() => {
-                    e.fields(files.iter().chunks(12).into_iter().map(|x| {
-                        let f = x.collect::<Vec<_>>();
-                        let c1 = f[0].to_uppercase().chars().next().unwrap();
-                        let c2 = f[f.len() - 1].to_uppercase().chars().next().unwrap();
-                        (
-                            [c1, '-', c2].iter().collect::<String>(),
-                            f.iter().fold(String::new(), |acc, x| acc + "\n" + x),
-                            true,
-                        )
-                    }))
+    msg.channel_id
+        .send_message(&ctx.http, |m| {
+            m.embed(|e| {
+                e.title("List of sfx:");
+                match &sounds {
+                    Ok(files) if !files.is_empty() => {
+                        e.fields(files.iter().chunks(12).into_iter().map(|x| {
+                            let f = x.collect::<Vec<_>>();
+                            let c1 = f[0].to_uppercase().chars().next().unwrap();
+                            let c2 = f[f.len() - 1].to_uppercase().chars().next().unwrap();
+                            (
+                                [c1, '-', c2].iter().collect::<String>(),
+                                f.iter().fold(String::new(), |acc, x| acc + "\n" + x),
+                                true,
+                            )
+                        }))
+                    }
+                    Err(_) | Ok(_) => e.description("**No files :(**"),
                 }
-                Err(_) | Ok(_) => e.description("**No files :(**"),
-            }
+            })
         })
-    })?;
+        .await?;
     Ok(())
 }
 
@@ -259,18 +263,18 @@ async fn list(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[checks("is_friend")]
 #[description("Saves a new sfx file")]
 #[usage("{Attatchment}")]
-async fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
+async fn add(ctx: &Context, msg: &Message) -> CommandResult {
     for attachment in msg.attachments.iter() {
         if attachment.size > 1024 * 1024 {
             return Err("File size too high, please keep it under 1Mb."
                 .to_string()
                 .into());
         }
-        let bytes = attachment.download()?;
-        let path = sfx_path(&attachment.filename)?;
+        let bytes = attachment.download().await?;
+        let path = sfx_path(&attachment.filename).await?;
         let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
         file.write_all(&bytes)?;
-        msg.channel_id.say(&ctx, "File added!")?;
+        msg.channel_id.say(&ctx, "File added!").await?;
     }
     Ok(())
 }
@@ -281,9 +285,11 @@ async fn add(ctx: &mut Context, msg: &Message) -> CommandResult {
 #[description("Remove an sfx file")]
 #[usage("part of name")]
 #[example("wow")]
-async fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    let file = find_file(&args)?;
-    msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
+async fn delete(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    let file = find_file(&args).await?;
+    msg.channel_id
+        .send_message(&ctx, |m| m.add_file(&file))
+        .await?;
     fs::remove_file(&file)?;
     Ok(())
 }
@@ -294,55 +300,61 @@ async fn delete(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
 #[description("Upload an sfx file to discord")]
 #[usage("part of name")]
 #[example("wow")]
-async fn retreive(ctx: &mut Context, msg: &Message, args: Args) -> CommandResult {
-    let file = find_file(&args)?;
-    msg.channel_id.send_message(&ctx, |m| m.add_file(&file))?;
+async fn retreive(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    let file = find_file(&args).await?;
+    msg.channel_id
+        .send_message(&ctx, |m| m.add_file(&file))
+        .await?;
     Ok(())
 }
 
 #[command]
 #[description("Show the stats of the most played sfx")]
 #[usage("")]
-async fn stats(ctx: &mut Context, msg: &Message) -> CommandResult {
-    msg.channel_id.send_message(&ctx, |m| {
-        m.embed(|e| {
-            e.title("Stats");
-            let mut stats = ctx
-                .data
-                .read()
-                .get::<SfxStats>()
-                .expect("Expected SfxStats in ShareMap")
-                .0
-                .lock()
-                .iter()
-                .map(|(k, v)| (k.clone(), *v))
-                .collect::<Vec<(String, usize)>>();
-            stats.sort_unstable_by_key(|(_, v)| *v);
-            e.fields(stats.iter().chunks(12).into_iter().map(|x| {
-                let f = x.collect::<Vec<_>>();
-                let c1 = f[0].1.to_string();
-                let c2 = f[f.len() - 1].1.to_string();
-                (
-                    format!("{}-{}", c1, c2),
-                    f.iter().fold(String::new(), |acc, x| {
-                        acc + "\n"
-                            + &format!(
-                                "{:<5}{}",
-                                x.1,
-                                Path::new(&x.0).file_name().unwrap().to_string_lossy()
-                            )
-                    }),
-                    true,
-                )
-            }))
+async fn stats(ctx: &Context, msg: &Message) -> CommandResult {
+    let mut stats = ctx
+        .data
+        .read()
+        .await
+        .get::<SfxStats>()
+        .expect("Expected SfxStats in ShareMap")
+        .0
+        .lock()
+        .await
+        .iter()
+        .map(|(k, v)| (k.clone(), *v))
+        .collect::<Vec<(String, usize)>>();
+    msg.channel_id
+        .send_message(&ctx, |m| {
+            m.embed(|e| {
+                e.title("Stats");
+                stats.sort_unstable_by_key(|(_, v)| *v);
+                e.fields(stats.iter().chunks(12).into_iter().map(|x| {
+                    let f = x.collect::<Vec<_>>();
+                    let c1 = f[0].1.to_string();
+                    let c2 = f[f.len() - 1].1.to_string();
+                    (
+                        format!("{}-{}", c1, c2),
+                        f.iter().fold(String::new(), |acc, x| {
+                            acc + "\n"
+                                + &format!(
+                                    "{:<5}{}",
+                                    x.1,
+                                    Path::new(&x.0).file_name().unwrap().to_string_lossy()
+                                )
+                        }),
+                        true,
+                    )
+                }))
+            })
         })
-    })?;
+        .await?;
     Ok(())
 }
 
 async fn find_file(search_string: &Args) -> io::Result<PathBuf> {
     use std::io::{Error, ErrorKind::NotFound};
-    let (search, vec) = fs::read_dir(sfx_path::<&str, _>(None)?)?
+    let (search, vec) = fs::read_dir(sfx_path::<&str, _>(None).await?)?
         .filter_map(Result::ok)
         .enumerate()
         .fold(
