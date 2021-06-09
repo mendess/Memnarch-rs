@@ -1,6 +1,4 @@
 use crate::consts::FILES_DIR;
-use chrono::{DateTime, Utc};
-use daemons::Daemon;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -18,7 +16,6 @@ use std::{
     io::ErrorKind as IoErrorKind,
     path::PathBuf,
     sync::Arc,
-    time::Duration,
 };
 
 #[group]
@@ -30,13 +27,6 @@ struct Custom;
 #[min_args(2)]
 async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let mut args_it = args.raw();
-    let fst = args_it.next().unwrap();
-    let decay = if fst == "-d" || fst == "--decay" {
-        true
-    } else {
-        args_it = args.raw();
-        false
-    };
     let cmd = args_it.next().unwrap().to_string();
     let output = args_it.join(" ");
     ctx.data
@@ -50,7 +40,6 @@ async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             msg.guild_id.ok_or_else(|| "guild_id is missing")?,
             cmd,
             output,
-            decay,
         )?;
     msg.channel_id.say(&ctx, "Command added!").await?;
     Ok(())
@@ -107,8 +96,7 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-pub type CommandPair = (String, bool);
-type GuildCommands = HashMap<String, CommandPair>;
+type GuildCommands = HashMap<String, String>;
 
 const CUSTOM_DIR: &str = "custom";
 
@@ -163,25 +151,15 @@ impl CustomCommands {
         Ok(())
     }
 
-    pub fn execute(
-        &mut self,
-        guild_id: GuildId,
-        cmd: &str,
-    ) -> Result<Option<&CommandPair>, IoError> {
+    pub fn execute(&mut self, guild_id: GuildId, cmd: &str) -> Result<Option<&str>, IoError> {
         match self.load(guild_id) {
             Err(e) if e.kind() == IoErrorKind::NotFound => Ok(None),
-            Err(e) => Err(dbg!(e)),
-            Ok(gc) => Ok(dbg!(gc.get(cmd))),
+            Err(e) => Err(e),
+            Ok(gc) => Ok(gc.get(cmd).map(String::as_str)),
         }
     }
 
-    pub fn add(
-        &mut self,
-        guild_id: GuildId,
-        cmd: String,
-        ret: String,
-        decay: bool,
-    ) -> Result<(), IoError> {
+    pub fn add(&mut self, guild_id: GuildId, cmd: String, ret: String) -> Result<(), IoError> {
         let gc = match self.load(guild_id) {
             Ok(gc) => gc,
             Err(e) if e.kind() == IoErrorKind::NotFound => {
@@ -190,7 +168,7 @@ impl CustomCommands {
             }
             Err(e) => return Err(e),
         };
-        gc.insert(cmd, (ret, decay));
+        gc.insert(cmd, ret);
         self.save(guild_id)?;
         Ok(())
     }
@@ -199,7 +177,7 @@ impl CustomCommands {
         match self.load(guild_id) {
             Err(e) if e.kind() == IoErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
-            Ok(gc) => Ok(gc.remove(cmd).map(|c| c.0)),
+            Ok(gc) => Ok(gc.remove(cmd)),
         }
     }
 
@@ -210,39 +188,7 @@ impl CustomCommands {
         match self.load(guild_id) {
             Err(e) if e.kind() == IoErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
-            Ok(gc) => Ok(Some(gc.iter().map(|(k, v)| (k.as_str(), v.0.as_str())))),
+            Ok(gc) => Ok(Some(gc.iter().map(|(k, v)| (k.as_str(), v.as_str())))),
         }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MessageDecay {
-    id: Message,
-    when: DateTime<Utc>,
-}
-
-impl MessageDecay {
-    pub fn new(id: Message, when: DateTime<Utc>) -> Self {
-        MessageDecay { id, when }
-    }
-}
-
-#[serenity::async_trait]
-impl Daemon for MessageDecay {
-    type Data = serenity::CacheAndHttp;
-
-    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
-        if let Err(e) = self.id.delete(data).await {
-            eprintln!("{}", e);
-        }
-        daemons::ControlFlow::Break
-    }
-
-    async fn name(&self) -> String {
-        format!("{:?}", self)
-    }
-
-    async fn interval(&self) -> Duration {
-        (self.when - Utc::now()).to_std().unwrap_or_default()
     }
 }

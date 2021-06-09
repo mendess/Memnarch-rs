@@ -11,10 +11,9 @@ mod permissions;
 mod reminders;
 
 use self::daemons::DaemonManager;
-use chrono::{Duration, Utc};
 use commands::{
     command_groups::*,
-    custom::{CustomCommands, MessageDecay},
+    custom::CustomCommands,
     interrail::InterrailConfig,
     sfx::{util::LeaveVoiceDaemons, SfxStats},
 };
@@ -77,7 +76,8 @@ impl EventHandler for Handler {
                 .ok()
         }
         if let Some(id) = old.and_then(|vs| vs.channel_id) {
-            if members(id, &ctx).await
+            if members(id, &ctx)
+                .await
                 .filter(|m| m.len() == 1)
                 .map(has_bot)
                 .unwrap_or(false)
@@ -225,11 +225,6 @@ async fn main() -> std::io::Result<()> {
         .expect("Err creating client");
     let mut daemon_manager = self::daemons::DaemonManager::new(client.cache_and_http.clone());
     reminders::load_reminders(&mut daemon_manager).await?;
-    // TODO: Message decay
-    // let md_cron_sink = cron::start::<MessageDecay>(
-    //     "message_decay.json",
-    //     Arc::clone(&client.cache_and_http.http),
-    // );
     {
         let mut data = client.data.write().await;
         if let Some(id) = std::env::args()
@@ -276,7 +271,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
     println!("looking for command: {}", msg.content);
     async fn f(ctx: &Context, msg: &Message, g: GuildId) -> CommandResult {
         let mut share_map = ctx.data.write().await;
-        let decay = if let Some((o, decay)) = share_map
+        if let Some(o) = share_map
             .get_mut::<CustomCommands>()
             .unwrap()
             .write()
@@ -291,24 +286,10 @@ async fn normal_message(ctx: &Context, msg: &Message) {
             )
             .map_err(|e| e.to_string())?
         {
-            let m = msg
-                .channel_id
+            msg.channel_id
                 .say(&ctx, o)
                 .map_err(|e| e.to_string())
                 .await?;
-            Some((*decay, m))
-        } else {
-            None
-        };
-        if let Some((true, m)) = decay {
-            let mut cron = share_map.get_mut::<DaemonManager>().unwrap().lock().await;
-            cron.add_daemon(MessageDecay::new(m, Utc::now() + Duration::hours(1)))
-                .await;
-            cron.add_daemon(MessageDecay::new(
-                msg.clone(),
-                Utc::now() + Duration::minutes(30),
-            ))
-            .await;
         }
         Ok(())
     }
