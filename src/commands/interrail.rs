@@ -1,3 +1,4 @@
+use crate::get;
 use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
@@ -45,17 +46,11 @@ struct Interrail;
 #[checks("is_interrail_channel")]
 #[aliases("n")]
 #[min_args(2)]
-pub async fn new(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    if let Some(config) = ctx.data.read().await.get::<InterrailConfig>() {
-        config
-            .read()
-            .await
-            .stories
-            .say(&ctx.http, args.rest())
-            .await?;
-    } else {
-        msg.channel_id.say(&ctx, "not configured").await?;
-    }
+pub async fn new(ctx: &Context, _: &Message, args: Args) -> CommandResult {
+    get!(ctx, InterrailConfig, read)
+        .stories
+        .say(&ctx.http, args.rest())
+        .await?;
     Ok(())
 }
 
@@ -65,19 +60,13 @@ pub async fn new(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[checks("is_interrail_channel")]
 #[aliases("e")]
 #[min_args(2)]
-pub async fn edit(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+pub async fn edit(ctx: &Context, _: &Message, mut args: Args) -> CommandResult {
     let msg_id = args.single::<u64>()?;
-    if let Some(config) = ctx.data.read().await.get::<InterrailConfig>() {
-        let mut message = config
-            .read()
-            .await
-            .stories
-            .message(&ctx.http, msg_id)
-            .await?;
-        message.edit(&ctx, |c| c.content(args.rest())).await?;
-    } else {
-        msg.channel_id.say(&ctx, "not configured").await?;
-    }
+    let mut message = get!(ctx, InterrailConfig, read)
+        .stories
+        .message(&ctx.http, msg_id)
+        .await?;
+    message.edit(&ctx, |c| c.content(args.rest())).await?;
     Ok(())
 }
 
@@ -89,13 +78,7 @@ pub async fn edit(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 pub async fn config(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let talk = args.single::<ChannelId>()?;
     let stories = args.single::<ChannelId>()?;
-    *ctx.data
-        .read()
-        .await
-        .get::<InterrailConfig>()
-        .expect("Interrail config to be loaded")
-        .write()
-        .await = InterrailConfig::with_ids(stories, talk)?;
+    *get!(ctx, InterrailConfig, write) = InterrailConfig::with_ids(stories, talk)?;
     msg.channel_id.say(&ctx, "Configured").await?;
     Ok(())
 }

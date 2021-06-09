@@ -1,4 +1,4 @@
-use crate::{consts::NUMBERS, daemons::DaemonManager, reminders};
+use crate::{consts::NUMBERS, daemons::DaemonManager, get, reminders};
 use chrono::{Duration, Utc};
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
@@ -146,7 +146,7 @@ async fn remindme(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     }?;
     args.advance();
     let data = ctx.data.read().await;
-    let mut dm = data.get::<DaemonManager>().unwrap().lock().await;
+    let mut dm = get!(> data, DaemonManager, lock);
     reminders::remind(
         &mut *dm,
         format!("You asked me to remind you of this:\n{}", args.rest()),

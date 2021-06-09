@@ -1,4 +1,4 @@
-use crate::consts::FILES_DIR;
+use crate::{consts::FILES_DIR, get};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -29,18 +29,11 @@ async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let mut args_it = args.raw();
     let cmd = args_it.next().unwrap().to_string();
     let output = args_it.join(" ");
-    ctx.data
-        .write()
-        .await
-        .get_mut::<CustomCommands>()
-        .unwrap()
-        .write()
-        .await
-        .add(
-            msg.guild_id.ok_or_else(|| "guild_id is missing")?,
-            cmd,
-            output,
-        )?;
+    get!(ctx, CustomCommands, write).add(
+        msg.guild_id.ok_or_else(|| "guild_id is missing")?,
+        cmd,
+        output,
+    )?;
     msg.channel_id.say(&ctx, "Command added!").await?;
     Ok(())
 }
@@ -49,14 +42,7 @@ async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[min_args(1)]
 async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let cmd = args.raw().next().unwrap();
-    let output = ctx
-        .data
-        .write()
-        .await
-        .get_mut::<CustomCommands>()
-        .unwrap()
-        .write()
-        .await
+    let output = get!(ctx, CustomCommands, write)
         .remove(msg.guild_id.ok_or_else(|| "guild_id is missing")?, cmd)?;
     match output {
         Some(output) => {
@@ -75,8 +61,8 @@ async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
 #[command]
 async fn list(ctx: &Context, msg: &Message) -> CommandResult {
-    let mut share_map = ctx.data.write().await;
-    let mut cc = share_map.get_mut::<CustomCommands>().unwrap().write().await;
+    let share_map = ctx.data.read().await;
+    let mut cc = get!(> share_map, CustomCommands, write);
     let cmds = cc.list(msg.guild_id.ok_or_else(|| "guild_id is missing")?)?;
     msg.channel_id
         .send_message(&ctx, |m| {

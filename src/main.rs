@@ -89,11 +89,9 @@ impl EventHandler for Handler {
                         return;
                     }
                     let data = ctx.data.read().await;
-                    let dm = data.get::<DaemonManager>().expect("DaemonManager");
-                    let lvc = data.get::<LeaveVoiceDaemons>().expect("LeaveVoiceDaemons");
-                    lvc.lock()
-                        .await
-                        .remove(&mut *dm.lock().await, guild_id)
+                    let mut dm = crate::get!(> data, DaemonManager, lock);
+                    crate::get!(> data, LeaveVoiceDaemons, lock)
+                        .remove(&mut *dm, guild_id)
                         .await;
                 };
             }
@@ -130,12 +128,11 @@ impl EventHandler for Handler {
 
     async fn ready(&self, ctx: Context, _ready: Ready) {
         println!("Up and running");
-        if let Some(id) = ctx.data.read().await.get::<UpdateNotify>() {
+        if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>() {
             id.send_message(&ctx, |m| m.content("Updated successfully!"))
                 .await
                 .expect("Couldn't send update notification");
         }
-        ctx.data.write().await.remove::<UpdateNotify>();
     }
 }
 
@@ -276,12 +273,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
     }
     println!("looking for command: {}", msg.content);
     async fn f(ctx: &Context, msg: &Message, g: GuildId) -> CommandResult {
-        let mut share_map = ctx.data.write().await;
-        if let Some(o) = share_map
-            .get_mut::<CustomCommands>()
-            .unwrap()
-            .write()
-            .await
+        if let Some(o) = crate::get!(mut ctx, CustomCommands, write)
             .execute(
                 g,
                 &msg.content
@@ -330,4 +322,64 @@ async fn on_dispatch_error(ctx: &Context, msg: &Message, e: DispatchError) {
         .say(ctx, format!("{:?}", e))
         .await
         .expect("Couldn't communicate dispatch error");
+}
+
+#[macro_export]
+macro_rules! get {
+    ($ctx:ident, $t:ty) => {
+        $ctx.data.read().await.get::<$t>().expect(::std::concat!(
+            ::std::stringify!($t),
+            " was not initialized"
+        ))
+    };
+    (mut $ctx:ident, $t:ty) => {
+        $ctx.data
+            .write()
+            .await
+            .get_mut::<$t>()
+            .expect(::std::concat!(
+                ::std::stringify!($t),
+                " was not initialized"
+            ))
+    };
+    ($ctx:ident, $t:ty, $lock:ident) => {
+        $ctx.data
+            .read()
+            .await
+            .get::<$t>()
+            .expect(::std::concat!(
+                ::std::stringify!($t),
+                " was not initialized"
+            ))
+            .$lock()
+            .await
+    };
+    (mut $ctx:ident, $t:ty, $lock:ident) => {
+        $ctx.data
+            .write()
+            .await
+            .get_mut::<$t>()
+            .expect(::std::concat!(
+                ::std::stringify!($t),
+                " was not initialized"
+            ))
+            .$lock()
+            .await
+    };
+    (> $data:ident, $t:ty) => {
+        $data.get::<$t>().expect(::std::concat!(
+            ::std::stringify!($t),
+            " was not initialized"
+        ))
+    };
+    (> $data:ident, $t:ty, $lock:ident) => {
+        $data
+            .get::<$t>()
+            .expect(::std::concat!(
+                ::std::stringify!($t),
+                " was not initialized"
+            ))
+            .$lock()
+            .await
+    };
 }

@@ -16,6 +16,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::Mutex,
 };
+use crate::get;
 
 const QUOTES_DIR: &str = "quotes";
 const QUOTES_FILE: &str = "quotes.json";
@@ -110,7 +111,7 @@ async fn fetch_quotes(ctx: &Context) -> Arc<Mutex<QuoteManager>> {
             share_map.insert::<QuoteManager>(Arc::new(Mutex::new(
                 QuoteManager::load().await.unwrap_or_default(),
             )));
-            Arc::clone(share_map.get_mut::<QuoteManager>().unwrap())
+            Arc::clone(get!(> share_map, QuoteManager))
         }
     }
 }

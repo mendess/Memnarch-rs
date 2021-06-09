@@ -1,7 +1,6 @@
 pub mod util;
 
-use crate::{consts::FILES_DIR, daemons::DaemonManager, permissions::*};
-
+use crate::{consts::FILES_DIR, daemons::DaemonManager, get, permissions::*};
 use chrono::{DateTime, Duration, Utc};
 use daemons::Daemon;
 use itertools::Itertools;
@@ -169,13 +168,7 @@ async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         }
     })
     .await?;
-    ctx.data
-        .write()
-        .await
-        .get::<SfxStats>()
-        .expect("Expected SfxStats in ShareMap")
-        .lock()
-        .await
+    get!(ctx, SfxStats, lock)
         .update(file.as_os_str().to_str().unwrap())
         .await
         .err()
@@ -194,10 +187,8 @@ where
     let call_lock = util::join_or_get_call(ctx, guild_id, msg.author.id).await?;
     call_lock.lock().await.play_source(audio_source().await?);
 
-    let data = ctx.data.write().await;
-    let dm = data
-        .get::<DaemonManager>()
-        .expect("DaemonManager no initialized");
+    let data = ctx.data.read().await;
+    let dm = get!(> data, DaemonManager);
     let id = dm
         .lock()
         .await
@@ -210,10 +201,7 @@ where
         })
         .await;
 
-    data.get::<util::LeaveVoiceDaemons>()
-        .unwrap()
-        .lock()
-        .await
+    get!(> data, util::LeaveVoiceDaemons, lock)
         .set(&mut *dm.lock().await, guild_id, id)
         .await;
 
@@ -311,14 +299,7 @@ async fn retreive(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description("Show the stats of the most played sfx")]
 #[usage("")]
 async fn stats(ctx: &Context, msg: &Message) -> CommandResult {
-    let mut stats = ctx
-        .data
-        .read()
-        .await
-        .get::<SfxStats>()
-        .expect("Expected SfxStats in ShareMap")
-        .lock()
-        .await
+    let mut stats = get!(ctx, SfxStats, lock)
         .0
         .iter()
         .map(|(k, v)| (k.clone(), *v))
