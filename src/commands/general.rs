@@ -98,59 +98,67 @@ async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 #[description(
     "Set a reminder for later.
               The time parameters allowed are:
-              - seconds (s|sec|secs|seconds)
-              - minutes (m|min|mins|minutes)
-              - hours (h|hours)
-              - days (d|days)
-              - weeks (w|weeks)
-              - months (month|months)
-              - years (year|years)
-              "
+              - seconds (s|sec|secs|second|seconds|segundo|segundos)
+              - minutes (m|min|mins|minute|minutes|minuto|minutos)
+              - hours (h|hour|hours|hora|horas)
+              - days (d|day|days|dia|dias)
+              - weeks (w|week|weeks|semana|semanas)
+              - months (month|months|mes|meses)
+              - years (y|year|years|ano|anos)"
 )]
 #[usage("delay message")]
 #[example("3s Remind me in 3 seconds")]
 #[example("4m Remind me in 4 minutes")]
-async fn remindme(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     lazy_static! {
-        static ref SECONDS: Regex = Regex::new(r"\d+(s|sec|secs|seconds?|segundos?)$").unwrap();
-        static ref MINUTES: Regex = Regex::new(r"\d+(m|min|mins|minutes?|minutos?)$").unwrap();
-        static ref HOURS: Regex = Regex::new(r"\d+(h|hours?|horas?)$").unwrap();
-        static ref DAYS: Regex = Regex::new(r"\d+(d|days?|dias?)$").unwrap();
-        static ref WEEKS: Regex = Regex::new(r"\d+(w|weeks?|semanas?)$").unwrap();
-        static ref MONTHS: Regex = Regex::new(r"\d+(months?|mes(es)?)$").unwrap();
-        static ref YEARS: Regex = Regex::new(r"\d+(y|year|years)$").unwrap();
+        static ref NUMBER: Regex = Regex::new(r"\d+").unwrap();
+        static ref SECONDS: Regex = Regex::new(r"(s|sec|secs|seconds?|segundos?)").unwrap();
+        static ref MINUTES: Regex = Regex::new(r"(m|min|mins|minutes?|minutos?)").unwrap();
+        static ref HOURS: Regex = Regex::new(r"(h|hours?|horas?)").unwrap();
+        static ref DAYS: Regex = Regex::new(r"(d|days?|dias?)").unwrap();
+        static ref WEEKS: Regex = Regex::new(r"(w|weeks?|semanas?)").unwrap();
+        static ref MONTHS: Regex = Regex::new(r"(months?|mes(es)?)").unwrap();
+        static ref YEARS: Regex = Regex::new(r"(y|years?|anos?)").unwrap();
     };
-    let timeout = {
-        let time = args.raw().next().unwrap();
-        let parse = |c: Captures| {
-            c.get(0).unwrap().as_str();
-            time[..c.get(1).unwrap().start()].parse::<u32>()
+    let (value, dur) = {
+        let args = args.rest().trim();
+        let (end, amt) = match NUMBER.captures(args).ok_or("missing number").and_then(|m| {
+            let m = m.get(0).unwrap();
+            Ok((m.end(), m.as_str().parse().map_err(|_| "Invalid number")?))
+        }) {
+            Ok(x) => x,
+            Err(e) => return Err(e.into()),
         };
-        if let Some(m) = SECONDS.captures(time) {
-            Ok(Duration::seconds(i64::from(parse(m)?)))
-        } else if let Some(m) = MINUTES.captures(time) {
-            Ok(Duration::minutes(i64::from(parse(m)?)))
-        } else if let Some(m) = HOURS.captures(time) {
-            Ok(Duration::hours(i64::from(parse(m)?)))
-        } else if let Some(m) = DAYS.captures(time) {
-            Ok(Duration::days(i64::from(parse(m)?)))
-        } else if let Some(m) = WEEKS.captures(time) {
-            Ok(Duration::weeks(i64::from(parse(m)?)))
-        } else if let Some(m) = MONTHS.captures(time) {
-            Ok(Duration::days(30 * i64::from(parse(m)?)))
-        } else if let Some(m) = YEARS.captures(time) {
-            Ok(Duration::days(365 * i64::from(parse(m)?)))
+        let args = &args[end..].trim();
+
+        let end = |c: Captures<'_>| c.get(0).unwrap().end();
+
+        let (end, dur) = if let Some(m) = SECONDS.captures(args) {
+            (end(m), Duration::seconds(amt))
+        } else if let Some(m) = MINUTES.captures(args) {
+            (end(m), Duration::minutes(amt))
+        } else if let Some(m) = HOURS.captures(args) {
+            (end(m), Duration::hours(amt))
+        } else if let Some(m) = DAYS.captures(args) {
+            (end(m), Duration::days(amt))
+        } else if let Some(m) = WEEKS.captures(args) {
+            (end(m), Duration::weeks(amt))
+        } else if let Some(m) = MONTHS.captures(args) {
+            (end(m), Duration::days(30 * amt))
+        } else if let Some(m) = YEARS.captures(args) {
+            (end(m), Duration::days(365 * amt))
         } else {
-            Err("Invalid time specifier")
-        }
-    }?;
-    args.advance();
+            return Err("Invalid time specifier".into());
+        };
+
+        (&args[end..].trim(), dur)
+    };
     let data = ctx.data.read().await;
     let mut dm = get!(> data, DaemonManager, lock);
     reminders::remind(
         &mut *dm,
-        format!("You asked me to remind you of this:\n{}", args.rest()),
-        Utc::now() + timeout,
+        format!("You asked me to remind you of this:\n{}", value),
+        Utc::now() + dur,
         msg.author.id,
     )
     .await?;

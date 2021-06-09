@@ -25,7 +25,6 @@ struct Tts;
 #[usage("text")]
 #[example("pogchamp")]
 pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    // TODO: Fix after reimplementing voice
     super::sfx::play_sfx(ctx, msg, || async {
         let text = args.rest();
         let service = CURRENT_SERVICE.read().await;

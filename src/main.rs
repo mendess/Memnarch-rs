@@ -1,6 +1,7 @@
 #![warn(unused_crate_dependencies)]
 #![warn(unused_features)]
 #![deny(unused_must_use)]
+#![warn(rust_2018_idioms)]
 
 mod commands;
 mod consts;
