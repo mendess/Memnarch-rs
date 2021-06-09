@@ -1,11 +1,6 @@
-// #![warn(unused_crate_dependencies)]
+#![warn(unused_crate_dependencies)]
 #![warn(unused_features)]
 #![deny(unused_must_use)]
-// TODO: remove
-#![allow(unused_imports)]
-#![allow(unused_mut)]
-#![allow(unused_variables)]
-#![allow(dead_code)]
 #![cfg_attr(feature = "nightly", feature(drain_filter))]
 
 mod commands;
@@ -18,11 +13,10 @@ mod reminders;
 use self::daemons::DaemonManager;
 use chrono::{Duration, Utc};
 use commands::{
-    // TODO: Fix after reimplementing voice
-    // sfx::{LeaveVoice, SfxStats},
     command_groups::*,
     custom::{CustomCommands, MessageDecay},
     interrail::InterrailConfig,
+    sfx::{util::LeaveVoiceDaemons, SfxStats},
 };
 use consts::FILES_DIR;
 use futures::prelude::*;
@@ -36,11 +30,10 @@ use serenity::{
     },
     http::client::Http,
     model::{
-        channel::{Channel, Message},
+        channel::Message,
         gateway::Ready,
         guild::Member,
         id::{ChannelId, GuildId, UserId},
-        user::CurrentUser,
         voice::VoiceState,
     },
     prelude::*,
@@ -74,7 +67,7 @@ impl EventHandler for Handler {
                 .map(|m| m.user.id)
                 .any(|u| current_user.id == u)
         };
-        async fn f(id: ChannelId, ctx: &Context) -> Option<Vec<Member>> {
+        async fn members(id: ChannelId, ctx: &Context) -> Option<Vec<Member>> {
             id.to_channel(ctx)
                 .await
                 .ok()?
@@ -84,29 +77,24 @@ impl EventHandler for Handler {
                 .ok()
         }
         if let Some(id) = old.and_then(|vs| vs.channel_id) {
-            if f(id, &ctx)
-                .await
+            if members(id, &ctx).await
                 .filter(|m| m.len() == 1)
                 .map(has_bot)
                 .unwrap_or(false)
             {
-                if let Some(_guild_id) = guild_id {
-                    //TODO: Fix after reimplementing voice
-                    // ctx.data
-                    //     .read()
-                    //     .await
-                    //     .get::<VoiceManager>()
-                    //     .expect("Couldn't find VoiceManager in ShareMap")
-                    //     .lock()
-                    //     .leave(guild_id);
-                    // ctx.data
-                    //     .read()
-                    //     .await
-                    //     .get::<CronSink<LeaveVoice>>()
-                    //     .unwrap()
-                    //     .cancel(guild_id)
-                    //     .map_err(|e| eprintln!("Failed to cancel a leave voice cron {:?}", e))
-                    //     .ok();
+                if let Some(guild_id) = guild_id {
+                    let sb = songbird::get(&ctx).await.expect("Songbird not initialized");
+                    if let Err(e) = sb.remove(guild_id).await {
+                        println!("Could not leave voice channel: {}", e);
+                        return;
+                    }
+                    let data = ctx.data.read().await;
+                    let dm = data.get::<DaemonManager>().expect("DaemonManager");
+                    let lvc = data.get::<LeaveVoiceDaemons>().expect("LeaveVoiceDaemons");
+                    lvc.lock()
+                        .await
+                        .remove(&mut *dm.lock().await, guild_id)
+                        .await;
                 };
             }
         }
@@ -190,11 +178,6 @@ impl Config {
     }
 }
 
-struct BotId;
-impl TypeMapKey for BotId {
-    type Value = UserId;
-}
-
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let config = Config::new()?;
@@ -203,18 +186,20 @@ async fn main() -> std::io::Result<()> {
         Ok(info) => {
             let mut owners = HashSet::new();
             owners.insert(info.owner.id);
-            (owners, info.id)
+            (owners, Some(info.id))
         }
-        Err(why) => panic!("Could not access application info: {:?}", why),
+        Err(why) => {
+            eprintln!("Could not access application info: {:?}", why);
+            (HashSet::new(), None)
+        }
     };
     let mut client = Client::builder(&config.token)
         .framework(
             StandardFramework::new()
-                // .register_songbird()
                 .configure(|c| {
                     c.prefix("|")
                         .no_dm_prefix(true)
-                        .on_mention(Some(bot_id))
+                        .on_mention(bot_id)
                         .owners(owners)
                 })
                 .normal_message(normal_message)
@@ -225,30 +210,28 @@ async fn main() -> std::io::Result<()> {
                 .group(&QUOTES_GROUP)
                 .group(&CUSTOM_GROUP)
                 .group(&INTERRAIL_GROUP)
-                //TODO: Fix after reimplementing voice
                 .group(&SFX_GROUP)
                 .group(&SFXALIASES_GROUP)
                 .group(&TTS_GROUP)
                 .help(&MY_HELP),
         )
+        .register_songbird()
         .type_map_insert::<CustomCommands>(Arc::new(RwLock::new(CustomCommands::default())))
         .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
-        .type_map_insert::<BotId>(bot_id)
+        .type_map_insert::<LeaveVoiceDaemons>(Default::default())
+        .type_map_insert::<SfxStats>(SfxStats::new())
         .event_handler(Handler)
         .await
         .expect("Err creating client");
     let mut daemon_manager = self::daemons::DaemonManager::new(client.cache_and_http.clone());
     reminders::load_reminders(&mut daemon_manager).await?;
-    // let vc_cron_sink = cron::start::<LeaveVoice>("voice.json", Arc::clone(&client.voice_manager));
+    // TODO: Message decay
     // let md_cron_sink = cron::start::<MessageDecay>(
     //     "message_decay.json",
     //     Arc::clone(&client.cache_and_http.http),
     // );
     {
         let mut data = client.data.write().await;
-        // data.insert::<VoiceManager>(Arc::clone(&client.voice_manager));
-        // data.insert::<SfxStats>(SfxStats::new());
-        // data.insert::<CronSink<LeaveVoice>>(vc_cron_sink);
         if let Some(id) = std::env::args()
             .skip_while(|x| x != "-r")
             .nth(1)
@@ -256,6 +239,7 @@ async fn main() -> std::io::Result<()> {
         {
             data.insert::<UpdateNotify>(id);
         }
+        data.insert::<DaemonManager>(Arc::new(Mutex::new(daemon_manager)));
     }
 
     if let Err(why) = client.start().await {
@@ -283,13 +267,7 @@ async fn my_help(
 
 #[hook]
 async fn normal_message(ctx: &Context, msg: &Message) {
-    if let Some(true) = ctx
-        .data
-        .read()
-        .await
-        .get::<BotId>()
-        .map(|id| *id == msg.author.id)
-    {
+    if ctx.cache.current_user_id().await == msg.author.id {
         return;
     }
     if !msg.content.starts_with("|") {

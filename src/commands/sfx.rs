@@ -1,10 +1,10 @@
-use crate::{permissions::*, daemons::DaemonManager, consts::FILES_DIR };
-// use crate::VoiceManager;
+pub mod util;
 
-use daemons::Daemon;
+use crate::{consts::FILES_DIR, daemons::DaemonManager, permissions::*};
+
 use chrono::{DateTime, Duration, Utc};
+use daemons::Daemon;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -14,10 +14,12 @@ use serenity::{
     prelude::*,
 };
 use simsearch::SimSearch;
+use songbird::input::Input;
 use std::{
     collections::HashMap,
     error::Error,
     fs::{self, DirBuilder, File, OpenOptions},
+    future::Future,
     io::{self, Write},
     path::{Path, PathBuf},
     sync::Arc,
@@ -89,26 +91,22 @@ impl SfxStats {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct LeaveVoice {
     guild_id: GuildId,
     when: DateTime<Utc>,
+    songbird: Arc<songbird::Songbird>,
 }
 
 #[serenity::async_trait]
 impl Daemon for LeaveVoice {
     type Data = serenity::CacheAndHttp;
 
-    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
-        // TODO: Fix after reimplementing voice
-        // println!(
-        //     "[{:?}] Leaving guild's {} voice channel",
-        //     Utc::now().naive_utc(),
-        //     self.guild_id
-        // );
-        // manager
-        //     .leave(self.guild_id)
-        //     .ok_or_else(|| "Couldn't leave channel".into());
+    async fn run(&mut self, _: &Self::Data) -> daemons::ControlFlow {
+        println!("Leaving voice");
+        if let Err(e) = self.songbird.remove(self.guild_id).await {
+            println!("Could not leave voice channel: {}", e);
+        }
         daemons::ControlFlow::Break
     }
 
@@ -123,20 +121,18 @@ impl Daemon for LeaveVoice {
 
 #[command]
 #[description("Stops everything")]
+#[only_in(guilds)]
 pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
-    // TODO: Fix after reimplementing voice
-    // let guild_id = msg.guild_id.ok_or_else(|| String::from("Not in a guild"))?;
-    // let share_map = ctx.data.read().await;
-    // let manager_id = share_map
-    //     .get::<VoiceManager>()
-    //     .expect("Expected VoiceManager in ShareMap");
-    // let mut manager = manager_id.lock();
-    // if let Some(handler) = manager.get_mut(guild_id) {
-    //     handler.stop();
-    // } else {
-    //     return Err("Not in a voice channel".into());
-    // }
-    Ok(())
+    if let Some(call) = songbird::get(ctx)
+        .await
+        .expect("Songbird not initialized")
+        .get(msg.guild_id.unwrap())
+    {
+        call.lock().await.stop();
+        Ok(())
+    } else {
+        Err("Not in a voice channel".into())
+    }
 }
 
 #[command]
@@ -145,81 +141,68 @@ pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
 #[description("Play a saved sfx!")]
 #[usage("part of name")]
 #[example("wow")]
+#[only_in(guilds)]
 pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    // TODO: Fix after reimplementing voice
-    // let mut file = PathBuf::new();
-    // play_sfx(ctx, msg, || {
-    //     file = find_file(&args)?;
-    //     msg.channel_id.say(
-    //         &ctx,
-    //         &format!(
-    //             "Playing {}",
-    //             file.file_name()
-    //                 .unwrap_or(std::ffi::OsStr::new(""))
-    //                 .to_string_lossy()
-    //         ),
-    //     )?;
-    //     eprintln!("Playing sfx: {:?}", file);
-    //     Ok(voice::ffmpeg(&file)?)
-    // })?;
-    // let mut share_map = ctx.data.write();
-    // share_map
-    //     .get_mut::<SfxStats>()
-    //     .expect("Expected SfxStats in ShareMap")
-    //     .update(file.as_os_str().to_str().unwrap())
-    //     .err()
-    //     .iter()
-    //     .for_each(|e| eprintln!("{}", e));
+    let mut file = PathBuf::new();
+    play_sfx(ctx, msg, || async {
+        file = find_file(&args).await?;
+        msg.channel_id
+            .say(&ctx, &format!("Playing {}", file.display()))
+            .await?;
+        eprintln!("Playing sfx: {:?}", file);
+        match songbird::ffmpeg(&file).await {
+            Ok(source) => Ok(source),
+            Err(e) => return Err(format!("Failed getting audio source: {:?}", e).into()),
+        }
+    })
+    .await?;
+    let mut share_map = ctx.data.write().await;
+    share_map
+        .get_mut::<SfxStats>()
+        .expect("Expected SfxStats in ShareMap")
+        .update(file.as_os_str().to_str().unwrap())
+        .await
+        .err()
+        .iter()
+        .for_each(|e| eprintln!("{}", e));
     Ok(())
 }
 
-// TODO: Fix after reimplementing voice
-// pub async fn play_sfx<F>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
-// where
-//     F: FnOnce() -> Result<Box<dyn voice::AudioSource>, Box<dyn Error>>,
-// {
-//     let guild = msg
-//         .guild(&ctx.cache)
-//         .ok_or_else(|| "Groups and DMs not supported".to_string())?;
-//     let guild_id = { guild.read().id };
-//     let connect_to = guild
-//         .read()
-//         .voice_states
-//         .get(&msg.author.id)
-//         .and_then(|voice_state| voice_state.channel_id)
-//         .ok_or_else(|| "Not in a voice channel".to_string())?;
-//     let share_map = ctx.data.read();
-//     let cron_sink = share_map
-//         .get::<CronSink<LeaveVoice>>()
-//         .expect("Expected VoiceManager in ShareMap");
-//     if let Some(gid) = msg.guild_id {
-//         cron_sink.cancel(gid)?;
-//     }
-//     let manager_id = share_map
-//         .get::<VoiceManager>()
-//         .expect("Expected VoiceManager in ShareMap");
-//     let mut manager = manager_id.lock();
-//     if let None = manager.join(guild_id, connect_to) {
-//         msg.channel_id.say(&ctx, "Error joining")?;
-//         return Err("Failed to join channel".into());
-//     }
-//     if let Some(handler) = manager.get_mut(guild_id) {
-//         handler.play(audio_source()?);
-//     } else {
-//         return Err("Not in a voice channel".into());
-//     }
-//     if let Some(gid) = msg.guild_id {
-//         let leave = LeaveVoice {
-//             when: Utc::now()
-//                 .checked_add_signed(Duration::minutes(30))
-//                 .unwrap(),
-//             guild_id: gid,
-//         };
-//         cron_sink.send(leave)?;
-//     }
+pub async fn play_sfx<F, Fut>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<Input, Box<dyn Error + Send + Sync>>>,
+{
+    let guild_id = msg.guild_id.ok_or("Not in a guild")?;
 
-//     Ok(())
-// }
+    let call_lock = util::join_or_get_call(ctx, guild_id, msg.author.id).await?;
+    call_lock.lock().await.play_source(audio_source().await?);
+
+    let data = ctx.data.write().await;
+    let dm = data
+        .get::<DaemonManager>()
+        .expect("DaemonManager no initialized");
+    let id = dm
+        .lock()
+        .await
+        .add_daemon(LeaveVoice {
+            when: Utc::now()
+                .checked_add_signed(Duration::minutes(30))
+                .unwrap(),
+            guild_id,
+            songbird: data.get::<songbird::SongbirdKey>().unwrap().clone(),
+        })
+        .await;
+
+    data.get::<util::LeaveVoiceDaemons>()
+        .unwrap()
+        .lock()
+        .await
+        .set(&mut *dm.lock().await, guild_id, id)
+        .await;
+
+    Ok(())
+}
 
 #[command]
 #[description("List the available sfx files")]

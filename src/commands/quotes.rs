@@ -1,6 +1,5 @@
 use crate::consts::FILES_DIR;
 use crate::permissions::*;
-use futures::prelude::*;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -25,6 +24,7 @@ const QUOTES_FILE: &str = "quotes.json";
 #[prefix("quote")]
 #[default_command(quote)]
 #[commands(add)]
+#[checks("is_friend")]
 struct Quotes;
 
 #[derive(Debug, Default, Serialize, Deserialize)]

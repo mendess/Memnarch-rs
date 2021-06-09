@@ -26,14 +26,17 @@ struct Tts;
 #[example("pogchamp")]
 pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     // TODO: Fix after reimplementing voice
-    // crate::commands::sfx::play_sfx(ctx, msg, || {
-    //     let text = args.rest();
-    //     let service = CURRENT_SERVICE.read().unwrap();
-    //     let voice = CURRENT_VOICE.read().unwrap();
-    //     let tts_link = generate_tts(Some(service), Some(voice), text).await?;
-    //     Ok(voice::ytdl(&tts_link)?)
-    // })
-    Ok(())
+    super::sfx::play_sfx(ctx, msg, || async {
+        let text = args.rest();
+        let service = CURRENT_SERVICE.read().await;
+        let voice = CURRENT_VOICE.read().await;
+        let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
+        match songbird::ytdl(&tts_link).await {
+            Ok(source) => Ok(source),
+            Err(e) => return Err(format!("Failed getting audio source: {:?}", e).into()),
+        }
+    })
+    .await
 }
 
 lazy_static! {

@@ -1,25 +1,10 @@
-use crate::{consts::NUMBERS, daemons::DaemonManager, file_transaction::Database};
-use chrono::{DateTime, Duration, Utc};
+use crate::{daemons::DaemonManager, file_transaction::Database};
+use chrono::{DateTime, Utc};
 use daemons::Daemon;
-use futures::prelude::*;
-use futures::prelude::*;
 use lazy_static::lazy_static;
-use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
-use serenity::{
-    framework::standard::{
-        macros::{command, group},
-        Args, CommandResult,
-    },
-    http::client::Http,
-    model::{
-        channel::{Message, ReactionType},
-        id::UserId,
-    },
-    prelude::*,
-};
-use std::{error::Error, io, sync::Arc, time::Duration as StdDuration};
-use tokio::{fs::File, io::AsyncReadExt};
+use serenity::model::id::UserId;
+use std::{io, time::Duration as StdDuration};
 
 lazy_static! {
     static ref DATABASE: Database<Vec<Reminder>> = Database::new("files/cron/reminders.json");

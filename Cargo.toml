@@ -22,7 +22,7 @@ daemons = { git = "https://github.com/mendess/daemons", version = "0.5" }
 
 [dependencies.serenity]
 version = "0.10"
-features = ["client", "rustls_backend", "framework", "standard_framework", "voice"]
+features = ["client", "cache", "rustls_backend", "framework", "standard_framework", "voice"]
 
 [dependencies.tokio]
 version = "1"

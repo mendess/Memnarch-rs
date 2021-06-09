@@ -20,7 +20,7 @@ use tokio::{
     fs::{self, File},
     io::AsyncWriteExt,
     process::Command as Fork,
-    sync::{Mutex, TryLockError},
+    sync::Mutex,
 };
 
 const EXE_NAME: &str = "memnarch-rs";
@@ -180,7 +180,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .ok_or("Release doesn't contain executable")?;
 
     println!("Downloading lattest release");
-    let (mut temp_file, temp_path) = tempfile::NamedTempFile::new_in(".")?.into_parts();
+    let (temp_file, temp_path) = tempfile::NamedTempFile::new_in(".")?.into_parts();
     let bytes = client
         .get(&executable_url)
         .header(header::USER_AGENT, "mendess")

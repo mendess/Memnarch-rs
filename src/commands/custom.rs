@@ -8,19 +8,17 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    http::client::Http,
     model::{channel::Message, id::GuildId},
     prelude::*,
 };
 use std::{
     collections::{hash_map::Entry, HashMap},
-    error::Error,
     fs::{DirBuilder, File},
     io::Error as IoError,
     io::ErrorKind as IoErrorKind,
     path::PathBuf,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 #[group]

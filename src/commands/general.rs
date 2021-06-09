@@ -1,24 +1,15 @@
 use crate::{consts::NUMBERS, daemons::DaemonManager, reminders};
-use chrono::{DateTime, Duration, Utc};
-use daemons::Daemon;
-use futures::prelude::*;
+use chrono::{Duration, Utc};
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
-use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
-    http::client::Http,
-    model::{
-        channel::{Message, ReactionType},
-        id::UserId,
-    },
+    model::channel::{Message, ReactionType},
     prelude::*,
 };
-use std::time::Duration as StdDuration;
-use std::{error::Error, sync::Arc};
 
 #[group]
 #[commands(ping, who_are_you, vote, remindme)]
