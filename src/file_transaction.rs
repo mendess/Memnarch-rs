@@ -25,10 +25,20 @@ impl<T> Database<T> {
     }
 }
 
-impl<T: DeserializeOwned + Serialize> Database<T> {
+impl<T: DeserializeOwned + Serialize + Default> Database<T> {
     pub async fn load(&self) -> io::Result<DbGuard<'_, T>> {
         let pathbuf = self.filename.lock().await;
-        let mut file = File::open(&*pathbuf).await?;
+        let mut file = match File::open(&*pathbuf).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Ok(DbGuard {
+                    pathbuf,
+                    t: Default::default(),
+                    save: true,
+                });
+            }
+            Err(e) => return Err(e),
+        };
         let mut buf = String::new();
         file.read_to_string(&mut buf).await?;
         Ok(DbGuard {
