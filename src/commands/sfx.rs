@@ -35,14 +35,14 @@ const SFX_STATS_FILE: &str = "sfx_stats.json";
 struct SFX;
 
 #[group]
-#[commands(play)]
+#[commands(s)]
 struct SFXAliases;
 
 #[derive(Debug, Clone)]
-pub struct SfxStats(Arc<Mutex<HashMap<String, usize>>>);
+pub struct SfxStats(HashMap<String, usize>);
 
 impl TypeMapKey for SfxStats {
-    type Value = SfxStats;
+    type Value = Arc<Mutex<SfxStats>>;
 }
 
 impl SfxStats {
@@ -55,7 +55,7 @@ impl SfxStats {
     }
 
     pub fn new() -> Self {
-        SfxStats(Arc::new(Mutex::new(
+        SfxStats(
             Self::path()
                 .and_then(|p| File::open(p))
                 .ok()
@@ -65,12 +65,11 @@ impl SfxStats {
                         .ok()
                 })
                 .unwrap_or_else(Default::default),
-        )))
+        )
     }
 
     async fn update(&mut self, sfx: &str) -> Result<(), String> {
-        let mut stats = self.0.lock().await;
-        stats
+        self.0
             .entry(sfx.to_string())
             .and_modify(|c| *c += 1)
             .or_insert(1);
@@ -87,7 +86,7 @@ impl SfxStats {
         Self::path()
             .and_then(|path| File::create(path))
             .map_err(mf)
-            .and_then(|f| serde_json::to_writer(f, &*stats).map_err(mj))
+            .and_then(|f| serde_json::to_writer(f, &self.0).map_err(mj))
     }
 }
 
@@ -136,13 +135,27 @@ pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[command]
-#[aliases("s")]
 #[min_args(1)]
 #[description("Play a saved sfx!")]
 #[usage("part of name")]
 #[example("wow")]
 #[only_in(guilds)]
 pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    play_impl(ctx, msg, args).await
+}
+
+#[command]
+#[aliases("play")]
+#[min_args(1)]
+#[description("Play a saved sfx!")]
+#[usage("part of name")]
+#[example("wow")]
+#[only_in(guilds)]
+pub async fn s(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    play_impl(ctx, msg, args).await
+}
+
+async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let mut file = PathBuf::new();
     play_sfx(ctx, msg, || async {
         file = find_file(&args).await?;
@@ -156,10 +169,13 @@ pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         }
     })
     .await?;
-    let mut share_map = ctx.data.write().await;
-    share_map
-        .get_mut::<SfxStats>()
+    ctx.data
+        .write()
+        .await
+        .get::<SfxStats>()
         .expect("Expected SfxStats in ShareMap")
+        .lock()
+        .await
         .update(file.as_os_str().to_str().unwrap())
         .await
         .err()
@@ -301,9 +317,9 @@ async fn stats(ctx: &Context, msg: &Message) -> CommandResult {
         .await
         .get::<SfxStats>()
         .expect("Expected SfxStats in ShareMap")
-        .0
         .lock()
         .await
+        .0
         .iter()
         .map(|(k, v)| (k.clone(), *v))
         .collect::<Vec<(String, usize)>>();

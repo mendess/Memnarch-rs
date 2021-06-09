@@ -1,7 +1,6 @@
 #![warn(unused_crate_dependencies)]
 #![warn(unused_features)]
 #![deny(unused_must_use)]
-#![cfg_attr(feature = "nightly", feature(drain_filter))]
 
 mod commands;
 mod consts;
@@ -21,6 +20,7 @@ use consts::FILES_DIR;
 use futures::prelude::*;
 use serde::{Deserialize, Serialize};
 use serenity::{
+    client::bridge::gateway::GatewayIntents,
     framework::standard::{
         help_commands,
         macros::{help, hook},
@@ -215,11 +215,12 @@ async fn main() -> std::io::Result<()> {
                 .group(&TTS_GROUP)
                 .help(&MY_HELP),
         )
+        .intents(GatewayIntents::all())
         .register_songbird()
         .type_map_insert::<CustomCommands>(Arc::new(RwLock::new(CustomCommands::default())))
         .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
         .type_map_insert::<LeaveVoiceDaemons>(Default::default())
-        .type_map_insert::<SfxStats>(SfxStats::new())
+        .type_map_insert::<SfxStats>(Arc::new(Mutex::new(SfxStats::new())))
         .event_handler(Handler)
         .await
         .expect("Err creating client");
@@ -246,8 +247,13 @@ async fn main() -> std::io::Result<()> {
 #[help]
 #[max_levenshtein_distance(5)]
 #[lacking_permissions("hide")]
+#[wrong_channel("hide")]
+#[lacking_conditions("hide")]
+#[lacking_ownership("hide")]
 #[strikethrough_commands_tip_in_guild(" ")]
 #[strikethrough_commands_tip_in_dm(" ")]
+#[embed_success_colour("#71A5B0")]
+#[indention_prefix("- ")]
 async fn my_help(
     context: &Context,
     msg: &Message,
