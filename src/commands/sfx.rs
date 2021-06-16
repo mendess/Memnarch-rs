@@ -56,7 +56,7 @@ impl SfxStats {
     pub fn new() -> Self {
         SfxStats(
             Self::path()
-                .and_then(|p| File::open(p))
+                .and_then(File::open)
                 .ok()
                 .and_then(|f| {
                     serde_json::from_reader(f)
@@ -83,7 +83,7 @@ impl SfxStats {
         let mf = |e| map_err(sfx, e);
         let mj = |e| map_err(sfx, e);
         Self::path()
-            .and_then(|path| File::create(path))
+            .and_then(File::create)
             .map_err(mf)
             .and_then(|f| serde_json::to_writer(f, &self.0).map_err(mj))
     }
@@ -185,7 +185,8 @@ where
     let guild_id = msg.guild_id.ok_or("Not in a guild")?;
 
     let call_lock = util::join_or_get_call(ctx, guild_id, msg.author.id).await?;
-    call_lock.lock().await.play_source(audio_source().await?);
+    let audio = audio_source().await?;
+    call_lock.lock().await.play_source(audio);
 
     let data = ctx.data.read().await;
     let dm = get!(> data, DaemonManager);
@@ -201,8 +202,9 @@ where
         })
         .await;
 
+    let mut dm = dm.lock().await;
     get!(> data, util::LeaveVoiceDaemons, lock)
-        .set(&mut *dm.lock().await, guild_id, id)
+        .set(&mut *dm, guild_id, id)
         .await;
 
     Ok(())

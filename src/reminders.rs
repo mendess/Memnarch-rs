@@ -26,10 +26,8 @@ impl Daemon for Reminder {
             Ok(pch) => {
                 if let Err(e) = pch.say(&data.http, &self.message).await {
                     eprintln!("Failed to send reminder: {:?}", e);
-                } else {
-                    if let Err(e) = remove_reminder(self).await {
-                        eprintln!("Failed to remove reminder: {:?}", e);
-                    }
+                } else if let Err(e) = remove_reminder(self).await {
+                    eprintln!("Failed to remove reminder: {:?}", e);
                 }
                 daemons::ControlFlow::Break
             }

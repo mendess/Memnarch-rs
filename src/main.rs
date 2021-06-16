@@ -4,6 +4,7 @@
 #![warn(rust_2018_idioms)]
 
 mod commands;
+mod calendar;
 mod consts;
 mod daemons;
 mod file_transaction;
@@ -106,7 +107,7 @@ impl EventHandler for Handler {
             async fn f(id: ChannelId, gid: GuildId, ctx: &Context) -> CommandResult {
                 let c = id.to_channel(ctx).await.and_then(|c| {
                     c.guild()
-                        .ok_or_else(|| serenity::Error::Other("Not a guild channel"))
+                        .ok_or(serenity::Error::Other("Not a guild channel"))
                 })?;
                 let members = c.members(ctx).await?;
                 stream::iter(members)
@@ -269,7 +270,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
     if ctx.cache.current_user_id().await == msg.author.id {
         return;
     }
-    if !msg.content.starts_with("|") {
+    if !msg.content.starts_with('|') {
         return;
     }
     println!("looking for command: {}", msg.content);

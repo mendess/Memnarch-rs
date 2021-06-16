@@ -30,7 +30,7 @@ async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let cmd = args_it.next().unwrap().to_string();
     let output = args_it.join(" ");
     get!(ctx, CustomCommands, write).add(
-        msg.guild_id.ok_or_else(|| "guild_id is missing")?,
+        msg.guild_id.ok_or("guild_id is missing")?,
         cmd,
         output,
     )?;
@@ -43,7 +43,7 @@ async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let cmd = args.raw().next().unwrap();
     let output = get!(ctx, CustomCommands, write)
-        .remove(msg.guild_id.ok_or_else(|| "guild_id is missing")?, cmd)?;
+        .remove(msg.guild_id.ok_or("guild_id is missing")?, cmd)?;
     match output {
         Some(output) => {
             msg.channel_id
@@ -63,7 +63,7 @@ async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     let share_map = ctx.data.read().await;
     let mut cc = get!(> share_map, CustomCommands, write);
-    let cmds = cc.list(msg.guild_id.ok_or_else(|| "guild_id is missing")?)?;
+    let cmds = cc.list(msg.guild_id.ok_or("guild_id is missing")?)?;
     msg.channel_id
         .send_message(&ctx, |m| {
             m.embed(|e| {

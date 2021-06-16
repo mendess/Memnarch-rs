@@ -81,10 +81,14 @@ async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         })
         .await?;
     args.restore();
-    for n in 0..args.iter::<String>().filter_map(Result::ok).count() {
-        while let Err(_) = message
-            .react(&ctx, NUMBERS[n].parse::<ReactionType>().unwrap())
+    for number in NUMBERS
+        .iter()
+        .take(args.iter::<String>().filter_map(Result::ok).count())
+    {
+        while message
+            .react(&ctx, number.parse::<ReactionType>().unwrap())
             .await
+            .is_err()
         {
             continue;
         }

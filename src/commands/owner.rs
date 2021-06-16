@@ -158,7 +158,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .await?
         .into_iter()
         .min_by_key(|x| Reverse(x.created_at))
-        .ok_or_else(|| "No new releases")?
+        .ok_or("No new releases")?
         .assets_url;
 
     #[derive(Deserialize)]
