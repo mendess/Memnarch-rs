@@ -12,8 +12,17 @@ use serenity::{
 };
 
 #[group]
-#[commands(ping, who_are_you, vote, remindme)]
+#[commands(ping, who_are_you, vote, remindme, version)]
 struct General;
+
+#[command]
+#[description("The bot's version")]
+async fn version(ctx: &Context, msg: &Message) -> CommandResult {
+    msg.channel_id
+        .say(ctx, git_describe::git_describe!())
+        .await?;
+    Ok(())
+}
 
 #[command]
 #[description("Ping me maybe")]

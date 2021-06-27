@@ -523,6 +523,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "git-describe"
+version = "0.1.0"
+source = "git+https://github.com/mendess/git-describe#8f42fec7143f2ee06fe6a42d33e90d1754394328"
+
+[[package]]
 name = "glob"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -809,6 +814,7 @@ dependencies = [
  "daemons",
  "dashmap",
  "futures",
+ "git-describe",
  "itertools",
  "lazy_static",
  "log 0.4.14",
