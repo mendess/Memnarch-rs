@@ -155,7 +155,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
         }
         async fn update_reacts(ctx: &Context, mut message: Message) -> serenity::Result<()> {
             let bot_id = crate::util::bot_id(ctx).await;
-            if matches!(bot_id, Some(id) if id == message.author.id) {
+            if matches!(bot_id, Some(id) if id != message.author.id) {
                 return Ok(());
             }
             if DATABASE
