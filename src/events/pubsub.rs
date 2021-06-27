@@ -50,8 +50,6 @@ where
             for s in subscribers.iter_mut() {
                 s(&ctx, &arg).await;
             }
-        } else {
-            log::debug!("{} has no subscribers", std::any::type_name::<T>());
         }
     });
 }
