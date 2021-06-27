@@ -3,13 +3,15 @@
 #![deny(unused_must_use)]
 #![warn(rust_2018_idioms)]
 
-mod commands;
 mod calendar;
+mod commands;
 mod consts;
 mod daemons;
+mod events;
 mod file_transaction;
 mod permissions;
 mod reminders;
+mod util;
 
 use self::daemons::DaemonManager;
 use commands::{
@@ -19,7 +21,6 @@ use commands::{
     sfx::{util::LeaveVoiceDaemons, SfxStats},
 };
 use consts::FILES_DIR;
-use futures::prelude::*;
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::bridge::gateway::GatewayIntents,
@@ -32,10 +33,7 @@ use serenity::{
     http::client::Http,
     model::{
         channel::Message,
-        gateway::Ready,
-        guild::Member,
         id::{ChannelId, GuildId, UserId},
-        voice::VoiceState,
     },
     prelude::*,
 };
@@ -44,105 +42,9 @@ use std::{
     collections::HashSet,
     fs::{DirBuilder, OpenOptions},
     io::Write,
+    iter::FromIterator,
     sync::Arc,
 };
-
-struct Handler;
-
-#[serenity::async_trait]
-impl EventHandler for Handler {
-    async fn voice_state_update(
-        &self,
-        ctx: Context,
-        guild_id: Option<GuildId>,
-        old: Option<VoiceState>,
-        new: VoiceState,
-    ) {
-        let current_user = match Http::get_current_user(ctx.as_ref()).await {
-            Ok(user) => user,
-            Err(e) => return eprintln!("Failed to get current user {:?}", e),
-        };
-        let has_bot = |members: Vec<Member>| {
-            members
-                .iter()
-                .map(|m| m.user.id)
-                .any(|u| current_user.id == u)
-        };
-        async fn members(id: ChannelId, ctx: &Context) -> Option<Vec<Member>> {
-            id.to_channel(ctx)
-                .await
-                .ok()?
-                .guild()?
-                .members(ctx)
-                .await
-                .ok()
-        }
-        if let Some(id) = old.and_then(|vs| vs.channel_id) {
-            if members(id, &ctx)
-                .await
-                .filter(|m| m.len() == 1)
-                .map(has_bot)
-                .unwrap_or(false)
-            {
-                if let Some(guild_id) = guild_id {
-                    let sb = songbird::get(&ctx).await.expect("Songbird not initialized");
-                    if let Err(e) = sb.remove(guild_id).await {
-                        println!("Could not leave voice channel: {}", e);
-                        return;
-                    }
-                    let data = ctx.data.read().await;
-                    let mut dm = crate::get!(> data, DaemonManager, lock);
-                    crate::get!(> data, LeaveVoiceDaemons, lock)
-                        .remove(&mut *dm, guild_id)
-                        .await;
-                };
-            }
-        }
-        // Disconnect channel of mirrodin
-        if let (
-            Some(gid @ GuildId(352399774818762759)),
-            Some(id @ ChannelId(707561909846802462)),
-        ) = (guild_id, new.channel_id)
-        {
-            async fn f(id: ChannelId, gid: GuildId, ctx: &Context) -> CommandResult {
-                let c = id.to_channel(ctx).await.and_then(|c| {
-                    c.guild()
-                        .ok_or(serenity::Error::Other("Not a guild channel"))
-                })?;
-                let members = c.members(ctx).await?;
-                stream::iter(members)
-                    .for_each(|m| async move {
-                        if let Err(e) = gid.disconnect_member(ctx, m).await {
-                            eprintln!(
-                                "Failed to disconnect member from disconnect channel: {}",
-                                e
-                            );
-                        }
-                    })
-                    .await;
-                Ok(())
-            }
-            if let Err(e) = f(id, gid, &ctx).await {
-                eprintln!("Failed to disconnect user: {}", e);
-            }
-        }
-    }
-
-    async fn ready(&self, ctx: Context, _ready: Ready) {
-        println!("Up and running");
-        if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>() {
-            id.send_message(&ctx, |m| m.content("Updated successfully!"))
-                .await
-                .expect("Couldn't send update notification");
-        }
-    }
-}
-
-struct UpdateNotify;
-
-impl TypeMapKey for UpdateNotify {
-    type Value = ChannelId;
-}
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -169,16 +71,49 @@ impl Config {
             std::io::stdin()
                 .read_line(&mut token)
                 .expect("Couldn't read token from stdin");
+            token.pop();
 
             let config = Config { token };
-            let _ = serde_json::to_writer(file, &config).map_err(|e| eprintln!("{}", e));
+            if let Err(e) = serde_json::to_writer_pretty(file, &config) {
+                log::error!("Failed to store token: {}", e);
+            }
             config
         }))
     }
 }
 
+fn config_logger() {
+    use simplelog::*;
+    let config = ConfigBuilder::new()
+        .add_filter_allow_str(module_path!())
+        .add_filter_allow_str(stringify!(daemons))
+        .set_thread_level(LevelFilter::Off)
+        .set_location_level(LevelFilter::Error)
+        .set_level_padding(LevelPadding::Right)
+        .set_target_level(LevelFilter::Off)
+        .build();
+    let term = TermLogger::new(
+        LevelFilter::Trace,
+        config.clone(),
+        TerminalMode::Stdout,
+        ColorChoice::AlwaysAnsi,
+    );
+    let file = WriteLogger::new(
+        LevelFilter::Info,
+        config,
+        OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open("memnarch.log")
+            .expect("can create log file"),
+    );
+    CombinedLogger::init(vec![term, file]).unwrap();
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    config_logger();
     let config = Config::new()?;
     let http = Http::new_with_token(&config.token);
     let (owners, bot_id) = match http.get_current_application_info().await {
@@ -188,8 +123,11 @@ async fn main() -> std::io::Result<()> {
             (owners, Some(info.id))
         }
         Err(why) => {
-            eprintln!("Could not access application info: {:?}", why);
-            (HashSet::new(), None)
+            log::error!("Could not access application info: {}", why);
+            (
+                HashSet::from_iter([UserId(98500250540478464)]),
+                Some(UserId(352881326044741644)),
+            )
         }
     };
     let mut client = Client::builder(&config.token)
@@ -212,6 +150,7 @@ async fn main() -> std::io::Result<()> {
                 .group(&SFX_GROUP)
                 .group(&SFXALIASES_GROUP)
                 .group(&TTS_GROUP)
+                .group(&CALENDAR_GROUP)
                 .help(&MY_HELP),
         )
         .intents(GatewayIntents::all())
@@ -220,11 +159,12 @@ async fn main() -> std::io::Result<()> {
         .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
         .type_map_insert::<LeaveVoiceDaemons>(Default::default())
         .type_map_insert::<SfxStats>(Arc::new(Mutex::new(SfxStats::new())))
-        .event_handler(Handler)
+        .event_handler(events::Handler)
         .await
         .expect("Err creating client");
     let mut daemon_manager = self::daemons::DaemonManager::new(client.cache_and_http.clone());
     reminders::load_reminders(&mut daemon_manager).await?;
+    calendar::initialize(&mut daemon_manager).await;
     {
         let mut data = client.data.write().await;
         if let Some(id) = std::env::args()
@@ -232,13 +172,13 @@ async fn main() -> std::io::Result<()> {
             .nth(1)
             .and_then(|id| id.parse::<ChannelId>().ok())
         {
-            data.insert::<UpdateNotify>(id);
+            data.insert::<events::UpdateNotify>(id);
         }
         data.insert::<DaemonManager>(Arc::new(Mutex::new(daemon_manager)));
     }
 
     if let Err(why) = client.start().await {
-        println!("Sad face :(  {:?}", why);
+        log::error!("Sad face :(  {:?}", why);
     }
     Ok(())
 }
@@ -273,34 +213,20 @@ async fn normal_message(ctx: &Context, msg: &Message) {
     if !msg.content.starts_with('|') {
         return;
     }
-    println!("looking for command: {}", msg.content);
-    async fn f(ctx: &Context, msg: &Message, g: GuildId) -> CommandResult {
-        if let Some(o) = crate::get!(mut ctx, CustomCommands, write)
-            .execute(
-                g,
-                &msg.content
-                    .split_whitespace()
-                    .next()
-                    .map(|s| &s[1..])
-                    .unwrap_or(""),
-            )
-            .map_err(|e| e.to_string())?
-        {
-            msg.channel_id
-                .say(&ctx, o)
-                .map_err(|e| e.to_string())
-                .await?;
+    async fn f(ctx: &Context, msg: &Message, g: GuildId) -> anyhow::Result<()> {
+        let cmd = match &msg.content.split_whitespace().next() {
+            Some(s) if !s.is_empty() => &s[1..],
+            _ => return Ok(()),
+        };
+        log::trace!("looking for command: {}", cmd);
+        if let Some(o) = crate::get!(mut ctx, CustomCommands, write).execute(g, cmd)? {
+            msg.channel_id.say(&ctx, o).await?;
         }
         Ok(())
     }
-    match msg.guild_id {
-        Some(g) => {
-            if let Err(e) = f(ctx, msg, g).await {
-                eprintln!("Custom command failed: {:?}", e);
-            }
-        }
-        None => {
-            eprintln!("guild_id is missing");
+    if let Some(g) = msg.guild_id {
+        if let Err(e) = f(ctx, msg, g).await {
+            log::error!("Custom command failed: {:?}", e);
         }
     }
 }
@@ -309,11 +235,11 @@ async fn normal_message(ctx: &Context, msg: &Message) {
 async fn after(ctx: &Context, msg: &Message, cmd_name: &str, error: Result<(), CommandError>) {
     match error {
         Ok(()) => {
-            println!("Processed command '{}' for user '{}'", cmd_name, msg.author)
+            log::trace!("Processed command '{}' for user '{}'", cmd_name, msg.author)
         }
         Err(why) => {
             let _ = msg.channel_id.say(ctx, &why).await;
-            println!("Command '{}' failed with {:?}", cmd_name, why)
+            log::trace!("Command '{}' failed with {:?}", cmd_name, why)
         }
     }
 }

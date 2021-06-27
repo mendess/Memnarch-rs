@@ -112,7 +112,7 @@ impl CustomCommands {
             Entry::Vacant(entry) => {
                 let path = Self::save_path(guild_id)?;
                 let gc = serde_json::from_reader(File::open(&path)?).map_err(|e| {
-                    eprintln!("Error parsing custom commands: '{}'", e);
+                    log::error!("Error parsing custom commands: '{}'", e);
                     e
                 })?;
                 entry.insert(gc)

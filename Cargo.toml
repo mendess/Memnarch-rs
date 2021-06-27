@@ -20,6 +20,10 @@ songbird = "0.1"
 futures = "0.3"
 daemons = { git = "https://github.com/mendess/daemons", version = "0.5" }
 serenity = "0.10"
+anyhow = "1"
+dashmap = "4"
+log = "0.4"
+simplelog = "0.10"
 
 [dependencies.tokio]
 version = "1"

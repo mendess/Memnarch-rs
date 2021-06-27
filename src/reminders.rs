@@ -25,14 +25,14 @@ impl Daemon for Reminder {
         match self.id.create_dm_channel(data).await {
             Ok(pch) => {
                 if let Err(e) = pch.say(&data.http, &self.message).await {
-                    eprintln!("Failed to send reminder: {:?}", e);
+                    log::error!("Failed to send reminder: {:?}", e);
                 } else if let Err(e) = remove_reminder(self).await {
-                    eprintln!("Failed to remove reminder: {:?}", e);
+                    log::error!("Failed to remove reminder: {:?}", e);
                 }
                 daemons::ControlFlow::Break
             }
             Err(e) => {
-                eprintln!("Failed to create dm channel: {:?}", e);
+                log::error!("Failed to create dm channel: {:?}", e);
                 daemons::ControlFlow::Continue
             }
         }
@@ -67,8 +67,11 @@ pub async fn remind(
 }
 
 pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
+    let mut i = 0;
     for r in DATABASE.load().await?.take() {
         daemons.add_daemon(r).await;
+        i += 1;
     }
+    log::info!("Loaded {} reminders", i);
     Ok(())
 }

@@ -74,7 +74,7 @@ async fn generate_tts(
     }
     let service = service.unwrap_or("Polly");
     let voice = voice.unwrap_or("Brian");
-    eprintln!("[tts] Fetching {}:{}:{:?}", service, voice, text);
+    log::info!("Fetching {}:{}:{:?}", service, voice, text);
     let response = CLIENT
         .post("https://lazypy.ro/tts/proxy.php")
         .header("content-type", "application/x-www-form-urlencoded")
@@ -85,7 +85,7 @@ async fn generate_tts(
         .await?;
     match response {
         TtsResponse::Success { speak_url, .. } => {
-            eprintln!("[tts] Playing {}", speak_url);
+            log::info!("Playing {}", speak_url);
             Ok(speak_url)
         }
         TtsResponse::Error { error } => Err(error.into()),

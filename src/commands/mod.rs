@@ -5,6 +5,7 @@ pub mod owner;
 pub mod quotes;
 pub mod sfx;
 pub mod tts;
+pub mod calendar;
 
 pub mod command_groups {
     use super::*;
@@ -15,4 +16,5 @@ pub mod command_groups {
     pub use quotes::QUOTES_GROUP;
     pub use sfx::{SFXALIASES_GROUP, SFX_GROUP};
     pub use tts::TTS_GROUP;
+    pub use calendar::CALENDAR_GROUP;
 }
