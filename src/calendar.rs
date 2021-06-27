@@ -139,7 +139,7 @@ fn translate_weekday(w: Weekday) -> &'static str {
 pub async fn initialize(dm: &mut DaemonManager) {
     use crate::events::pubsub::{
         self,
-        events::{ReactionAdd, ReactionRemove, ReactionRemoveAll, CacheReady},
+        events::{CacheReady, ReactionAdd, ReactionRemove, ReactionRemoveAll},
     };
     use serenity::{client::Context, model::channel::Message};
     use std::mem::take;
@@ -154,6 +154,14 @@ pub async fn initialize(dm: &mut DaemonManager) {
         }
         async fn update_reacts(ctx: &Context, mut message: Message) -> serenity::Result<()> {
             let bot_id = crate::util::bot_id(ctx).await;
+            if DATABASE
+                .load()
+                .await?
+                .iter()
+                .any(|c| c.channel == message.channel_id)
+            {
+                return Ok(());
+            }
             let reactions = {
                 let mut reactions = Vec::with_capacity(message.reactions.len());
                 for rt in take(&mut message.reactions)
