@@ -4,6 +4,6 @@ RUN apt-get update
 RUN dpkg --add-architecture armhf && \
     apt-get update && \
     apt-get install --assume-yes libssl-dev:armhf libopus-dev:armhf
-
+RUN rustc --version || :
 ENV PKG_CONFIG_LIBDIR_armv7_unknown_linux_gnueabihf=/usr/lib/arm-linux-gnueabihf/pkgconfig
 

@@ -21,8 +21,7 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
     use chrono::Local;
     let one_trip_time =
         (Local::now().timestamp_millis() - msg.timestamp.timestamp_millis()) as f32 / 1000_f32;
-    if let Err(why) = msg
-        .channel_id
+    msg.channel_id
         .say(
             &ctx.http,
             format!(
@@ -35,10 +34,7 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
                 }
             ),
         )
-        .await
-    {
-        println!("Error ponging: {:?}", why)
-    }
+        .await?;
     Ok(())
 }
 
@@ -116,13 +112,13 @@ async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     lazy_static! {
         static ref NUMBER: Regex = Regex::new(r"\d+").unwrap();
-        static ref SECONDS: Regex = Regex::new(r"(s|sec|secs|seconds?|segundos?)").unwrap();
-        static ref MINUTES: Regex = Regex::new(r"(m|min|mins|minutes?|minutos?)").unwrap();
-        static ref HOURS: Regex = Regex::new(r"(h|hours?|horas?)").unwrap();
-        static ref DAYS: Regex = Regex::new(r"(d|days?|dias?)").unwrap();
-        static ref WEEKS: Regex = Regex::new(r"(w|weeks?|semanas?)").unwrap();
-        static ref MONTHS: Regex = Regex::new(r"(months?|mes(es)?)").unwrap();
-        static ref YEARS: Regex = Regex::new(r"(y|years?|anos?)").unwrap();
+        static ref SECONDS: Regex = Regex::new(r"^(s|sec|secs|seconds?|segundos?)").unwrap();
+        static ref MINUTES: Regex = Regex::new(r"^(m|min|mins|minutes?|minutos?)").unwrap();
+        static ref HOURS: Regex = Regex::new(r"^(h|hours?|horas?)").unwrap();
+        static ref DAYS: Regex = Regex::new(r"^(d|days?|dias?)").unwrap();
+        static ref WEEKS: Regex = Regex::new(r"^(w|weeks?|semanas?)").unwrap();
+        static ref MONTHS: Regex = Regex::new(r"^(months?|mes(es)?)").unwrap();
+        static ref YEARS: Regex = Regex::new(r"^(y|years?|anos?)").unwrap();
     };
     let (value, dur) = {
         let args = args.rest().trim();
@@ -136,7 +132,6 @@ async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         let args = &args[end..].trim();
 
         let end = |c: Captures<'_>| c.get(0).unwrap().end();
-
         let (end, dur) = if let Some(m) = SECONDS.captures(args) {
             (end(m), Duration::seconds(amt))
         } else if let Some(m) = MINUTES.captures(args) {
