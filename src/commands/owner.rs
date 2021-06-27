@@ -148,7 +148,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     }
     let client = Client::new();
 
-    println!("Getting available releases");
+    log::info!("Getting available releases");
     let asset_url = client
         .get("https://api.github.com/repos/mendess/Memnarch-rs/releases")
         .header(header::USER_AGENT, "mendess")
@@ -166,7 +166,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         browser_download_url: String,
         name: String,
     }
-    println!("Getting lattest release url");
+    log::info!("Getting lattest release url");
     let executable_url = client
         .get(&asset_url)
         .header(header::USER_AGENT, "mendess")
@@ -179,7 +179,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .map(|x| x.browser_download_url)
         .ok_or("Release doesn't contain executable")?;
 
-    println!("Downloading lattest release");
+    log::info!("Downloading lattest release");
     let (temp_file, temp_path) = tempfile::NamedTempFile::new_in(".")?.into_parts();
     let bytes = client
         .get(&executable_url)
@@ -189,14 +189,14 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .bytes()
         .await?;
     File::from_std(temp_file).write_all(&bytes).await?;
-    println!("Renaming");
+    log::info!("Renaming {} => {}", temp_path.display(), EXE_NAME);
     fs::rename(&temp_path, EXE_NAME).await?;
     let mut perm = fs::metadata(EXE_NAME).await?.permissions();
     let mode = perm.mode() | 0o700;
-    println!("Setting mode: {:o} => {:o}", perm.mode(), mode);
+    log::info!("Setting mode: {:o} => {:o}", perm.mode(), mode);
     perm.set_mode(mode);
     fs::set_permissions(EXE_NAME, perm).await?;
 
-    println!("Restaring");
+    log::info!("Restaring");
     restart(ctx, msg, _args).await
 }
