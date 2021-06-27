@@ -79,7 +79,8 @@ async fn send_message(
         })
         .await?;
     for (e, fallback) in reacts::ALL.iter() {
-        if let Err(_) = message.react(&ctx, *e).await {
+        if let Err(e) = message.react(&ctx, *e).await {
+            log::warn!("Failed to react with custom emoji: {}", e);
             message.react(&ctx, *fallback).await?;
         }
     }
@@ -102,8 +103,7 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
     let today = Utc::today();
     for Calendar { channel, messages } in cals.iter_mut() {
         loop {
-            messages.rotate_left(1);
-            let m_id = *messages.last().unwrap();
+            let m_id = *messages.first().unwrap();
             let mut m = channel.message(ctx.http(), m_id).await?;
             let (day, month) = {
                 let title = m.embeds[0].title.take().unwrap();
@@ -113,12 +113,13 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
                 })
             };
             let old_date = NaiveDate::from_ymd(today.year(), month, day);
-            if old_date > today.naive_utc() {
+            if old_date >= today.naive_utc() {
                 break;
             }
             channel.delete_message(ctx.http(), m_id).await?;
             let date = old_date + chrono::Duration::days(7);
-            *messages.last_mut().unwrap() = send_message(&ctx, *channel, date).await?;
+            *messages.first_mut().unwrap() = send_message(&ctx, *channel, date).await?;
+            messages.rotate_left(1);
         }
     }
     Ok(())
