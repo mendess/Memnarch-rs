@@ -1,4 +1,5 @@
 use crate::{daemons::DaemonManager, file_transaction::Database};
+use daemons::ControlFlow;
 use chrono::{DateTime, Utc};
 use daemons::Daemon;
 use lazy_static::lazy_static;
@@ -21,7 +22,7 @@ pub struct Reminder {
 impl Daemon for Reminder {
     type Data = serenity::CacheAndHttp;
 
-    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
+    async fn run(&mut self, data: &Self::Data) -> ControlFlow {
         match self.id.create_dm_channel(data).await {
             Ok(pch) => {
                 if let Err(e) = pch.say(&data.http, &self.message).await {
@@ -29,11 +30,11 @@ impl Daemon for Reminder {
                 } else if let Err(e) = remove_reminder(self).await {
                     log::error!("Failed to remove reminder: {:?}", e);
                 }
-                daemons::ControlFlow::Break
+                ControlFlow::BREAK
             }
             Err(e) => {
                 log::error!("Failed to create dm channel: {:?}", e);
-                daemons::ControlFlow::Continue
+                ControlFlow::CONTINUE
             }
         }
     }

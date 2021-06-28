@@ -1,3 +1,4 @@
+use daemons::ControlFlow;
 use dashmap::DashMap;
 use futures::future::BoxFuture;
 use lazy_static::lazy_static;
@@ -6,8 +7,9 @@ use std::any::{type_name, Any, TypeId};
 
 type Argument = dyn Any + Send + Sync;
 
-type Callback =
-    dyn for<'args> FnMut(&'args Context, &'args Argument) -> BoxFuture<'args, ()> + Sync + Send;
+type Callback = dyn for<'args> FnMut(&'args Context, &'args Argument) -> BoxFuture<'args, ControlFlow>
+    + Sync
+    + Send;
 
 type Subscribers = Vec<Box<Callback>>;
 
@@ -22,7 +24,7 @@ lazy_static! {
 pub fn register<T, F>(mut f: F)
 where
     T: Event,
-    F: for<'args> FnMut(&'args Context, &'args T::Argument) -> BoxFuture<'args, ()>
+    F: for<'args> FnMut(&'args Context, &'args T::Argument) -> BoxFuture<'args, ControlFlow>
         + Sync
         + Send
         + 'static,
@@ -46,9 +48,15 @@ where
     T: Event,
 {
     tokio::spawn(async move {
+        let mut to_remove = vec![];
         if let Some(mut subscribers) = INSTANCE.get_mut(&TypeId::of::<T>()) {
-            for s in subscribers.iter_mut() {
-                s(&ctx, &arg).await;
+            for (i, s) in subscribers.iter_mut().enumerate() {
+                if s(&ctx, &arg).await.is_break() {
+                    to_remove.push(i);
+                }
+            }
+            for i in to_remove {
+                let _ = subscribers.remove(i);
             }
         }
     });

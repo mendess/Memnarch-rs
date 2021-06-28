@@ -45,6 +45,7 @@ use std::{
     iter::FromIterator,
     sync::Arc,
 };
+use ::daemons::ControlFlow;
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -208,6 +209,7 @@ async fn main() -> std::io::Result<()> {
                     log::error!("Couldn't send update notification: {}", e);
                 }
             }
+            ControlFlow::BREAK
         }
         .boxed()
     });

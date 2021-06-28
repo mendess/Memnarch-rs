@@ -2,6 +2,7 @@ use crate::{
     daemons::DaemonManager,
     events::pubsub::{self, events::VoiceStateUpdate},
 };
+use daemons::ControlFlow;
 use futures::prelude::*;
 use serenity::{
     client::Context,
@@ -96,16 +97,17 @@ fn init_voice_leave() {
                             log::debug!("Leaving voice channel: {}", guild_id);
                             if let Err(e) = sb.remove(guild_id).await {
                                 log::error!("Could not leave voice channel: {}", e);
-                                return;
+                            } else {
+                                let data = ctx.data.read().await;
+                                let mut dm = crate::get!(> data, DaemonManager, lock);
+                                crate::get!(> data, LeaveVoiceDaemons, lock)
+                                    .remove(&mut *dm, guild_id)
+                                    .await;
                             }
-                            let data = ctx.data.read().await;
-                            let mut dm = crate::get!(> data, DaemonManager, lock);
-                            crate::get!(> data, LeaveVoiceDaemons, lock)
-                                .remove(&mut *dm, guild_id)
-                                .await;
                         };
                     }
                 }
+                ControlFlow::CONTINUE
             }
             .boxed()
         });

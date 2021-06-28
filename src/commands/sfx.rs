@@ -2,7 +2,7 @@ pub mod util;
 
 use crate::{consts::FILES_DIR, daemons::DaemonManager, get, permissions::*};
 use chrono::{DateTime, Duration, Utc};
-use daemons::Daemon;
+use daemons::{ControlFlow, Daemon };
 use itertools::Itertools;
 use serenity::{
     framework::standard::{
@@ -100,12 +100,12 @@ pub struct LeaveVoice {
 impl Daemon for LeaveVoice {
     type Data = serenity::CacheAndHttp;
 
-    async fn run(&mut self, _: &Self::Data) -> daemons::ControlFlow {
+    async fn run(&mut self, _: &Self::Data) -> ControlFlow {
         log::debug!("Leaving voice");
         if let Err(e) = self.songbird.remove(self.guild_id).await {
             log::error!("Could not leave voice channel: {}", e);
         }
-        daemons::ControlFlow::Break
+        ControlFlow::BREAK
     }
 
     async fn interval(&self) -> StdDuration {

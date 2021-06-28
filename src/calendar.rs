@@ -1,6 +1,6 @@
 use crate::{daemons::DaemonManager, file_transaction::Database, util::tuple_map::tuple_map_both};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc, Weekday};
-use daemons::Daemon;
+use daemons::{ControlFlow, Daemon };
 use futures::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -145,7 +145,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
     use serenity::{client::Context, model::channel::Message};
     use std::mem::take;
 
-    async fn react_change(ctx: &Context, ch_id: ChannelId, msg_id: MessageId) {
+    async fn react_change(ctx: &Context, ch_id: ChannelId, msg_id: MessageId) -> ControlFlow {
         if let Err(e) = ch_id
             .message(ctx, msg_id)
             .and_then(|m| update_reacts(ctx, m))
@@ -208,6 +208,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
                 .await?;
             Ok(())
         }
+        ControlFlow::CONTINUE
     }
     pubsub::register::<ReactionAdd, _>(|c, a| {
         async move { react_change(c, a.channel_id, a.message_id).await }.boxed()
@@ -223,6 +224,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
             if let Err(e) = tick(c).await {
                 log::error!("Failed to tick calenders after ready: {}", e);
             }
+            ControlFlow::BREAK
         }
         .boxed()
     });
@@ -235,11 +237,11 @@ struct CalendarDaemon;
 impl Daemon for CalendarDaemon {
     type Data = serenity::CacheAndHttp;
 
-    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
+    async fn run(&mut self, data: &Self::Data) -> ControlFlow {
         if let Err(e) = tick(data).await {
             log::error!("Failed to tick a calendar forward: {:?}", e);
         }
-        daemons::ControlFlow::Continue
+        ControlFlow::CONTINUE
     }
 
     async fn interval(&self) -> std::time::Duration {
