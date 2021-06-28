@@ -133,6 +133,12 @@ async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
     cargo_restart(ctx, msg, _args).await
 }
 
+mod messages {
+    pub const GET_RELEASES: &str = "Getting available releases";
+    pub const GET_LATTEST: &str = "Getting lattest release url";
+    pub const DOWNLOADING: &str = "Downloading lattest release";
+}
+
 #[command]
 #[description("Update the bot")]
 async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
@@ -148,7 +154,8 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     }
     let client = Client::new();
 
-    log::info!("Getting available releases");
+    log::info!("{}", messages::GET_RELEASES);
+    msg.channel_id.say(&ctx, messages::GET_RELEASES).await?;
     let asset_url = client
         .get("https://api.github.com/repos/mendess/Memnarch-rs/releases")
         .header(header::USER_AGENT, "mendess")
@@ -166,7 +173,8 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         browser_download_url: String,
         name: String,
     }
-    log::info!("Getting lattest release url");
+    log::info!("{}", messages::GET_LATTEST);
+    let mut m = msg.channel_id.say(&ctx, messages::GET_LATTEST).await?;
     let executable_url = client
         .get(&asset_url)
         .header(header::USER_AGENT, "mendess")
@@ -179,7 +187,13 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .map(|x| x.browser_download_url)
         .ok_or("Release doesn't contain executable")?;
 
-    log::info!("Downloading lattest release");
+    if let Some(v) = executable_url.split('/').rev().nth(1) {
+        m.edit(ctx, |m| m.content(format!("{}: {}", messages::GET_LATTEST, v)))
+            .await?;
+    }
+
+    log::info!("{}", messages::DOWNLOADING);
+    msg.channel_id.say(ctx, messages::DOWNLOADING).await?;
     let (temp_file, temp_path) = tempfile::NamedTempFile::new_in(".")?.into_parts();
     let bytes = client
         .get(&executable_url)
