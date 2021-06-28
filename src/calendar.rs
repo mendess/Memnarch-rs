@@ -246,7 +246,7 @@ impl Daemon for CalendarDaemon {
         let now = Utc::now().naive_utc();
         let midnight = NaiveDateTime::new(now.date().succ(), NaiveTime::from_hms(0, 10, 0));
         let dur = (midnight - now).to_std().unwrap_or_default();
-        log::trace!("calendars will tick forward in {:?}", dur);
+        log::trace!("calendars will tick forward in {}", humantime::format_duration(dur));
         dur
     }
 

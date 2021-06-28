@@ -524,8 +524,8 @@ dependencies = [
 
 [[package]]
 name = "git-describe"
-version = "0.2.0"
-source = "git+https://github.com/mendess/git-describe#d137e5fce01924597e176ec364ba3d16114e6eaa"
+version = "0.2.1"
+source = "git+https://github.com/mendess/git-describe#7af28b7b25cf1e0247af3ebe7e90c9b5759096a3"
 
 [[package]]
 name = "glob"
@@ -600,6 +600,12 @@ name = "httpdate"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6456b8a6c8f33fee7d958fcd1b60d55b11940a79e63ae87013e6d22e26034440"
+
+[[package]]
+name = "humantime"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hyper"
@@ -815,6 +821,7 @@ dependencies = [
  "dashmap",
  "futures",
  "git-describe",
+ "humantime",
  "itertools",
  "lazy_static",
  "log 0.4.14",
@@ -1052,9 +1059,9 @@ dependencies = [
 
 [[package]]
 name = "pin-project-lite"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc0e1f259c92177c30a4c9d177246edd0a3568b25756a977d0632cf8fa37e905"
+checksum = "8d31d11c69a6b52a174b42bdc0c30e5e11670f90788b2c471c31c1d17d449443"
 
 [[package]]
 name = "pin-utils"

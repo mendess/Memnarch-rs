@@ -19,12 +19,13 @@ tempfile = "3"
 songbird = "0.1"
 futures = "0.3"
 daemons = { git = "https://github.com/mendess/daemons", version = "0.5" }
-git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2.0" }
+git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
 serenity = "0.10"
 anyhow = "1"
 dashmap = "4"
 log = "0.4"
 simplelog = "0.10"
+humantime = "2"
 
 [dependencies.tokio]
 version = "1"
