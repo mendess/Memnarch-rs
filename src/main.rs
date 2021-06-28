@@ -113,6 +113,15 @@ fn config_logger() {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    println!(
+        "
+========================================
+        ┏┳┓┏━╸┏┳┓┏┓╻┏━┓┏━┓┏━╸╻ ╻
+        ┃┃┃┣╸ ┃┃┃┃┗┫┣━┫┣┳┛┃  ┣━┫
+        ╹ ╹┗━╸╹ ╹╹ ╹╹ ╹╹┗╸┗━╸╹ ╹
+========================================
+        "
+    );
     config_logger();
     let config = Config::new()?;
     let http = Http::new_with_token(&config.token);
@@ -176,6 +185,32 @@ async fn main() -> std::io::Result<()> {
         }
         data.insert::<DaemonManager>(Arc::new(Mutex::new(daemon_manager)));
     }
+    use events::{pubsub::events::Ready, UpdateNotify};
+    events::pubsub::register::<Ready, _>(|ctx, ready| {
+        use futures::prelude::*;
+        async move {
+            println!(
+                "
+░█░█░█▀█░░░█▀█░█▀█░█▀▄░░░█▀▄░█░█░█▀█░█▀█░▀█▀░█▀█░█▀▀
+░█░█░█▀▀░░░█▀█░█░█░█░█░░░█▀▄░█░█░█░█░█░█░░█░░█░█░█░█
+░▀▀▀░▀░░░░░▀░▀░▀░▀░▀▀░░░░▀░▀░▀▀▀░▀░▀░▀░▀░▀▀▀░▀░▀░▀▀▀
+                "
+            );
+            println!(
+                "Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot",
+                ready.user.id
+            );
+            if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>() {
+                if let Err(e) = id
+                    .send_message(&ctx, |m| m.content("Updated successfully!"))
+                    .await
+                {
+                    log::error!("Couldn't send update notification: {}", e);
+                }
+            }
+        }
+        .boxed()
+    });
 
     if let Err(why) = client.start().await {
         log::error!("Sad face :(  {:?}", why);

@@ -43,7 +43,7 @@ impl Daemon for Reminder {
     }
 
     async fn name(&self) -> String {
-        format!("{:?}", self)
+        format!("Remind {} on {}", self.id, self.when)
     }
 }
 

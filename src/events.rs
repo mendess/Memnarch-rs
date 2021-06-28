@@ -79,18 +79,6 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
-        log::info!(
-            "Up and running. Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot",
-            ready.user.id
-        );
-        if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>() {
-            if let Err(e) = id
-                .send_message(&ctx, |m| m.content("Updated successfully!"))
-                .await
-            {
-                log::error!("Couldn't send update notification: {}", e);
-            }
-        }
         pubsub::emit::<events::Ready>(ctx, ready).await;
     }
 }
