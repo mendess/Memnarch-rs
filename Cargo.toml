@@ -31,5 +31,8 @@ humantime = "2"
 version = "1"
 features = ["rt", "rt-multi-thread", "io-util", "macros", "sync"]
 
+[dev-dependencies]
+paste = "*"
+
 [profile.release]
 codegen-units = 1

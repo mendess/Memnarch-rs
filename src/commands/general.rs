@@ -1,7 +1,5 @@
 use crate::{consts::NUMBERS, daemons::DaemonManager, get, reminders};
-use chrono::{Duration, Utc};
-use lazy_static::lazy_static;
-use regex::{Captures, Regex};
+use chrono::Utc;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -119,53 +117,12 @@ async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 #[example("3s Remind me in 3 seconds")]
 #[example("4m Remind me in 4 minutes")]
 async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    lazy_static! {
-        static ref NUMBER: Regex = Regex::new(r"\d+").unwrap();
-        static ref SECONDS: Regex = Regex::new(r"^(s|sec|secs|seconds?|segundos?)").unwrap();
-        static ref MINUTES: Regex = Regex::new(r"^(m|min|mins|minutes?|minutos?)").unwrap();
-        static ref HOURS: Regex = Regex::new(r"^(h|hours?|horas?)").unwrap();
-        static ref DAYS: Regex = Regex::new(r"^(d|days?|dias?)").unwrap();
-        static ref WEEKS: Regex = Regex::new(r"^(w|weeks?|semanas?)").unwrap();
-        static ref MONTHS: Regex = Regex::new(r"^(months?|mes(es)?)").unwrap();
-        static ref YEARS: Regex = Regex::new(r"^(y|years?|anos?)").unwrap();
-    };
-    let (value, dur) = {
-        let args = args.rest().trim();
-        let (end, amt) = match NUMBER.captures(args).ok_or("missing number").and_then(|m| {
-            let m = m.get(0).unwrap();
-            Ok((m.end(), m.as_str().parse().map_err(|_| "Invalid number")?))
-        }) {
-            Ok(x) => x,
-            Err(e) => return Err(e.into()),
-        };
-        let args = &args[end..].trim();
-
-        let end = |c: Captures<'_>| c.get(0).unwrap().end();
-        let (end, dur) = if let Some(m) = SECONDS.captures(args) {
-            (end(m), Duration::seconds(amt))
-        } else if let Some(m) = MINUTES.captures(args) {
-            (end(m), Duration::minutes(amt))
-        } else if let Some(m) = HOURS.captures(args) {
-            (end(m), Duration::hours(amt))
-        } else if let Some(m) = DAYS.captures(args) {
-            (end(m), Duration::days(amt))
-        } else if let Some(m) = WEEKS.captures(args) {
-            (end(m), Duration::weeks(amt))
-        } else if let Some(m) = MONTHS.captures(args) {
-            (end(m), Duration::days(30 * amt))
-        } else if let Some(m) = YEARS.captures(args) {
-            (end(m), Duration::days(365 * amt))
-        } else {
-            return Err("Invalid time specifier".into());
-        };
-
-        (&args[end..].trim(), dur)
-    };
+    let (text, dur) = reminders::parse_duration(args.rest().trim())?;
     let data = ctx.data.read().await;
     let mut dm = get!(> data, DaemonManager, lock);
     reminders::remind(
         &mut *dm,
-        format!("You asked me to remind you of this:\n{}", value),
+        format!("You asked me to remind you of this:\n{}", text),
         Utc::now() + dur,
         msg.author.id,
     )
