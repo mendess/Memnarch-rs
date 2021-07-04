@@ -125,7 +125,7 @@ mod test {
     use chrono::Duration;
 
     macro_rules! make_test {
-        ($($time:ident => $ctor:ident),* $(,)?) => {
+        ($($time:ident => $ctor:ident$(* $mult:expr)?),* $(,)?) => {
             paste::paste! {$(
                 #[test]
                 fn [<$ctor _from_ $time _no_space>]() {
@@ -133,11 +133,11 @@ mod test {
                     eprintln!("{:?}", x);
                     assert_eq!(
                         parse_duration(x).unwrap().1,
-                        Duration::$ctor(2)
+                        Duration::$ctor(2 $(* $mult)?)
                     );
                     assert_eq!(
                         parse_duration(concat!("2", stringify!($time), " cenas")).unwrap().1,
-                        Duration::$ctor(2)
+                        Duration::$ctor(2 $(* $mult)?)
                     );
                 }
 
@@ -145,11 +145,11 @@ mod test {
                 fn [<$ctor _from_ $time _space>]() {
                     assert_eq!(
                         parse_duration(concat!("2 ", stringify!($time), " ")).unwrap().1,
-                        Duration::$ctor(2)
+                        Duration::$ctor(2 $(* $mult)?)
                     );
                     assert_eq!(
                         parse_duration(concat!("2 ", stringify!($time), " cenas")).unwrap().1,
-                        Duration::$ctor(2)
+                        Duration::$ctor(2 $(* $mult)?)
                     );
                 }
             )*}
@@ -185,5 +185,13 @@ mod test {
         weeks => weeks,
         semana => weeks,
         semanas => weeks,
+        month => days * 30,
+        months => days * 30,
+        mes => days * 30,
+        meses => days * 30,
+        year => days * 365,
+        years => days * 365,
+        ano => days * 365,
+        anos => days * 365,
     }
 }

@@ -1,6 +1,7 @@
 use crate::{daemons::DaemonManager, file_transaction::Database, util::tuple_map::tuple_map_both};
+use anyhow::Context;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc, Weekday};
-use daemons::{ControlFlow, Daemon };
+use daemons::{ControlFlow, Daemon};
 use futures::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -102,9 +103,13 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
     let mut cals = DATABASE.load().await?;
     let today = Utc::today();
     for Calendar { channel, messages } in cals.iter_mut() {
+        log::debug!("Ticking calendar in channel {}", channel);
         loop {
             let m_id = *messages.first().unwrap();
-            let mut m = channel.message(ctx.http(), m_id).await?;
+            let mut m = channel
+                .message(ctx.http(), m_id)
+                .await
+                .context("getting message")?;
             let (day, month) = {
                 let title = m.embeds[0].title.take().unwrap();
                 let (date, _) = title.split_once(' ').expect("a correct title");
@@ -116,9 +121,14 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
             if old_date >= today.naive_utc() {
                 break;
             }
-            channel.delete_message(ctx.http(), m_id).await?;
+            channel
+                .delete_message(ctx.http(), m_id)
+                .await
+                .context("deleting a message")?;
             let date = old_date + chrono::Duration::days(7);
-            *messages.first_mut().unwrap() = send_message(&ctx, *channel, date).await?;
+            *messages.first_mut().unwrap() = send_message(&ctx, *channel, date)
+                .await
+                .context("send a new message")?;
             messages.rotate_left(1);
         }
     }
@@ -248,7 +258,10 @@ impl Daemon for CalendarDaemon {
         let now = Utc::now().naive_utc();
         let midnight = NaiveDateTime::new(now.date().succ(), NaiveTime::from_hms(0, 10, 0));
         let dur = (midnight - now).to_std().unwrap_or_default();
-        log::trace!("calendars will tick forward in {}", humantime::format_duration(dur));
+        log::trace!(
+            "calendars will tick forward in {}",
+            humantime::format_duration(dur)
+        );
         dur
     }
 
