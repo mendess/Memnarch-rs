@@ -17,13 +17,30 @@ use serenity::{
 use std::iter::successors;
 
 mod reacts {
+    use serenity::model::channel::ReactionType;
     use serenity::model::id::EmojiId;
-    type EmojiFallback = (EmojiId, char);
-    pub(super) const YES: EmojiFallback = (EmojiId(723360851527991366), '✅');
-    pub(super) const NO: EmojiFallback = (EmojiId(723360851330859048), '❌');
-    pub(super) const MAYBE: EmojiFallback = (EmojiId(723359761382506597), '❓');
-    pub(super) const NAO_QUERO: EmojiFallback = (EmojiId(779017270243491870), '⛔');
+    type EmojiFallback = ((bool, EmojiId, &'static str), char);
+    pub(super) const YES: EmojiFallback =
+        ((true, EmojiId(723360851527991366), "perryyessign"), '✅');
+    pub(super) const NO: EmojiFallback =
+        ((true, EmojiId(723360851330859048), "perrynosign"), '❌');
+    pub(super) const MAYBE: EmojiFallback =
+        ((true, EmojiId(723359761382506597), "perryokaysign"), '❓');
+    pub(super) const NAO_QUERO: EmojiFallback =
+        ((true, EmojiId(779017270243491870), "perryguitar"), '⛔');
     pub(super) const ALL: [EmojiFallback; 4] = [YES, NO, MAYBE, NAO_QUERO];
+    pub(super) fn all() -> impl Iterator<Item = (ReactionType, char)> {
+        ALL.iter().map(|&((animated, id, name), f)| {
+            (
+                ReactionType::Custom {
+                    animated,
+                    id,
+                    name: Some(name.into()),
+                },
+                f,
+            )
+        })
+    }
 }
 
 lazy_static! {
@@ -79,10 +96,10 @@ async fn send_message(
             })
         })
         .await?;
-    for (e, fallback) in reacts::ALL.iter() {
-        if let Err(e) = message.react(&ctx, *e).await {
+    for (e, fallback) in reacts::all() {
+        if let Err(e) = message.react(&ctx, e).await {
             log::warn!("Failed to react with custom emoji: {}", e);
-            message.react(&ctx, *fallback).await?;
+            message.react(&ctx, fallback).await?;
         }
     }
     Ok(message.id)
@@ -189,7 +206,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
                 reactions.sort_by_cached_key(|(e, _)| match e {
                     ReactionType::Custom { id, .. } => reacts::ALL
                         .iter()
-                        .position(|e| e.0 == *id)
+                        .position(|((_, rid, _), _)| rid == id)
                         .unwrap_or(id.0 as usize),
                     ReactionType::Unicode(s) => s.len(),
                     _ => usize::MAX,
