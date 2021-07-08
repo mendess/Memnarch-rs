@@ -4,7 +4,7 @@ use crate::{
     get, reminders,
     user_prefs::{self, UserPrefs},
 };
-use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -178,7 +178,7 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
     let offset = {
         let offset = NaiveDateTime::new(
             NaiveDate::from_ymd(now.year(), now.month(), now.day()),
-            NaiveTime::from_hms(answer, now.minute(), now.second()),
+            now.time()
         ) - now.naive_utc();
         log::debug!("timestamp: {} user: {}", now, answer);
         offset.num_hours()
