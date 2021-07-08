@@ -4,7 +4,7 @@ use crate::{
     get, reminders,
     user_prefs::{self, UserPrefs},
 };
-use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -166,23 +166,27 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
         )
         .await?;
     let now = m.timestamp;
-    let answer = msg
-        .author
-        .await_reply(&ctx)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("no reply given"))?
-        .content
-        .trim()
-        .parse::<u32>()
-        .map_err(|_| anyhow::anyhow!("Invalid hour"))?;
-    let offset = {
-        let offset = NaiveDateTime::new(
-            NaiveDate::from_ymd(now.year(), now.month(), now.day()),
-            now.time()
-        ) - now.naive_utc();
-        log::debug!("timestamp: {} user: {}", now, answer);
-        offset.num_hours()
+    let answer = {
+        let answer = &msg
+            .author
+            .await_reply(&ctx)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("no reply given"))?
+            .content;
+        answer
+            .trim()
+            .parse::<u32>()
+            .map_err(|_| anyhow::anyhow!("Invalid hour"))
+            .and_then(|i| {
+                if i < 24 {
+                    Ok(i)
+                } else {
+                    Err(anyhow::anyhow!("Hours only go up to 23 🤔"))
+                }
+            })?
     };
+    let offset = answer as i64 - now.hour() as i64;
+    log::debug!("timestamp: {} user: {}, offset: {:?}", now, answer, offset);
     user_prefs::update(msg.author.id, |p| p.timezone_offset = Some(offset)).await?;
     Ok(offset)
 }
