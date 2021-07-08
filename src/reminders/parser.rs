@@ -3,14 +3,23 @@ use chrono::{Duration, NaiveTime};
 use lazy_static::lazy_static;
 use nom::{
     branch::alt,
-    bytes::complete::tag,
+    bytes::complete::{self as bytes, tag},
     character::complete::{self as character, space0 as spc},
-    combinator::{map, opt},
+    combinator::map,
     regexp::str::re_find,
-    sequence::{delimited, preceded, terminated, tuple},
+    sequence::{delimited, pair, preceded, terminated, tuple},
     Finish, IResult,
 };
 use regex::Regex;
+use std::ops::RangeBounds;
+
+fn day_tag(s: &str) -> IResult<&str, &str> {
+    alt((tag("day"), tag("dia")))(s)
+}
+
+fn at_tag(s: &str) -> IResult<&str, &str> {
+    alt((tag("at"), tag("@"), tag("as"), tag("às")))(s)
+}
 
 fn spaced<'s, P, O, E>(p: P) -> impl FnMut(&'s str) -> IResult<&str, O, E>
 where
@@ -20,31 +29,52 @@ where
     delimited(spc, p, spc)
 }
 
-fn all(s: &str) -> IResult<&str, &str> {
-    Ok(("", s))
+fn rest_trimed(s: &str) -> IResult<&str, &str> {
+    preceded(spc, bytes::take_while1(|_| true))(s)
 }
 
-fn parse_number(s: &str) -> IResult<&str, i16> {
-    map(character::digit1, |s: &str| s.parse::<i16>().unwrap())(s)
+fn parse_number<R: RangeBounds<u16>>(r: R) -> impl FnMut(&str) -> IResult<&str, u16> {
+    use nom::error::{make_error, ErrorKind};
+    move |s| match map(character::digit1, |s: &str| s.parse::<u16>())(s) {
+        Ok((a, Ok(i))) if r.contains(&i) => Ok((a, i)),
+        Ok(_) => Err(nom::Err::Error(make_error(s, ErrorKind::Satisfy))),
+        Err(e) => Err(e),
+    }
+}
+
+fn preceded_number<'s, R: RangeBounds<u16>>(
+    t: &'static str,
+    r: R,
+) -> impl FnMut(&'s str) -> IResult<&str, Option<u16>> {
+    use nom::error::{make_error, ErrorKind};
+
+    move |s| match alt((preceded(tag(t), character::digit1), tag(" ")))(s)? {
+        (_, " ") => Ok((s, None)),
+        (a, d) => match d.parse() {
+            Ok(i) if r.contains(&i) => Ok((a, Some(i))),
+            _ => Err(nom::Err::Error(make_error(s, ErrorKind::Satisfy))),
+        },
+    }
 }
 
 fn date(input: &str) -> IResult<&str, PartialDate> {
-    let mut slash_num = opt(preceded(tag("/"), parse_number));
-
-    let (input, day) = parse_number(input)?.map_snd(|o| o as u32);
-    let (input, month) = slash_num(input)?.map_snd(|o| o.map(|i| i as u32));
-    let (input, year) = slash_num(input)?.map_snd(|o| o.map(|i| i as i32));
+    let (input, day) = parse_number(1..=31)(input)?.map_snd(u32::from);
+    let (input, month) = preceded_number("/", 1..=12)(input)?.map_snd(|o| o.map(u32::from));
+    let (input, year) = preceded_number("/", 0..)(input)?.map_snd(|o| o.map(i32::from));
 
     Ok((input, PartialDate { year, month, day }))
 }
 
 fn time(input: &str) -> IResult<&str, NaiveTime> {
-    let mut colon_time = opt(preceded(tag(":"), parse_number));
+    let colon_time = |r| preceded_number(":", r);
 
-    let (input, hour) = parse_number(input)?;
-    let (input, min) = colon_time(input)?.map_snd(Option::unwrap_or_default);
-    let (input, sec) = colon_time(input)?.map_snd(Option::unwrap_or_default);
-    Ok((input, NaiveTime::from_hms(hour as _, min as _, sec as _)))
+    let (input, hour) = parse_number(0..24)(input)?;
+    let (input, min) = colon_time(0..60)(input)?.map_snd(Option::unwrap_or_default);
+    let (input, sec) = colon_time(0..60)(input)?.map_snd(Option::unwrap_or_default);
+    Ok((
+        input,
+        NaiveTime::from_hms(u32::from(hour), u32::from(min), u32::from(sec)),
+    ))
 }
 
 fn duration(input: &str) -> IResult<&str, Duration> {
@@ -59,7 +89,7 @@ fn duration(input: &str) -> IResult<&str, Duration> {
     };
     let re = |r: &Regex| re_find(r.clone());
 
-    let (input, amt) = terminated(parse_number, spc)(input)?.map_snd(|o| o as i64);
+    let (input, amt) = terminated(parse_number(..), spc)(input)?.map_snd(|o| i64::from(o));
     let (input, dur) = alt((
         map(re(&*SECONDS), |_| Duration::seconds(amt)),
         map(re(&*MINUTES), |_| Duration::minutes(amt)),
@@ -73,23 +103,21 @@ fn duration(input: &str) -> IResult<&str, Duration> {
 }
 
 fn at_time(input: &str) -> IResult<&str, (NaiveTime, &str)> {
-    let (input, (time, text)) = tuple((preceded(tag("at"), spaced(time)), all))(input)?;
-
-    Ok((input, (time, text)))
+    pair(preceded(at_tag, spaced(time)), rest_trimed)(input)
 }
 
 fn on_day(input: &str) -> IResult<&str, ((PartialDate, NaiveTime), &str)> {
     let (input, (date, time, text)) = tuple((
-        delimited(tag("day"), spaced(date), tag("at")),
+        delimited(day_tag, spaced(date), at_tag),
         spaced(time),
-        all,
+        rest_trimed,
     ))(input)?;
 
     Ok((input, ((date, time), text)))
 }
 
 fn in_time(input: &str) -> IResult<&str, (Duration, &str)> {
-    tuple((duration, all))(input)
+    pair(duration, rest_trimed)(input)
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -140,8 +168,96 @@ pub fn parse(a: &str) -> Result<Reminder<'_>, nom::error::Error<&str>> {
 
 #[cfg(test)]
 mod test {
-    use super::{parse, Reminder, TimeSpec};
-    use chrono::Duration;
+    use super::{parse, PartialDate, Reminder, TimeSpec};
+    use chrono::{Duration, NaiveTime};
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn doesnt_crash(s in ".*") {
+            let _ = parse(&s);
+        }
+
+        #[test]
+        fn valid_full_dates(s in "day -?[0-9]+/-?[0-9]+/-?[0-9]+ at -?[0-9]+:-?[0-9]+:-?[0-9] cenas") {
+            match parse(&s) {
+                Err(_) => (),
+                Ok(Reminder {
+                    text,
+                    when: TimeSpec::Date((date, _)),
+                }) if (0..31).contains(&date.day)
+                    && (0..12).contains(&date.month.unwrap())
+                    && text == "cenas" =>
+                {
+                    ()
+                }
+                Ok(o) => panic!("Invalid output {:?} for input {:?}", o, s),
+            }
+        }
+
+        #[test]
+        fn valid_times(s in "at -?[0-9]+:-?[0-9]+:-?[0-9] cenas") {
+            match parse(&s) {
+                Err(_) => (),
+                Ok(Reminder { text, when: TimeSpec::Time(_), }) if text == "cenas" => (),
+                Ok(o) => panic!("Invalid output {:?} for input {:?}", o, s),
+            }
+        }
+    }
+
+    #[test]
+    fn huge_minute() {
+        assert!(parse("at 20:500 cenas").is_err());
+    }
+
+    #[test]
+    #[should_panic]
+    fn empty_reminder() {
+        parse("at 20:40").unwrap();
+    }
+
+    #[test]
+    fn full_day_parse() {
+        assert_eq!(
+            parse("day 04 at 8 cenas"),
+            Ok(Reminder {
+                when: TimeSpec::Date((
+                    PartialDate {
+                        day: 4,
+                        month: None,
+                        year: None
+                    },
+                    NaiveTime::from_hms(8, 0, 0)
+                )),
+                text: "cenas"
+            })
+        )
+    }
+
+    #[test]
+    fn full_day_parse1() {
+        assert_eq!(
+            parse("day 04/05 at 8:34 cenas"),
+            Ok(Reminder {
+                when: TimeSpec::Date((
+                    PartialDate {
+                        day: 4,
+                        month: Some(5),
+                        year: None
+                    },
+                    NaiveTime::from_hms(8, 34, 0)
+                )),
+                text: "cenas"
+            })
+        )
+    }
+
+    #[test]
+    fn small_time() {
+        let r = parse("at 0:-0:0 cenas");
+        assert!(r.is_err(), "{:?}", r);
+    }
 
     macro_rules! make_test {
         ($($time:ident => $ctor:ident$(* $mult:expr)?),* $(,)?) => {

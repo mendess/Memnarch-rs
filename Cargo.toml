@@ -34,6 +34,7 @@ features = ["rt", "rt-multi-thread", "io-util", "macros", "sync"]
 
 [dev-dependencies]
 paste = "*"
+proptest = "0.9"
 
 [profile.release]
 codegen-units = 1
