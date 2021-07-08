@@ -11,9 +11,11 @@ mod events;
 mod file_transaction;
 mod permissions;
 mod reminders;
+mod user_prefs;
 mod util;
 
 use self::daemons::DaemonManager;
+use ::daemons::ControlFlow;
 use commands::{
     command_groups::*,
     custom::CustomCommands,
@@ -42,10 +44,8 @@ use std::{
     collections::HashSet,
     fs::{DirBuilder, OpenOptions},
     io::Write,
-    iter::FromIterator,
     sync::Arc,
 };
-use ::daemons::ControlFlow;
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -135,7 +135,7 @@ async fn main() -> std::io::Result<()> {
         Err(why) => {
             log::error!("Could not access application info: {}", why);
             (
-                HashSet::from_iter(std::array::IntoIter::new([UserId(98500250540478464)])),
+                std::array::IntoIter::new([UserId(98500250540478464)]).collect(),
                 Some(UserId(352881326044741644)),
             )
         }

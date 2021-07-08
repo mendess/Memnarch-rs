@@ -2,7 +2,7 @@ pub mod util;
 
 use crate::{consts::FILES_DIR, daemons::DaemonManager, get, permissions::*};
 use chrono::{DateTime, Duration, Utc};
-use daemons::{ControlFlow, Daemon };
+use daemons::{ControlFlow, Daemon};
 use itertools::Itertools;
 use serenity::{
     framework::standard::{
@@ -168,7 +168,10 @@ async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         }
     })
     .await?;
-    if let Err(e) = get!(ctx, SfxStats, lock).update(file.as_os_str().to_str().unwrap()).await {
+    if let Err(e) = get!(ctx, SfxStats, lock)
+        .update(file.as_os_str().to_str().unwrap())
+        .await
+    {
         log::error!("Failed to update sfx stats: {}", e);
     }
     Ok(())

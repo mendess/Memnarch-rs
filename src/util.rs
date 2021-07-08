@@ -27,13 +27,44 @@ pub async fn bot_id(http: impl AsRef<Http>) -> Option<UserId> {
 }
 
 pub mod tuple_map {
-    // pub fn tuple_map<A, B, F1, F2, AL, BL>((a, b): (A, B), mut f: F1, mut g: F2) -> (AL, BL)
-    // where
-    //     F1: FnMut(A) -> AL,
-    //     F2: FnMut(B) -> BL,
-    // {
-    //     (f(a), g(b))
-    // }
+    pub trait TupleMap<A, B> {
+        fn map_first<C, F>(self, f: F) -> (C, B)
+        where
+            F: FnMut(A) -> C;
+
+        fn map_snd<C, F>(self, f: F) -> (A, C)
+        where
+            F: FnMut(B) -> C;
+
+        fn map_both<F, G, C, D>(self, f: F, g: G) -> (C, D)
+        where
+            F: FnMut(A) -> C,
+            G: FnMut(B) -> D;
+    }
+
+    impl<A, B> TupleMap<A, B> for (A, B) {
+        fn map_first<C, F>(self, mut f: F) -> (C, B)
+        where
+            F: FnMut(A) -> C,
+        {
+            (f(self.0), self.1)
+        }
+
+        fn map_snd<C, F>(self, mut f: F) -> (A, C)
+        where
+            F: FnMut(B) -> C,
+        {
+            (self.0, f(self.1))
+        }
+
+        fn map_both<F, G, C, D>(self, mut f: F, mut g: G) -> (C, D)
+        where
+            F: FnMut(A) -> C,
+            G: FnMut(B) -> D,
+        {
+            (f(self.0), g(self.1))
+        }
+    }
 
     pub fn tuple_map_both<A, F, AL>((a, b): (A, A), mut f: F) -> (AL, AL)
     where

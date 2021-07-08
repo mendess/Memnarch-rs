@@ -22,8 +22,7 @@ mod reacts {
     type EmojiFallback = ((bool, EmojiId, &'static str), char);
     pub(super) const YES: EmojiFallback =
         ((true, EmojiId(723360851527991366), "perryyessign"), '✅');
-    pub(super) const NO: EmojiFallback =
-        ((true, EmojiId(723360851330859048), "perrynosign"), '❌');
+    pub(super) const NO: EmojiFallback = ((true, EmojiId(723360851330859048), "perrynosign"), '❌');
     pub(super) const MAYBE: EmojiFallback =
         ((true, EmojiId(723359761382506597), "perryokaysign"), '❓');
     pub(super) const NAO_QUERO: EmojiFallback =

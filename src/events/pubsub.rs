@@ -57,6 +57,7 @@ where
             }
             for i in to_remove {
                 let _ = subscribers.remove(i);
+                log::trace!("Removed a callback for {}, index: {}", type_name::<T>(), i);
             }
         }
     });

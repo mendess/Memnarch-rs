@@ -1,3 +1,4 @@
+pub mod calendar;
 pub mod custom;
 pub mod general;
 pub mod interrail;
@@ -5,10 +6,10 @@ pub mod owner;
 pub mod quotes;
 pub mod sfx;
 pub mod tts;
-pub mod calendar;
 
 pub mod command_groups {
     use super::*;
+    pub use calendar::CALENDAR_GROUP;
     pub use custom::CUSTOM_GROUP;
     pub use general::GENERAL_GROUP;
     pub use interrail::INTERRAIL_GROUP;
@@ -16,5 +17,4 @@ pub mod command_groups {
     pub use quotes::QUOTES_GROUP;
     pub use sfx::{SFXALIASES_GROUP, SFX_GROUP};
     pub use tts::TTS_GROUP;
-    pub use calendar::CALENDAR_GROUP;
 }

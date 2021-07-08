@@ -188,8 +188,10 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .ok_or("Release doesn't contain executable")?;
 
     if let Some(v) = executable_url.split('/').rev().nth(1) {
-        m.edit(ctx, |m| m.content(format!("{}: {}", messages::GET_LATTEST, v)))
-            .await?;
+        m.edit(ctx, |m| {
+            m.content(format!("{}: {}", messages::GET_LATTEST, v))
+        })
+        .await?;
     }
 
     log::info!("{}", messages::DOWNLOADING);

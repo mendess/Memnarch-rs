@@ -18,14 +18,15 @@ reqwest = "0.11"
 tempfile = "3"
 songbird = "0.1"
 futures = "0.3"
-daemons = { git = "https://github.com/mendess/daemons", version = "0.6" }
+daemons = { git = "https://github.com/mendess/daemons" }
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
-serenity = "0.10"
+serenity = { version = "0.10", features = ["collector"] }
 anyhow = "1"
 dashmap = "4"
 log = "0.4"
 simplelog = "0.10"
 humantime = "2"
+nom = { version = "6", features = ["regexp"] }
 
 [dependencies.tokio]
 version = "1"

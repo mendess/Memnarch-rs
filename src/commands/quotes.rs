@@ -1,4 +1,5 @@
 use crate::consts::FILES_DIR;
+use crate::get;
 use crate::permissions::*;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -16,7 +17,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::Mutex,
 };
-use crate::get;
 
 const QUOTES_DIR: &str = "quotes";
 const QUOTES_FILE: &str = "quotes.json";

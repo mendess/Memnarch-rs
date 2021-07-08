@@ -1,5 +1,10 @@
-use crate::{consts::NUMBERS, daemons::DaemonManager, get, reminders};
-use chrono::Utc;
+use crate::{
+    consts::NUMBERS,
+    daemons::DaemonManager,
+    get, reminders,
+    user_prefs::{self, UserPrefs},
+};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -52,9 +57,7 @@ async fn who_are_you(ctx: &Context, msg: &Message) -> CommandResult {
         .send_message(ctx, |m| {
             m.embed(|e| {
                 e.title("I AM MEMNARCH")
-                    .description(
-                        "Sauce code: [GitHub](https://github.com/Mendess2526/Memnarch-rs)",
-                    )
+                    .description("Sauce code: [GitHub](https://github.com/Mendess2526/Memnarch-rs)")
                     .image("https://img.scryfall.com/mci/scans/en/arc/112.jpg")
             })
         })
@@ -115,18 +118,71 @@ async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 )]
 #[usage("delay message")]
 #[example("3s Remind me in 3 seconds")]
-#[example("4m Remind me in 4 minutes")]
+#[example("4 m Remind me in 4 minutes")]
 async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let (text, dur) = reminders::parse_duration(args.rest().trim())?;
+    use reminders::parser::*;
+    let Reminder { text, when } =
+        parse(args.rest()).map_err(|e| anyhow::anyhow!("Invalid time spec: {}", e))?;
+    let now = msg.timestamp;
+    let when = match when {
+        TimeSpec::Duration(dur) => now + dur,
+        TimeSpec::Date((date, time)) => {
+            let date = NaiveDate::from_ymd(
+                date.year.unwrap_or(now.year()),
+                date.month.unwrap_or(now.month()),
+                date.day,
+            );
+            let date = NaiveDateTime::new(date, time);
+            let offset = get_user_timezone(ctx, msg).await?;
+            DateTime::from_utc(date - Duration::hours(offset), Utc)
+        }
+        TimeSpec::Time(time) => {
+            let offset = get_user_timezone(ctx, msg).await?;
+            now.date()
+                .and_time(time)
+                .ok_or_else(|| anyhow::anyhow!("Invalid time"))?
+                - Duration::hours(offset)
+        }
+    };
     let data = ctx.data.read().await;
     let mut dm = get!(> data, DaemonManager, lock);
-    reminders::remind(
-        &mut *dm,
-        format!("You asked me to remind you of this:\n{}", text),
-        Utc::now() + dur,
-        msg.author.id,
-    )
-    .await?;
+    reminders::remind(&mut *dm, text.into(), when, msg.author.id).await?;
     msg.channel_id.say(&ctx, "You shall be reminded!").await?;
     Ok(())
+}
+
+async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> {
+    if let Some(UserPrefs {
+        timezone_offset: Some(off),
+    }) = user_prefs::get(msg.author.id).await?
+    {
+        return Ok(off);
+    }
+    let m = msg
+        .channel_id
+        .say(
+            ctx,
+            "I don't know what time it is over there! Reply to this with the hour it is over there",
+        )
+        .await?;
+    let now = m.timestamp;
+    let answer = msg
+        .author
+        .await_reply(&ctx)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("no reply given"))?
+        .content
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| anyhow::anyhow!("Invalid hour"))?;
+    let offset = {
+        let offset = NaiveDateTime::new(
+            NaiveDate::from_ymd(now.year(), now.month(), now.day()),
+            NaiveTime::from_hms(answer, now.minute(), now.second()),
+        ) - now.naive_utc();
+        log::debug!("timestamp: {} user: {}", now, answer);
+        offset.num_hours()
+    };
+    user_prefs::update(msg.author.id, |p| p.timezone_offset = Some(offset)).await?;
+    Ok(offset)
 }

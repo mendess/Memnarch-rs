@@ -26,10 +26,8 @@ impl EventHandler for Handler {
         new: VoiceState,
     ) {
         // Disconnect channel of mirrodin
-        if let (
-            Some(gid @ GuildId(352399774818762759)),
-            Some(id @ ChannelId(707561909846802462)),
-        ) = (guild_id, new.channel_id)
+        if let (Some(gid @ GuildId(352399774818762759)), Some(id @ ChannelId(707561909846802462))) =
+            (guild_id, new.channel_id)
         {
             async fn f(id: ChannelId, gid: GuildId, ctx: &Context) -> anyhow::Result<()> {
                 let c = id.to_channel(ctx).await.and_then(|c| {
