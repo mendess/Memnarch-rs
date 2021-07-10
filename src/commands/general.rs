@@ -105,20 +105,29 @@ async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 #[command]
 #[min_args(2)]
 #[aliases("remindeme")]
-#[description(
-    "Set a reminder for later.
-              The time parameters allowed are:
-              - seconds (s|sec|secs|second|seconds|segundo|segundos)
-              - minutes (m|min|mins|minute|minutes|minuto|minutos)
-              - hours (h|hour|hours|hora|horas)
-              - days (d|day|days|dia|dias)
-              - weeks (w|week|weeks|semana|semanas)
-              - months (month|months|mes|meses)
-              - years (y|year|years|ano|anos)"
+#[description("Set a reminder for later.
+    Possible arguments are:
+    - (day|dia) DD/MM/YYYY (at|as|às|@) HH:MM:SS [reminder]
+    - (at|as|às|@) HH:MM:SS [reminder]
+    - X[time parameter] [reminder]
+
+    In the first 2 forms, any time parameter can be omited except for DD or HH.
+    For example 'day 7 at 8 wake me up inside' is okay, this will remind you to wake up inside on the 7th of the current month and year at 8am.
+
+    For the 3rd form the [time parameter] can be any of these:
+    - seconds (s|sec|secs|second|seconds|segundo|segundos)
+    - minutes (m|min|mins|minute|minutes|minuto|minutos)
+    - hours (h|hour|hours|hora|horas)
+    - days (d|day|days|dia|dias)
+    - weeks (w|week|weeks|semana|semanas)
+    - months (month|months|mes|meses)
+    - years (y|year|years|ano|anos)"
 )]
 #[usage("delay message")]
-#[example("3s Remind me in 3 seconds")]
-#[example("4 m Remind me in 4 minutes")]
+#[example("day 18/7 at 8 party")]
+#[example("at 9 dinner")]
+#[example("3s 3 seconds have passed")]
+#[example("4 m some time has passed")]
 async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     use reminders::parser::*;
     let Reminder { text, when } =

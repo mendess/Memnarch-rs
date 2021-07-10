@@ -180,7 +180,7 @@ mod test {
         }
 
         #[test]
-        fn valid_full_dates(s in "day -?[0-9]+/-?[0-9]+/-?[0-9]+ at -?[0-9]+:-?[0-9]+:-?[0-9] cenas") {
+        fn valid_full_dates(s in "(day|dia) -?[0-9]+/-?[0-9]+/-?[0-9]+ (at|às|as|@) -?[0-9]+:-?[0-9]+:-?[0-9] cenas") {
             match parse(&s) {
                 Err(_) => (),
                 Ok(Reminder {
@@ -197,7 +197,7 @@ mod test {
         }
 
         #[test]
-        fn valid_times(s in "at -?[0-9]+:-?[0-9]+:-?[0-9] cenas") {
+        fn valid_times(s in "(at|às|as|@) -?[0-9]+:-?[0-9]+:-?[0-9] cenas") {
             match parse(&s) {
                 Err(_) => (),
                 Ok(Reminder { text, when: TimeSpec::Time(_), }) if text == "cenas" => (),
@@ -215,6 +215,12 @@ mod test {
     #[should_panic]
     fn empty_reminder() {
         parse("at 20:40").unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn reminder_is_spaces() {
+        parse("at 8 ").unwrap();
     }
 
     #[test]
