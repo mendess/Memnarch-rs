@@ -6,6 +6,7 @@ use nom::{
     bytes::complete::{self as bytes, tag},
     character::complete::{self as character, space0 as spc},
     combinator::map,
+    error::{make_error, ErrorKind},
     regexp::str::re_find,
     sequence::{delimited, pair, preceded, terminated, tuple},
     Finish, IResult,
@@ -33,10 +34,9 @@ fn rest_trimed(s: &str) -> IResult<&str, &str> {
     preceded(spc, bytes::take_while1(|_| true))(s)
 }
 
-fn parse_number<R: RangeBounds<u16>>(r: R) -> impl FnMut(&str) -> IResult<&str, u16> {
-    use nom::error::{make_error, ErrorKind};
+fn parse_number<R: RangeBounds<u16>>(range: R) -> impl FnMut(&str) -> IResult<&str, u16> {
     move |s| match map(character::digit1, |s: &str| s.parse::<u16>())(s) {
-        Ok((a, Ok(i))) if r.contains(&i) => Ok((a, i)),
+        Ok((a, Ok(i))) if range.contains(&i) => Ok((a, i)),
         Ok(_) => Err(nom::Err::Error(make_error(s, ErrorKind::Satisfy))),
         Err(e) => Err(e),
     }
@@ -46,8 +46,6 @@ fn preceded_number<'s, R: RangeBounds<u16>>(
     t: &'static str,
     r: R,
 ) -> impl FnMut(&'s str) -> IResult<&str, Option<u16>> {
-    use nom::error::{make_error, ErrorKind};
-
     move |s| match alt((preceded(tag(t), character::digit1), tag(" ")))(s)? {
         (_, " ") => Ok((s, None)),
         (a, d) => match d.parse() {
@@ -66,11 +64,9 @@ fn date(input: &str) -> IResult<&str, PartialDate> {
 }
 
 fn time(input: &str) -> IResult<&str, NaiveTime> {
-    let colon_time = |r| preceded_number(":", r);
-
     let (input, hour) = parse_number(0..24)(input)?;
-    let (input, min) = colon_time(0..60)(input)?.map_snd(Option::unwrap_or_default);
-    let (input, sec) = colon_time(0..60)(input)?.map_snd(Option::unwrap_or_default);
+    let (input, min) = preceded_number(":", 0..60)(input)?.map_snd(Option::unwrap_or_default);
+    let (input, sec) = preceded_number(":", 0..60)(input)?.map_snd(Option::unwrap_or_default);
     Ok((
         input,
         NaiveTime::from_hms(u32::from(hour), u32::from(min), u32::from(sec)),

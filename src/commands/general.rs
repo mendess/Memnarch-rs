@@ -5,6 +5,7 @@ use crate::{
     user_prefs::{self, UserPrefs},
 };
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
+use itertools::Itertools;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -15,7 +16,7 @@ use serenity::{
 };
 
 #[group]
-#[commands(ping, who_are_you, vote, remindme, version)]
+#[commands(ping, who_are_you, vote, remindme, version, reminders)]
 struct General;
 
 #[command]
@@ -103,8 +104,40 @@ async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 }
 
 #[command]
+async fn reminders(ctx: &Context, msg: &Message) -> CommandResult {
+    use chrono::{Datelike, Timelike};
+
+    let s = reminders::reminders(msg.author.id)
+        .await?
+        .format_with("\n", |(m, d), f| {
+            f(&format_args!(
+                "{:02}/{:02}/{:02} {:02}:{:02}:{:02} -> {}",
+                d.day(),
+                d.month(),
+                d.year(),
+                d.hour(),
+                d.minute(),
+                d.second(),
+                m
+            ))
+        })
+        .to_string();
+    msg.channel_id
+        .say(
+            ctx,
+            if s.is_empty() {
+                "You don't have any reminders".to_string()
+            } else {
+                s
+            },
+        )
+        .await?;
+    Ok(())
+}
+
+#[command]
 #[min_args(2)]
-#[aliases("remindeme")]
+#[aliases("remindeme", "r")]
 #[description("Set a reminder for later.
     Possible arguments are:
     - (day|dia) DD/MM/YYYY (at|as|às|@) HH:MM:SS [reminder]

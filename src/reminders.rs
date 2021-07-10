@@ -69,6 +69,16 @@ pub async fn remind(
     Ok(())
 }
 
+pub async fn reminders(u: UserId) -> io::Result<impl Iterator<Item = (String, DateTime<Utc>)>> {
+    Ok(DATABASE
+        .load()
+        .await?
+        .take()
+        .into_iter()
+        .filter(move |r| r.id == u)
+        .map(|r| (r.message, r.when)))
+}
+
 pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
     let mut i = 0;
     for r in DATABASE.load().await?.take() {
