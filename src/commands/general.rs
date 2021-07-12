@@ -1,7 +1,8 @@
 use crate::{
     consts::NUMBERS,
     daemons::DaemonManager,
-    get, reminders,
+    get,
+    reminders::{self, parser::*},
     user_prefs::{self, UserPrefs},
 };
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
@@ -11,12 +12,16 @@ use serenity::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::channel::{Message, ReactionType},
+    model::{
+        channel::{Message, ReactionType},
+        id::UserId,
+    },
     prelude::*,
 };
+use std::iter::from_fn;
 
 #[group]
-#[commands(ping, who_are_you, vote, remindme, version, reminders)]
+#[commands(ping, who_are_you, vote, remindme, remind, version, reminders)]
 struct General;
 
 #[command]
@@ -162,16 +167,53 @@ async fn reminders(ctx: &Context, msg: &Message) -> CommandResult {
 #[example("3s 3 seconds have passed")]
 #[example("4 m some time has passed")]
 async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    use reminders::parser::*;
     let Reminder { text, when } =
         parse(args.rest()).map_err(|e| anyhow::anyhow!("Invalid time spec: {}", e))?;
+    let when = calculate_when(ctx, msg, when).await?;
+    let data = ctx.data.read().await;
+    let mut dm = get!(> data, DaemonManager, lock);
+    reminders::remind(&mut *dm, text.into(), when, msg.author.id).await?;
+    msg.channel_id.say(&ctx, "You shall be reminded!").await?;
+    Ok(())
+}
+
+#[command]
+#[owners_only]
+async fn remind(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let user_ids = from_fn(|| args.single::<UserId>().ok()).collect::<Vec<_>>();
+    if user_ids.is_empty() {
+        return Err("Please mention at least one person".into());
+    }
+    let Reminder { text, when } =
+        parse(args.rest()).map_err(|e| anyhow::anyhow!("Invalid time spec: {}", e))?;
+    let when = calculate_when(ctx, msg, when).await?;
+    let data = ctx.data.read().await;
+    let mut dm = get!(> data, DaemonManager, lock);
+    for user_id in user_ids {
+        reminders::remind(
+            &mut *dm,
+            format!("{} asked me to remind you: {}", msg.author.name, text),
+            when,
+            user_id,
+        )
+        .await?;
+    }
+    msg.channel_id.say(ctx, "It shall be ~~done~~ spammed").await?;
+    Ok(())
+}
+
+async fn calculate_when(
+    ctx: &Context,
+    msg: &Message,
+    when: TimeSpec,
+) -> anyhow::Result<DateTime<Utc>> {
     let now = msg.timestamp;
     let when = match when {
         TimeSpec::Duration(dur) => now + dur,
         TimeSpec::Date((date, time)) => {
             let date = NaiveDate::from_ymd(
-                date.year.unwrap_or(now.year()),
-                date.month.unwrap_or(now.month()),
+                date.year.unwrap_or_else(|| now.year()),
+                date.month.unwrap_or_else(|| now.month()),
                 date.day,
             );
             let date = NaiveDateTime::new(date, time);
@@ -186,11 +228,7 @@ async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 - Duration::hours(offset)
         }
     };
-    let data = ctx.data.read().await;
-    let mut dm = get!(> data, DaemonManager, lock);
-    reminders::remind(&mut *dm, text.into(), when, msg.author.id).await?;
-    msg.channel_id.say(&ctx, "You shall be reminded!").await?;
-    Ok(())
+    Ok(when)
 }
 
 async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> {

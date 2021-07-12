@@ -43,14 +43,14 @@ fn parse_number<R: RangeBounds<u16>>(range: R) -> impl FnMut(&str) -> IResult<&s
 }
 
 fn preceded_number<'s, R: RangeBounds<u16>>(
-    t: &'static str,
-    r: R,
+    tag_str: &'static str,
+    range: R,
 ) -> impl FnMut(&'s str) -> IResult<&str, Option<u16>> {
-    move |s| match alt((preceded(tag(t), character::digit1), tag(" ")))(s)? {
-        (_, " ") => Ok((s, None)),
-        (a, d) => match d.parse() {
-            Ok(i) if r.contains(&i) => Ok((a, Some(i))),
-            _ => Err(nom::Err::Error(make_error(s, ErrorKind::Satisfy))),
+    move |input| match alt((preceded(tag(tag_str), character::digit1), tag(" ")))(input)? {
+        (_, " ") => Ok((input, None)),
+        (a, digit) => match digit.parse() {
+            Ok(i) if range.contains(&i) => Ok((a, Some(i))),
+            _ => Err(nom::Err::Error(make_error(input, ErrorKind::Satisfy))),
         },
     }
 }
@@ -60,7 +60,7 @@ fn date(input: &str) -> IResult<&str, PartialDate> {
     let (input, month) = preceded_number("/", 1..=12)(input)?.map_snd(|o| o.map(u32::from));
     let (input, year) = preceded_number("/", 0..)(input)?.map_snd(|o| o.map(i32::from));
 
-    Ok((input, PartialDate { year, month, day }))
+    Ok((input, PartialDate { day, month, year }))
 }
 
 fn time(input: &str) -> IResult<&str, NaiveTime> {
@@ -85,7 +85,7 @@ fn duration(input: &str) -> IResult<&str, Duration> {
     };
     let re = |r: &Regex| re_find(r.clone());
 
-    let (input, amt) = terminated(parse_number(..), spc)(input)?.map_snd(|o| i64::from(o));
+    let (input, amt) = terminated(parse_number(..), spc)(input)?.map_snd(i64::from);
     let (input, dur) = alt((
         map(re(&*SECONDS), |_| Duration::seconds(amt)),
         map(re(&*MINUTES), |_| Duration::minutes(amt)),
