@@ -178,7 +178,6 @@ async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
-#[owners_only]
 async fn remind(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let user_ids = from_fn(|| args.single::<UserId>().ok()).collect::<Vec<_>>();
     if user_ids.is_empty() {
@@ -189,16 +188,38 @@ async fn remind(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let when = calculate_when(ctx, msg, when).await?;
     let data = ctx.data.read().await;
     let mut dm = get!(> data, DaemonManager, lock);
+    let mut got_one = false;
     for user_id in user_ids {
+        if reminders::is_blocked_by(msg.author.id, user_id).await? {
+            msg.channel_id
+                .say(ctx, format!("{} blocked you", user_id.mention()))
+                .await?;
+            continue;
+        }
         reminders::remind(
             &mut *dm,
-            format!("{} asked me to remind you: {}", msg.author.name, text),
+            format!(
+                r"{} asked me to remind you:
+\~\~\~\~
+{}
+\~\~\~\~
+
+*React with {} to block this person from reminding you. Unreact to unblock*",
+                msg.author.mention(),
+                text,
+                reminders::BLOCK_EMOJI,
+            ),
             when,
             user_id,
         )
         .await?;
+        got_one = true;
     }
-    msg.channel_id.say(ctx, "It shall be ~~done~~ spammed").await?;
+    if got_one {
+        msg.channel_id
+            .say(ctx, "It shall be ~~done~~ spammed")
+            .await?;
+    }
     Ok(())
 }
 
@@ -222,7 +243,8 @@ async fn calculate_when(
         }
         TimeSpec::Time(time) => {
             let offset = get_user_timezone(ctx, msg).await?;
-            let when = now.date()
+            let when = now
+                .date()
                 .and_time(time)
                 .ok_or_else(|| anyhow::anyhow!("Invalid time"))?
                 - Duration::hours(offset);
