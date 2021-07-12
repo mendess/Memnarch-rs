@@ -222,10 +222,15 @@ async fn calculate_when(
         }
         TimeSpec::Time(time) => {
             let offset = get_user_timezone(ctx, msg).await?;
-            now.date()
+            let when = now.date()
                 .and_time(time)
                 .ok_or_else(|| anyhow::anyhow!("Invalid time"))?
-                - Duration::hours(offset)
+                - Duration::hours(offset);
+            if when < now {
+                when + Duration::days(1)
+            } else {
+                when
+            }
         }
     };
     Ok(when)
