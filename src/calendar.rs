@@ -19,6 +19,7 @@ use std::iter::successors;
 mod reacts {
     use serenity::model::channel::ReactionType;
     use serenity::model::id::EmojiId;
+
     type EmojiFallback = ((bool, EmojiId, &'static str), char);
     pub(super) const YES: EmojiFallback =
         ((true, EmojiId(723360851527991366), "perryyessign"), '✅');
@@ -108,7 +109,11 @@ pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<(
     let mut c = DATABASE.load().await?;
     if let Some(i) = c.iter().position(|c| c.channel == channel) {
         let cal = c.swap_remove(i);
-        channel.delete_messages(ctx.http(), &cal.messages).await?;
+        if let Err(_) = channel.delete_messages(ctx.http(), &cal.messages).await {
+            for m in cal.messages {
+                channel.delete_message(ctx.http(), m).await?;
+            }
+        }
         Ok(())
     } else {
         Err(anyhow::anyhow!("Channel is not a calendar"))
@@ -122,10 +127,11 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
         log::debug!("Ticking calendar in channel {}", channel);
         loop {
             let m_id = *messages.first().unwrap();
-            let mut m = channel
-                .message(ctx.http(), m_id)
-                .await
-                .context("getting message")?;
+            let mut m = channel.message(ctx.http(), m_id).await?;
+            // let mut m = match  {
+            //         Ok(m) => m,
+            //         Err(e) => ,
+            //     };
             let (day, month) = {
                 let title = m.embeds[0].title.take().unwrap();
                 let (date, _) = title.split_once(' ').expect("a correct title");
@@ -137,15 +143,15 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
             if old_date >= today.naive_utc() {
                 break;
             }
+            let date = old_date + chrono::Duration::days(7);
+            *messages.first_mut().unwrap() = send_message(&ctx, *channel, date)
+                .await
+                .context("sending a new message")?;
+            messages.rotate_left(1);
             channel
                 .delete_message(ctx.http(), m_id)
                 .await
                 .context("deleting a message")?;
-            let date = old_date + chrono::Duration::days(7);
-            *messages.first_mut().unwrap() = send_message(&ctx, *channel, date)
-                .await
-                .context("send a new message")?;
-            messages.rotate_left(1);
         }
     }
     Ok(())
@@ -184,6 +190,10 @@ pub async fn initialize(dm: &mut DaemonManager) {
             if matches!(bot_id, Some(id) if id != message.author.id) {
                 return Ok(());
             }
+            let title = match message.embeds.get_mut(0).and_then(|e| e.title.take()) {
+                Some(t) => t,
+                None => return Ok(()),
+            };
             if DATABASE
                 .load()
                 .await?
@@ -212,7 +222,6 @@ pub async fn initialize(dm: &mut DaemonManager) {
                 });
                 reactions
             };
-            let title = message.embeds[0].title.take().unwrap();
             message
                 .channel_id
                 .edit_message(ctx, message.id, |e| {
