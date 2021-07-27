@@ -106,14 +106,15 @@ async fn send_message(
 }
 
 pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<()> {
-    let mut c = DATABASE.load().await?;
-    if let Some(i) = c.iter().position(|c| c.channel == channel) {
-        let cal = c.swap_remove(i);
+    let mut calendars = DATABASE.load().await?;
+    if let Some(i) = calendars.iter().position(|c| c.channel == channel) {
+        let cal = &calendars[i];
         if let Err(_) = channel.delete_messages(ctx.http(), &cal.messages).await {
             for m in cal.messages {
                 channel.delete_message(ctx.http(), m).await?;
             }
         }
+        calendars.swap_remove(i);
         Ok(())
     } else {
         Err(anyhow::anyhow!("Channel is not a calendar"))
@@ -147,11 +148,11 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
             *messages.first_mut().unwrap() = send_message(&ctx, *channel, date)
                 .await
                 .context("sending a new message")?;
-            messages.rotate_left(1);
             channel
                 .delete_message(ctx.http(), m_id)
                 .await
                 .context("deleting a message")?;
+            messages.rotate_left(1);
         }
     }
     Ok(())
