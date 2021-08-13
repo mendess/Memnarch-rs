@@ -81,11 +81,32 @@ impl<'db, T: Serialize + Default + Debug> DbGuard<'db, T> {
 impl<'db, T: Serialize + Debug> Drop for DbGuard<'db, T> {
     fn drop(&mut self) {
         if self.save {
-            use std::fs::File;
-            if let Err(e) =
-                File::create(&*self.pathbuf).and_then(|f| Ok(serde_json::to_writer(f, &self.t)?))
-            {
-                log::error!("Failed to store to {}: {}", self.pathbuf.display(), e);
+            let (temp_file, temp_path) =
+                match tempfile::NamedTempFile::new_in(".").map(|f| f.into_parts()) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        log::error!(
+                            "failed to create temporary file for '{}': {}",
+                            self.pathbuf.display(),
+                            e
+                        );
+                        return;
+                    }
+                };
+            if let Err(e) = serde_json::to_writer(temp_file, &self.t) {
+                log::error!(
+                    "Failed to store to tempfile for '{}': {}",
+                    self.pathbuf.display(),
+                    e
+                );
+            }
+            if let Err(e) = std::fs::rename(&temp_path, &*self.pathbuf) {
+                log::error!(
+                    "Failed to rename '{}' to '{}': {}",
+                    temp_path.display(),
+                    self.pathbuf.display(),
+                    e
+                );
             }
         }
     }

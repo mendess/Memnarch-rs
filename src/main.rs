@@ -46,6 +46,7 @@ use std::{
     io::Write,
     sync::Arc,
 };
+use anyhow::Context as _;
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -113,7 +114,7 @@ fn config_logger() {
 }
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     println!(
         "
 ========================================
@@ -124,7 +125,7 @@ async fn main() -> std::io::Result<()> {
         "
     );
     config_logger();
-    let config = Config::new()?;
+    let config = Config::new().context("loading config")?;
     let http = Http::new_with_token(&config.token);
     let (owners, bot_id) = match http.get_current_application_info().await {
         Ok(info) => {
@@ -173,7 +174,7 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Err creating client");
     let mut daemon_manager = self::daemons::DaemonManager::new(client.cache_and_http.clone());
-    reminders::load_reminders(&mut daemon_manager).await?;
+    reminders::load_reminders(&mut daemon_manager).await.context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
     {
         let mut data = client.data.write().await;
