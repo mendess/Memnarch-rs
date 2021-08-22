@@ -27,6 +27,8 @@ log = "0.4"
 simplelog = "0.10"
 humantime = "2"
 nom = { version = "6", features = ["regexp"] }
+procinfo = "0.4"
+toml = "0.5"
 
 [dependencies.tokio]
 version = "1"

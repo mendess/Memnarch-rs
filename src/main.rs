@@ -9,13 +9,17 @@ mod consts;
 mod daemons;
 mod events;
 mod file_transaction;
+mod health_monitor;
 mod permissions;
 mod reminders;
 mod user_prefs;
 mod util;
 
+use crate::health_monitor::HealthMonitor;
+
 use self::daemons::DaemonManager;
 use ::daemons::ControlFlow;
+use anyhow::Context as _;
 use commands::{
     command_groups::*,
     custom::CustomCommands,
@@ -41,32 +45,34 @@ use serenity::{
 };
 use songbird::SerenityInit;
 use std::{
+    array::IntoIter as ArrayIter,
     collections::HashSet,
+    env,
     fs::{DirBuilder, OpenOptions},
-    io::Write,
+    io::{self, Read, Write},
+    path::PathBuf,
     sync::Arc,
 };
-use anyhow::Context as _;
 
 #[derive(Serialize, Deserialize)]
 struct Config {
     token: String,
+    monitor_log_channel: Option<ChannelId>,
 }
 
 impl Config {
     fn new() -> std::io::Result<Config> {
         DirBuilder::new().recursive(true).create(FILES_DIR)?;
-        let file = OpenOptions::new()
+        let config_file_path = [FILES_DIR, "config.toml"].iter().collect::<PathBuf>();
+        let mut config_str = String::new();
+        let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(format!("{}/config.json", FILES_DIR))?;
-        Ok(serde_json::from_reader(file).unwrap_or_else(|_| {
-            let file = OpenOptions::new()
-                .write(true)
-                .open(format!("{}/config.json", FILES_DIR))
-                .expect("Couldn't open config for writing");
-
+            .open(&config_file_path)?;
+        file.read_to_string(&mut config_str)?;
+        Ok(toml::from_str(&config_str).unwrap_or_else(|_| {
+            file.set_len(0).expect("Couldn't truncate config file");
             let mut token = String::new();
             print!("Token: ");
             let _ = std::io::stdout().lock().flush();
@@ -75,8 +81,14 @@ impl Config {
                 .expect("Couldn't read token from stdin");
             token.pop();
 
-            let config = Config { token };
-            if let Err(e) = serde_json::to_writer_pretty(file, &config) {
+            let config = Config {
+                token,
+                monitor_log_channel: None,
+            };
+            if let Err(e) = toml::to_string_pretty(&config)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+                .and_then(|config_str| file.write_all(config_str.as_bytes()))
+            {
                 log::error!("Failed to store token: {}", e);
             }
             config
@@ -93,7 +105,9 @@ fn config_logger() {
         .set_location_level(LevelFilter::Error)
         .set_level_padding(LevelPadding::Right)
         .set_target_level(LevelFilter::Off)
+        .set_time_format_str("%F %T")
         .build();
+
     let term = TermLogger::new(
         LevelFilter::Trace,
         config.clone(),
@@ -102,15 +116,28 @@ fn config_logger() {
     );
     let file = WriteLogger::new(
         LevelFilter::Info,
-        config,
+        config.clone(),
         OpenOptions::new()
             .write(true)
             .append(true)
             .create(true)
             .open("memnarch.log")
-            .expect("can create log file"),
+            .expect("can't create log file"),
     );
-    CombinedLogger::init(vec![term, file]).unwrap();
+    let critical_log = WriteLogger::new(LevelFilter::Error, config, {
+        let home = env::var("HOME")
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .expect("Can't find home directory");
+        let file_path =
+            ArrayIter::new([home, "memnarch_critical_error.log".into()]).collect::<PathBuf>();
+        OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(file_path)
+            .expect("can't create critical log file")
+    });
+    CombinedLogger::init(vec![term, file, critical_log]).unwrap();
 }
 
 #[tokio::main]
@@ -136,7 +163,7 @@ async fn main() -> anyhow::Result<()> {
         Err(why) => {
             log::error!("Could not access application info: {}", why);
             (
-                std::array::IntoIter::new([UserId(98500250540478464)]).collect(),
+                ArrayIter::new([UserId(98500250540478464)]).collect(),
                 Some(UserId(352881326044741644)),
             )
         }
@@ -174,8 +201,13 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Err creating client");
     let mut daemon_manager = self::daemons::DaemonManager::new(client.cache_and_http.clone());
-    reminders::load_reminders(&mut daemon_manager).await.context("loading reminders")?;
+    reminders::load_reminders(&mut daemon_manager)
+        .await
+        .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
+    if let Some(channel) = config.monitor_log_channel {
+        daemon_manager.add_daemon(HealthMonitor::new(channel)).await;
+    }
     {
         let mut data = client.data.write().await;
         if let Some(id) = std::env::args()
