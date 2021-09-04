@@ -135,12 +135,12 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
             //     };
             let (day, month) = {
                 let title = m.embeds[0].title.take().unwrap();
-                let (date, _) = title.split_once(' ').expect("a correct title");
-                tuple_map_both(date.split_once('/').expect("a correct title"), |x| {
-                    x.parse::<u32>().expect("a correct title")
+                let (date, _) = title.split_once(' ').context("Expected a space")?;
+                tuple_map_both(date.split_once('/').context("Expected a slash")?, |x| {
+                    x.parse::<u32>().context("failed to parse number in title")
                 })
             };
-            let old_date = NaiveDate::from_ymd(today.year(), month, day);
+            let old_date = NaiveDate::from_ymd(today.year(), month?, day?);
             if old_date >= today.naive_utc() {
                 break;
             }
