@@ -8,7 +8,6 @@ use std::time::Duration;
 use std::{
     cmp::Ordering,
     fmt::{self, Display},
-    mem::replace,
     sync::atomic::{self, AtomicBool, AtomicUsize},
 };
 
@@ -40,8 +39,8 @@ impl Daemon for HealthMonitor {
         match statm_self() {
             Ok(new) => {
                 debug!("Memory usage: {:?}", new);
-                let diff = match replace(&mut *LAST_MEASURE.lock().await, Some(statm_clone(&new))) {
-                    Some(old) => Diff::new(&old, &new),
+                let diff = match &*LAST_MEASURE.lock().await {
+                    Some(old) => Diff::new(old, &new),
                     None => Diff::new(&new, &new),
                 };
                 if diff.changed() || ALLOWED_SKIPS.load(atomic::Ordering::Relaxed) == 0 {
@@ -54,6 +53,8 @@ impl Daemon for HealthMonitor {
                         .await;
                     if let Err(e) = res {
                         error!("Failed to send message to log channel: {}", e);
+                    } else {
+                        *LAST_MEASURE.lock().await = Some(new);
                     }
                 } else {
                     ALLOWED_SKIPS.fetch_sub(1, atomic::Ordering::Relaxed);
@@ -128,15 +129,5 @@ impl<'n> Display for Diff<'n> {
         compare!(self, text, f);
         compare!(self, data, f);
         Ok(())
-    }
-}
-
-fn statm_clone(s: &Statm) -> Statm {
-    Statm {
-        size: s.size,
-        resident: s.resident,
-        share: s.share,
-        text: s.text,
-        data: s.data,
     }
 }
