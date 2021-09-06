@@ -31,8 +31,11 @@ where
 
     async fn interval(&self) -> std::time::Duration {
         let now = Utc::now().naive_utc();
-        let midnight = NaiveDateTime::new(now.date().succ(), NaiveTime::from_hms(H, M, S));
-        let dur = (midnight - now).to_std().unwrap_or_default();
+        let mut target = NaiveDateTime::new(now.date(), NaiveTime::from_hms(H, M, S));
+        if now > target {
+            target = NaiveDateTime::new(target.date().succ(), NaiveTime::from_hms(H, M, S));
+        }
+        let dur = (target - now).to_std().unwrap_or_default();
         log::trace!(
             "cron task {} will happen in {}",
             self.name,
