@@ -14,14 +14,14 @@ use serenity::{
     },
     model::{
         channel::{Message, ReactionType},
-        id::UserId,
+        id::{ChannelId, UserId},
     },
     prelude::*,
 };
 use std::iter::from_fn;
 
 #[group]
-#[commands(ping, who_are_you, vote, remindme, remind, version, reminders)]
+#[commands(ping, who_are_you, vote, remindme, remind, version, reminders, set_quiz)]
 struct General;
 
 #[command]
@@ -296,4 +296,12 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
     log::debug!("timestamp: {} user: {}, offset: {:?}", now, answer, offset);
     user_prefs::update(msg.author.id, |p| p.timezone_offset = Some(offset)).await?;
     Ok(offset)
+}
+
+#[command]
+async fn set_quiz(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let channel = args.single::<ChannelId>()?;
+    crate::quiz::add_quiz_guild(msg.guild_id.ok_or_else(|| "not in a guild")?, channel).await?;
+    msg.channel_id.say(&ctx, "done").await?;
+    Ok(())
 }

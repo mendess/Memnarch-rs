@@ -1,7 +1,9 @@
-use crate::{daemons::DaemonManager, file_transaction::Database, util::tuple_map::tuple_map_both};
+use crate::{
+    cron::Cron, daemons::DaemonManager, file_transaction::Database, util::tuple_map::tuple_map_both,
+};
 use anyhow::Context;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc, Weekday};
-use daemons::{ControlFlow, Daemon};
+use chrono::{Datelike, NaiveDate, Utc, Weekday};
+use daemons::ControlFlow;
 use futures::*;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -264,34 +266,19 @@ pub async fn initialize(dm: &mut DaemonManager) {
         }
         .boxed()
     });
-    dm.add_daemon(CalendarDaemon).await;
+    dm.add_daemon(CalendarDaemon::new(
+        String::from("calendar daemon"),
+        |data| {
+            let data = data.clone();
+            async {
+                if let Err(e) = tick(data).await {
+                    log::error!("Failed to tick a calendar forward: {:?}", e);
+                }
+                ControlFlow::CONTINUE
+            }
+        },
+    ))
+    .await;
 }
 
-struct CalendarDaemon;
-
-#[serenity::async_trait]
-impl Daemon for CalendarDaemon {
-    type Data = serenity::CacheAndHttp;
-
-    async fn run(&mut self, data: &Self::Data) -> ControlFlow {
-        if let Err(e) = tick(data).await {
-            log::error!("Failed to tick a calendar forward: {:?}", e);
-        }
-        ControlFlow::CONTINUE
-    }
-
-    async fn interval(&self) -> std::time::Duration {
-        let now = Utc::now().naive_utc();
-        let midnight = NaiveDateTime::new(now.date().succ(), NaiveTime::from_hms(0, 10, 0));
-        let dur = (midnight - now).to_std().unwrap_or_default();
-        log::trace!(
-            "calendars will tick forward in {}",
-            humantime::format_duration(dur)
-        );
-        dur
-    }
-
-    async fn name(&self) -> String {
-        "calendar daemon".into()
-    }
-}
+type CalendarDaemon<F, Fut> = Cron<F, Fut, 0, 10, 0>;

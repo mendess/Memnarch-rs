@@ -4,6 +4,7 @@
 #![warn(rust_2018_idioms)]
 
 mod calendar;
+mod cron;
 mod commands;
 mod consts;
 mod daemons;
@@ -14,6 +15,7 @@ mod permissions;
 mod reminders;
 mod user_prefs;
 mod util;
+mod quiz;
 
 use crate::health_monitor::HealthMonitor;
 
@@ -205,6 +207,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
+    quiz::initialize(&mut daemon_manager).await?;
     if let Some(channel) = config.monitor_log_channel {
         daemon_manager.add_daemon(HealthMonitor::new(channel)).await;
     }
