@@ -21,7 +21,7 @@ use serenity::{
 use std::iter::from_fn;
 
 #[group]
-#[commands(ping, who_are_you, vote, remindme, remind, version, reminders, set_quiz)]
+#[commands(ping, who_are_you, vote, remindme, remind, version, reminders)]
 struct General;
 
 #[command]
@@ -298,10 +298,23 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
     Ok(offset)
 }
 
-#[command]
+#[group]
+#[prefix("quiz")]
+#[commands(set_quiz, unset_quiz)]
+struct Quiz;
+
+#[command("set")]
 async fn set_quiz(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let channel = args.single::<ChannelId>()?;
-    crate::quiz::add_quiz_guild(msg.guild_id.ok_or_else(|| "not in a guild")?, channel).await?;
+    crate::quiz::add_quiz_guild(ctx, msg.guild_id.ok_or_else(|| "not in a guild")?, channel)
+        .await?;
     msg.channel_id.say(&ctx, "done").await?;
+    Ok(())
+}
+
+#[command("unset")]
+async fn unset_quiz(ctx: &Context, msg: &Message) -> CommandResult {
+    crate::quiz::remove_quiz_guild(ctx, msg.guild_id.ok_or_else(|| "not in a guild")?).await?;
+    msg.channel_id.say(ctx, "done").await?;
     Ok(())
 }

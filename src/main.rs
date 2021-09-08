@@ -4,18 +4,18 @@
 #![warn(rust_2018_idioms)]
 
 mod calendar;
-mod cron;
 mod commands;
 mod consts;
+mod cron;
 mod daemons;
 mod events;
 mod file_transaction;
 mod health_monitor;
 mod permissions;
+mod quiz;
 mod reminders;
 mod user_prefs;
 mod util;
-mod quiz;
 
 use crate::health_monitor::HealthMonitor;
 
@@ -191,6 +191,7 @@ async fn main() -> anyhow::Result<()> {
                 .group(&SFXALIASES_GROUP)
                 .group(&TTS_GROUP)
                 .group(&CALENDAR_GROUP)
+                .group(&QUIZ_GROUP)
                 .help(&MY_HELP),
         )
         .intents(GatewayIntents::all())

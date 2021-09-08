@@ -120,7 +120,13 @@ impl<'n> Display for Diff<'n> {
                     Ordering::Less => ":green_square:",
                     Ordering::Greater => ":red_square:",
                 };
-                ::std::write!($f, "{}: {} {} **|** ", ::std::stringify!($field), $self.new.$field, c)?;
+                ::std::write!(
+                    $f,
+                    "{}: {} {} **|** ",
+                    ::std::stringify!($field),
+                    $self.new.$field,
+                    c
+                )?;
             };
         }
         compare!(self, size, f);

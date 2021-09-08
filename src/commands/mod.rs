@@ -12,6 +12,7 @@ pub mod command_groups {
     pub use calendar::CALENDAR_GROUP;
     pub use custom::CUSTOM_GROUP;
     pub use general::GENERAL_GROUP;
+    pub use general::QUIZ_GROUP;
     pub use interrail::INTERRAIL_GROUP;
     pub use owner::OWNER_GROUP;
     pub use quotes::QUOTES_GROUP;
