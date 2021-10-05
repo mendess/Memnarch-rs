@@ -1,6 +1,6 @@
-use std::borrow::Cow;
+use std::time::Duration;
 
-use pyo3::{types::PyDict, Python};
+use pyo3::{types::PyDict, PyResult, Python};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -9,6 +9,7 @@ use serenity::{
     model::channel::Message,
     prelude::*,
 };
+use tokio::{task::spawn_blocking, time::timeout};
 
 use crate::permissions::IS_FRIEND_CHECK;
 
@@ -26,7 +27,7 @@ pub async fn py(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
 pub async fn eval_(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let code = args.rest().split("```").collect::<Vec<_>>();
-    let code: Cow<'_, str> = match &code[..] {
+    let code: String = match &code[..] {
         &[_, code, _] => code.trim_start_matches("py").trim().into(),
         &[code] => {
             if code.bytes().filter(|b| *b == b'\n').count() == 0 {
@@ -38,11 +39,21 @@ pub async fn eval_(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         _ => return Err("write only python code or surround the code in a code block".into()),
     };
     let locals = {
-        let py = Python::acquire_gil();
-        let py = py.python();
-        let locals = PyDict::new(py);
-        py.run(&code, None, Some(locals))?;
-        format!("```\n{:#?}\n```", locals)
+        let timedout = timeout(
+            Duration::from_secs(60),
+            spawn_blocking(move || {
+                let py = Python::acquire_gil();
+                let py = py.python();
+                let locals = PyDict::new(py);
+                py.run(&code, None, Some(locals))?;
+                PyResult::Ok(format!("```\n{:#?}\n```", locals))
+            }),
+        )
+        .await;
+        match timedout {
+            Ok(locals) => locals??,
+            Err(_) => return Err("timedout".into())
+        }
     };
     msg.channel_id.say(ctx, locals).await?;
     Ok(())
