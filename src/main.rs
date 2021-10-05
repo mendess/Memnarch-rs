@@ -192,6 +192,7 @@ async fn main() -> anyhow::Result<()> {
                 .group(&TTS_GROUP)
                 .group(&CALENDAR_GROUP)
                 .group(&QUIZ_GROUP)
+                .group(&PY_GROUP)
                 .help(&MY_HELP),
         )
         .intents(GatewayIntents::all())
