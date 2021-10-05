@@ -6,6 +6,7 @@ pub mod owner;
 pub mod quotes;
 pub mod sfx;
 pub mod tts;
+pub mod python;
 
 pub mod command_groups {
     use super::*;
@@ -18,4 +19,5 @@ pub mod command_groups {
     pub use quotes::QUOTES_GROUP;
     pub use sfx::{SFXALIASES_GROUP, SFX_GROUP};
     pub use tts::TTS_GROUP;
+    pub use python::PY_GROUP;
 }

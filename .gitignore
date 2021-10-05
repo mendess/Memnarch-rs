@@ -1,3 +1,6 @@
 /target
 **/*.rs.bk
 files/
+*log
+.*
+proptest-regressions

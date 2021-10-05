@@ -144,8 +144,11 @@ pub async fn initialize(daemon: &mut DaemonManager) -> io::Result<()> {
                 None => return,
             };
             let r = match &reaction.emoji {
-                ReactionType::Unicode(e) if e == "✅" => add_quizer(c, guild, user).await,
-                ReactionType::Unicode(e) if e == "❌" => rm_quizer(c, guild, user).await,
+                ReactionType::Unicode(e) => match e.as_str() {
+                    "✅" => add_quizer(c, guild, user).await,
+                    "❌" => rm_quizer(c, guild, user).await,
+                    _ => return,
+                },
                 _ => return,
             };
             if let Err(e) = r {

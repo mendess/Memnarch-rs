@@ -29,6 +29,7 @@ humantime = "2"
 nom = { version = "6", features = ["regexp"] }
 procinfo = "0.4"
 toml = "0.5"
+pyo3 = { version = "0.14.5", features = ["auto-initialize"] }
 
 [dependencies.tokio]
 version = "1"
