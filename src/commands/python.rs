@@ -63,7 +63,7 @@ pub async fn eval_(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         }
         r => {
             return Err(format!(
-                "{}",
+                "{} => {}",
                 r.status().canonical_reason().unwrap_or(""),
                 r.text().await?
             )
