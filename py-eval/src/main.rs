@@ -1,23 +1,15 @@
-#![allow(unused_imports)]
-#![allow(unused_variables)]
+use std::time::Duration;
 
-use axum::{
-    handler::{get, post},
-    http::StatusCode,
-    response::IntoResponse,
-    Json, Router,
-};
-use futures::{stream::TryStreamExt, StreamExt};
+use axum::{handler::post, http::StatusCode, Json, Router};
 use pyo3::{
     types::{PyDict, PyFloat, PyFunction, PyInt, PyList, PyString, PyTuple},
     PyAny, Python,
 };
-use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
-    net::{Ipv4Addr, SocketAddr},
     env,
+    net::{Ipv4Addr, SocketAddr},
 };
+use tokio::{task::spawn_blocking, time::timeout};
 use tracing::{error, info};
 
 #[tokio::main]
@@ -50,30 +42,73 @@ type HttpResponse = Result<Response<Json<serde_json::Value>>, Response<String>>;
 #[tracing::instrument]
 async fn eval(json_program: Json<Program>) -> HttpResponse {
     let Json(Program { t }) = json_program;
-    let py = Python::acquire_gil();
-    let py = py.python();
-    let locals = PyDict::new(py);
-    match py.run(&t, None, Some(locals)) {
-        Ok(_) => serialize_into_response(&locals),
-        Err(e) => {
-            error!("Failed to run: {:?}", e);
-            Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
-        },
+    let timeout = timeout(
+        Duration::from_secs(10),
+        spawn_blocking(move || {
+            let py = Python::acquire_gil();
+            let py = py.python();
+            let locals = PyDict::new(py);
+            match py.run(&t, None, Some(locals)) {
+                Ok(_) => serialize_into_response(&locals),
+                Err(e) => {
+                    error!("Failed to run: {:?}", e);
+                    Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
+                }
+            }
+        }),
+    )
+    .await;
+
+    match timeout {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => {
+            error!("Error joining: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("Someone did a fucky wuky"),
+            ))
+        }
+        Err(_) => Err((
+            StatusCode::REQUEST_TIMEOUT,
+            String::from("Can't take more than 10 seconds"),
+        )),
     }
 }
 
 #[tracing::instrument]
 async fn expr(json_program: Json<Program>) -> HttpResponse {
     let Json(Program { t }) = json_program;
-    let py = Python::acquire_gil();
-    let py = py.python();
-    let locals = PyDict::new(py);
-    match py.eval(&t, None, Some(locals)) {
-        Ok(obj) => serialize_into_response(&obj),
-        Err(e) => {
-            error!("Failed to eval: {:?}", e);
-            Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
-        },
+
+    let timeout = timeout(
+        Duration::from_secs(2),
+        spawn_blocking(move || {
+            let py = Python::acquire_gil();
+            let py = py.python();
+            let locals = PyDict::new(py);
+            match py.eval(&t, None, Some(locals)) {
+                Ok(obj) => serialize_into_response(&obj),
+                Err(e) => {
+                    error!("Failed to eval: {:?}", e);
+                    Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
+                }
+            }
+        }),
+    )
+    .await;
+
+    match timeout {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => {
+            error!("Error joining: {:?}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("Someone did a fucky wuky"),
+            ))
+        }
+        Err(_) => Err((
+            StatusCode::REQUEST_TIMEOUT,
+            String::from("Can't take more than 2 seconds"),
+        )),
     }
 }
 
