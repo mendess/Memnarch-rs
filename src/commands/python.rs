@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use pyo3::{types::PyDict, PyResult, Python};
+use reqwest::Client;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -9,9 +9,13 @@ use serenity::{
     model::channel::Message,
     prelude::*,
 };
-use tokio::{task::spawn_blocking, time::timeout};
+use tokio::time::timeout;
 
 use crate::permissions::IS_FRIEND_CHECK;
+
+lazy_static::lazy_static! {
+    static ref HTTP: Client = Client::new();
+}
 
 #[group]
 #[commands(py)]
@@ -27,34 +31,44 @@ pub async fn py(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
 pub async fn eval_(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let code = args.rest().split("```").collect::<Vec<_>>();
-    let code: String = match &code[..] {
-        &[_, code, _] => code.trim_start_matches("py").trim().into(),
-        &[code] => {
+    let (path, code) = match &code[..] {
+        [_, code, _] => ("", code.trim_start_matches("py").trim()),
+        [code] => {
             if code.bytes().filter(|b| *b == b'\n').count() == 0 {
-                format!("ret = {}", code.trim().trim_matches('`').trim()).into()
+                ("expr", code.trim().trim_matches('`').trim())
             } else {
-                code.into()
+                ("", *code)
             }
         }
         _ => return Err("write only python code or surround the code in a code block".into()),
     };
-    let locals = {
-        let timedout = timeout(
-            Duration::from_secs(60),
-            spawn_blocking(move || {
-                let py = Python::acquire_gil();
-                let py = py.python();
-                let locals = PyDict::new(py);
-                py.run(&code, None, Some(locals))?;
-                PyResult::Ok(format!("```\n{:#?}\n```", locals))
-            }),
-        )
-        .await;
-        match timedout {
-            Ok(locals) => locals??,
-            Err(_) => return Err("timedout".into())
+    let r = timeout(
+        Duration::from_secs(10),
+        HTTP.post(format!("http://localhost:31415/{}", path))
+            .json(&serde_json::json! {{ "t": code }})
+            .send(),
+    )
+    .await??;
+    match r {
+        r if r.status().is_success() => {
+            msg.channel_id
+                .say(
+                    ctx,
+                    format!(
+                        "```\n{}\n```",
+                        serde_json::to_string_pretty(&r.json::<serde_json::Value>().await?)?
+                    ),
+                )
+                .await?;
         }
-    };
-    msg.channel_id.say(ctx, locals).await?;
+        r => {
+            return Err(format!(
+                "{}",
+                r.status().canonical_reason().unwrap_or(""),
+                r.text().await?
+            )
+            .into())
+        }
+    }
     Ok(())
 }
