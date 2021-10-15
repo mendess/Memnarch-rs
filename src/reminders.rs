@@ -32,7 +32,7 @@ pub struct Reminder {
 }
 
 #[serenity::async_trait]
-impl Daemon for Reminder {
+impl Daemon<false> for Reminder {
     type Data = serenity::CacheAndHttp;
 
     async fn run(&mut self, data: &Self::Data) -> ControlFlow {

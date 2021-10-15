@@ -22,7 +22,7 @@ where
 }
 
 #[serenity::async_trait]
-impl<F, Fut, const H: u32, const M: u32, const S: u32> Daemon for Cron<F, Fut, H, M, S>
+impl<F, Fut, const H: u32, const M: u32, const S: u32> Daemon<false> for Cron<F, Fut, H, M, S>
 where
     F: FnMut(&serenity::CacheAndHttp) -> Fut + Send + Sync,
     Fut: Future<Output = ControlFlow> + Send,

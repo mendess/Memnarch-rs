@@ -32,7 +32,7 @@ lazy_static! {
 static ALLOWED_SKIPS: AtomicUsize = AtomicUsize::new(0);
 
 #[daemons::async_trait]
-impl Daemon for HealthMonitor {
+impl Daemon<true> for HealthMonitor {
     type Data = CacheAndHttp;
 
     async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {

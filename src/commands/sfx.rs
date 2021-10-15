@@ -97,7 +97,7 @@ pub struct LeaveVoice {
 }
 
 #[serenity::async_trait]
-impl Daemon for LeaveVoice {
+impl Daemon<true> for LeaveVoice {
     type Data = serenity::CacheAndHttp;
 
     async fn run(&mut self, _: &Self::Data) -> ControlFlow {
