@@ -97,11 +97,11 @@ pub struct LeaveVoice {
 }
 
 #[serenity::async_trait]
-impl Daemon<true> for LeaveVoice {
+impl Daemon<false> for LeaveVoice {
     type Data = serenity::CacheAndHttp;
 
     async fn run(&mut self, _: &Self::Data) -> ControlFlow {
-        log::debug!("Leaving voice");
+        log::debug!("Leaving voice. Scheduled for {}", self.when);
         if let Err(e) = self.songbird.remove(self.guild_id).await {
             log::error!("Could not leave voice channel: {}", e);
         }
