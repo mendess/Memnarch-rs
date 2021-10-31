@@ -32,7 +32,7 @@ lazy_static! {
     static ref DATABASE: Database<HashMap<GuildId, Quizers>> = Database::new("files/quizers.json");
 }
 
-type QuizDaemon<F, Fut> = Cron<F, Fut, 20, 50, 00>;
+type QuizDaemon<F, Fut> = Cron<F, Fut, 21, 50, 00>;
 
 pub async fn add_quizer<C: CacheHttp>(
     ctx: C,
