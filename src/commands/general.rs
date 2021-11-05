@@ -306,15 +306,14 @@ struct Quiz;
 #[command("set")]
 async fn set_quiz(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let channel = args.single::<ChannelId>()?;
-    crate::quiz::add_quiz_guild(ctx, msg.guild_id.ok_or_else(|| "not in a guild")?, channel)
-        .await?;
+    crate::quiz::add_quiz_guild(ctx, msg.guild_id.ok_or("not in a guild")?, channel).await?;
     msg.channel_id.say(&ctx, "done").await?;
     Ok(())
 }
 
 #[command("unset")]
 async fn unset_quiz(ctx: &Context, msg: &Message) -> CommandResult {
-    crate::quiz::remove_quiz_guild(ctx, msg.guild_id.ok_or_else(|| "not in a guild")?).await?;
+    crate::quiz::remove_quiz_guild(ctx, msg.guild_id.ok_or("not in a guild")?).await?;
     msg.channel_id.say(ctx, "done").await?;
     Ok(())
 }

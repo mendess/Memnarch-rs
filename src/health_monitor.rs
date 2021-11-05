@@ -62,7 +62,7 @@ impl Daemon<true> for HealthMonitor {
             }
             Err(e) => error!("Error fetching memory usage: {}", e),
         }
-        daemons::ControlFlow::CONTINUE.into()
+        daemons::ControlFlow::CONTINUE
     }
 
     async fn name(&self) -> String {

@@ -111,7 +111,11 @@ pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<(
     let mut calendars = DATABASE.load().await?;
     if let Some(i) = calendars.iter().position(|c| c.channel == channel) {
         let cal = &calendars[i];
-        if let Err(_) = channel.delete_messages(ctx.http(), &cal.messages).await {
+        if channel
+            .delete_messages(ctx.http(), &cal.messages)
+            .await
+            .is_err()
+        {
             for m in cal.messages {
                 channel.delete_message(ctx.http(), m).await?;
             }

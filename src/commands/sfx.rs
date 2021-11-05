@@ -63,7 +63,7 @@ impl SfxStats {
                         .map_err(|e| log::error!("Error loading sfx stats: '{}'", e))
                         .ok()
                 })
-                .unwrap_or_else(Default::default),
+                .unwrap_or_default(),
         )
     }
 
