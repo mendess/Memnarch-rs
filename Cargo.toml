@@ -2,7 +2,7 @@
 name = "memnarch-rs"
 version = "0.1.0"
 authors = ["Mendess2526 <pedro.mendes.26@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 chrono = "0.4"

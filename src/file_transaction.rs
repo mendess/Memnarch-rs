@@ -1,8 +1,8 @@
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
+    error::Error,
     fmt::Debug,
-    io,
-    marker::PhantomData,
+    io::{self, Write},
     ops::{Deref, DerefMut},
     path::PathBuf,
 };
@@ -12,52 +12,77 @@ use tokio::{
     sync::{Mutex, MutexGuard},
 };
 
-pub struct Database<T> {
+pub struct Database<T, E = io::Error> {
     filename: Mutex<PathBuf>,
-    _marker: PhantomData<T>,
+    serializer: Box<dyn Fn(&mut dyn Write, &T) -> Result<(), E> + Sync + Send>,
+    deserializer: Box<dyn Fn(&[u8]) -> Result<T, E> + Sync + Send>,
 }
 
-impl<T> Database<T> {
+impl<T: DeserializeOwned + Serialize> Database<T, io::Error> {
     pub fn new<P: Into<PathBuf>>(filename: P) -> Self {
+        Self::with_ser_and_deser(
+            filename,
+            |w, t| serde_json::to_writer(w, t).map_err(Into::into),
+            |s| serde_json::from_slice(s).map_err(Into::into),
+        )
+    }
+}
+
+impl<T, E: Into<Box<dyn Error>>> Database<T, E> {
+    pub fn with_ser_and_deser<P, S, D>(filename: P, serializer: S, deserializer: D) -> Self
+    where
+        P: Into<PathBuf>,
+        S: Fn(&mut dyn Write, &T) -> Result<(), E> + Sync + Send + 'static,
+        D: Fn(&[u8]) -> Result<T, E> + Sync + Send + 'static,
+    {
         Self {
             filename: Mutex::new(filename.into()),
-            _marker: PhantomData,
+            serializer: Box::new(move |w, t| serializer(w, t)),
+            deserializer: Box::new(move |slice| deserializer(slice)),
         }
     }
 }
 
-impl<T: DeserializeOwned + Serialize + Default + Debug> Database<T> {
-    pub async fn load(&self) -> io::Result<DbGuard<'_, T>> {
+impl<T, E> Database<T, E>
+where
+    T: Default + Debug,
+    E: Into<anyhow::Error>,
+    E: From<io::Error>,
+{
+    pub async fn load(&self) -> Result<DbGuard<'_, T, E>, E> {
         let pathbuf = self.filename.lock().await;
         let mut file = match File::open(&*pathbuf).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Ok(DbGuard {
                     pathbuf,
+                    serializer: &*self.serializer,
                     t: Default::default(),
                     save: true,
                 });
             }
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         };
-        let mut buf = String::new();
-        file.read_to_string(&mut buf).await?;
-        let t = serde_json::from_str::<T>(&buf)?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).await?;
+        let t = (self.deserializer)(&buf)?;
         Ok(DbGuard {
             pathbuf,
+            serializer: &*self.serializer,
             t,
             save: true,
         })
     }
 }
 
-pub struct DbGuard<'db, T: Serialize + Debug> {
+pub struct DbGuard<'db, T: Debug, E: Into<anyhow::Error> = serde_json::Error> {
     pathbuf: MutexGuard<'db, PathBuf>,
+    serializer: &'db (dyn Fn(&mut dyn Write, &T) -> Result<(), E> + Send + Sync),
     t: T,
     save: bool,
 }
 
-impl<'db, T: Serialize + Debug> Deref for DbGuard<'db, T> {
+impl<'db, T: Debug, E: Into<anyhow::Error>> Deref for DbGuard<'db, T, E> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -65,23 +90,23 @@ impl<'db, T: Serialize + Debug> Deref for DbGuard<'db, T> {
     }
 }
 
-impl<'db, T: Serialize + Debug> DerefMut for DbGuard<'db, T> {
+impl<'db, T: Debug, E: Into<anyhow::Error>> DerefMut for DbGuard<'db, T, E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.t
     }
 }
 
-impl<'db, T: Serialize + Default + Debug> DbGuard<'db, T> {
+impl<'db, T: Default + Debug, E: Into<anyhow::Error>> DbGuard<'db, T, E> {
     pub fn take(&mut self) -> T {
         self.save = false;
         std::mem::take(&mut self.t)
     }
 }
 
-impl<'db, T: Serialize + Debug> Drop for DbGuard<'db, T> {
+impl<'db, T: Debug, E: Into<anyhow::Error>> Drop for DbGuard<'db, T, E> {
     fn drop(&mut self) {
         if self.save {
-            let (temp_file, temp_path) =
+            let (mut temp_file, temp_path) =
                 match tempfile::NamedTempFile::new_in(".").map(|f| f.into_parts()) {
                     Ok(f) => f,
                     Err(e) => {
@@ -93,11 +118,11 @@ impl<'db, T: Serialize + Debug> Drop for DbGuard<'db, T> {
                         return;
                     }
                 };
-            if let Err(e) = serde_json::to_writer(temp_file, &self.t) {
+            if let Err(e) = (self.serializer)(&mut temp_file, &self.t) {
                 log::error!(
-                    "Failed to store to tempfile for '{}': {}",
+                    "Failed to store to tempfile for '{}': {:?}",
                     self.pathbuf.display(),
-                    e
+                    e.into()
                 );
             }
             if let Err(e) = std::fs::rename(&temp_path, &*self.pathbuf) {

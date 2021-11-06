@@ -2,10 +2,11 @@ use crate::{
     consts::NUMBERS,
     daemons::DaemonManager,
     get,
+    prefs::user::{self as user_prefs, UserPrefs},
     reminders::{self, parser::*},
-    user_prefs::{self, UserPrefs},
 };
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
+use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use serenity::{
     framework::standard::{
@@ -14,6 +15,7 @@ use serenity::{
     },
     model::{
         channel::{Message, ReactionType},
+        guild::Member,
         id::{ChannelId, UserId},
     },
     prelude::*,
@@ -21,7 +23,17 @@ use serenity::{
 use std::iter::from_fn;
 
 #[group]
-#[commands(ping, who_are_you, vote, remindme, remind, version, reminders)]
+#[commands(
+    ping,
+    who_are_you,
+    vote,
+    remindme,
+    remind,
+    version,
+    reminders,
+    set_birthday_channel,
+    next_bday
+)]
 struct General;
 
 #[command]
@@ -296,6 +308,93 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
     log::debug!("timestamp: {} user: {}, offset: {:?}", now, answer, offset);
     user_prefs::update(msg.author.id, |p| p.timezone_offset = Some(offset)).await?;
     Ok(offset)
+}
+
+#[command]
+async fn set_birthday_channel(ctx: &Context, msg: &Message) -> CommandResult {
+    let mut set = false;
+    crate::prefs::guild::update(msg.guild_id.ok_or("must be in a guild")?, |g| {
+        if g.birthday_channel == Some(msg.channel_id) {
+            g.birthday_channel = None
+        } else {
+            g.birthday_channel = Some(msg.channel_id);
+            set = true;
+        }
+    })
+    .await?;
+    if set {
+        msg.channel_id
+            .say(ctx, "This channel has been set as the birthday channel")
+            .await?;
+    } else {
+        msg.channel_id
+            .say(ctx, "This channel is no longer the birthday channel")
+            .await?;
+    }
+    Ok(())
+}
+
+#[command("nextbday")]
+async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
+    macro_rules! fmt {
+        ($name:expr, $nick:expr) => {
+            format_args!(
+                "**Name:**      {}\n**Nickname:** {}",
+                $name,
+                $nick.as_deref().unwrap_or("None")
+            )
+        };
+    }
+
+    let gid = msg.guild_id.ok_or("must be in a guild")?;
+    let (date, users) = crate::birthdays::next_bday(gid)
+        .await?
+        .ok_or("No birthdays saved for this server :sob:")?;
+
+    match &users[..] {
+        [] => {
+            log::error!("Users should never be empty. It was for date {:?}", date);
+            return Err("Bot dev fucked up somehow".into());
+        }
+        [u] => {
+            let Member { nick, user, .. } = gid.member(ctx, u.id).await?;
+            msg.channel_id
+                .send_message(ctx, |m| {
+                    m.embed(|e| {
+                        e.title("Next birthday :tada:")
+                            .description(fmt!(user.name, nick).to_string())
+                            .thumbnail(
+                                user.avatar_url()
+                                    .as_deref()
+                                    .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
+                            )
+                            .footer(|f| f.text(format!("{}/{}", date.day, date.month)))
+                    })
+                })
+                .await?;
+        }
+        many => {
+            let members: Vec<Member> = futures::stream::iter(many)
+                .then(|u| gid.member(ctx, u.id))
+                .try_collect()
+                .await?;
+            msg.channel_id
+                .send_message(ctx, |m| {
+                    m.embed(|e| {
+                        e.title("Woah multiple birthdays! :tada: :tada:")
+                            .description(
+                                members
+                                    .into_iter()
+                                    .format_with("\n---\n", |m, f| f(&fmt!(m.user.name, m.nick))),
+                            )
+                            .footer(|f| f.text(format!("When: {}/{}", date.day, date.month)))
+                    })
+                })
+                .await?;
+        }
+    }
+
+    Ok(())
 }
 
 #[group]

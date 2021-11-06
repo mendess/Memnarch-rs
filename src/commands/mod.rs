@@ -3,10 +3,10 @@ pub mod custom;
 pub mod general;
 pub mod interrail;
 pub mod owner;
+pub mod python;
 pub mod quotes;
 pub mod sfx;
 pub mod tts;
-pub mod python;
 
 pub mod command_groups {
     use super::*;
@@ -16,8 +16,8 @@ pub mod command_groups {
     pub use general::QUIZ_GROUP;
     pub use interrail::INTERRAIL_GROUP;
     pub use owner::OWNER_GROUP;
+    pub use python::PY_GROUP;
     pub use quotes::QUOTES_GROUP;
     pub use sfx::{SFXALIASES_GROUP, SFX_GROUP};
     pub use tts::TTS_GROUP;
-    pub use python::PY_GROUP;
 }

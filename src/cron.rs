@@ -16,8 +16,11 @@ where
     F: FnMut(&serenity::CacheAndHttp) -> Fut,
     Fut: Future<Output = ControlFlow>,
 {
-    pub fn new(name: String, run: F) -> Self {
-        Self { name, run }
+    pub fn new(name: impl Into<String>, run: F) -> Self {
+        Self {
+            name: name.into(),
+            run,
+        }
     }
 }
 

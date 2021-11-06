@@ -3,6 +3,7 @@
 #![deny(unused_must_use)]
 #![warn(rust_2018_idioms)]
 
+mod birthdays;
 mod calendar;
 mod commands;
 mod consts;
@@ -12,9 +13,9 @@ mod events;
 mod file_transaction;
 mod health_monitor;
 mod permissions;
+mod prefs;
 mod quiz;
 mod reminders;
-mod user_prefs;
 mod util;
 
 use crate::health_monitor::HealthMonitor;
@@ -102,7 +103,7 @@ fn config_logger() {
     use simplelog::*;
     let config = ConfigBuilder::new()
         .add_filter_allow_str(module_path!())
-        .add_filter_allow_str(stringify!(daemons))
+        // .add_filter_allow_str(stringify!(daemons))
         .set_thread_level(LevelFilter::Off)
         .set_location_level(LevelFilter::Error)
         .set_level_padding(LevelPadding::Right)
@@ -140,6 +141,16 @@ fn config_logger() {
             .expect("can't create critical log file")
     });
     CombinedLogger::init(vec![term, file, critical_log]).unwrap();
+}
+
+macro_rules! try_init {
+    ($d:expr, $m:ident) => {
+        if let std::result::Result::Err(e) = $m::initialize(&mut $d).await {
+            log::error!("Failed to initialize {}: {:?}", stringify!($m), e);
+        } else {
+            log::info!("{} initialized!", stringify!($m));
+        }
+    };
 }
 
 #[tokio::main]
@@ -209,7 +220,8 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
-    quiz::initialize(&mut daemon_manager).await?;
+    try_init!(daemon_manager, quiz);
+    try_init!(daemon_manager, birthdays);
     if let Some(channel) = config.monitor_log_channel {
         daemon_manager.add_daemon(HealthMonitor::new(channel)).await;
     }

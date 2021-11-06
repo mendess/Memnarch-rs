@@ -117,7 +117,9 @@ pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<(
             .is_err()
         {
             for m in cal.messages {
-                channel.delete_message(ctx.http(), m).await?;
+                if let Err(e) = channel.delete_message(ctx.http(), m).await {
+                    log::error!("Failed to delete message: {:?}", e)
+                }
             }
         }
         calendars.swap_remove(i);
