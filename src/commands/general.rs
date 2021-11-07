@@ -306,6 +306,7 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
 struct BDays;
 
 #[command("set_channel")]
+#[required_permissions(ADMINISTRATOR)]
 async fn set_birthday_channel(ctx: &Context, msg: &Message) -> CommandResult {
     let mut set = false;
     crate::prefs::guild::update(msg.guild_id.ok_or("must be in a guild")?, |g| {
@@ -393,6 +394,7 @@ async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[command]
+#[required_permissions(ADMINISTRATOR)]
 #[min_args(2)]
 async fn add_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;
@@ -414,6 +416,7 @@ async fn add_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 }
 
 #[command]
+#[required_permissions(ADMINISTRATOR)]
 #[min_args(1)]
 async fn remove_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;

@@ -194,6 +194,7 @@ async fn main() -> anyhow::Result<()> {
                 .after(after)
                 .on_dispatch_error(on_dispatch_error)
                 .group(&GENERAL_GROUP)
+                .group(&BDAYS_GROUP)
                 .group(&OWNER_GROUP)
                 .group(&QUOTES_GROUP)
                 .group(&CUSTOM_GROUP)
