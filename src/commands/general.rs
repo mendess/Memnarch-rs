@@ -23,17 +23,7 @@ use serenity::{
 use std::iter::from_fn;
 
 #[group]
-#[commands(
-    ping,
-    who_are_you,
-    vote,
-    remindme,
-    remind,
-    version,
-    reminders,
-    set_birthday_channel,
-    next_bday
-)]
+#[commands(ping, who_are_you, vote, remindme, remind, version, reminders)]
 struct General;
 
 #[command]
@@ -310,7 +300,12 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
     Ok(offset)
 }
 
-#[command]
+#[group]
+#[prefix("bday")]
+#[commands(set_birthday_channel, next_bday, add_bday, remove_bday)]
+struct BDays;
+
+#[command("set_channel")]
 async fn set_birthday_channel(ctx: &Context, msg: &Message) -> CommandResult {
     let mut set = false;
     crate::prefs::guild::update(msg.guild_id.ok_or("must be in a guild")?, |g| {
@@ -334,7 +329,7 @@ async fn set_birthday_channel(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-#[command("nextbday")]
+#[command("next")]
 async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
     macro_rules! fmt {
         ($name:expr, $nick:expr) => {
@@ -394,6 +389,54 @@ async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
         }
     }
 
+    Ok(())
+}
+
+#[command]
+#[min_args(2)]
+async fn add_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let gid = msg.guild_id.ok_or("must be in a server")?;
+    let uid = args.single::<UserId>()?;
+    let date = NaiveDate::parse_from_str(&args.single::<String>()?, "%Y/%m/%d")?;
+    let old = crate::birthdays::add_bday(gid, uid, date).await?;
+    match old {
+        Some(date) => {
+            msg.channel_id
+                .say(
+                    ctx,
+                    format!("Updated {} birthday, was {}", uid.mention(), date),
+                )
+                .await?
+        }
+        None => msg.channel_id.say(ctx, "Birthday added!").await?,
+    };
+    Ok(())
+}
+
+#[command]
+#[min_args(1)]
+async fn remove_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let gid = msg.guild_id.ok_or("must be in a server")?;
+    let uid = args.single::<UserId>()?;
+    match crate::birthdays::remove_bday(gid, uid).await? {
+        Some(date) => {
+            msg.channel_id
+                .say(
+                    ctx,
+                    format!(
+                        "Removed birthday for {}: was on the {}",
+                        uid.mention(),
+                        date
+                    ),
+                )
+                .await?
+        }
+        None => {
+            msg.channel_id
+                .say(ctx, format!("no birthday for user {} found", uid.mention()))
+                .await?
+        }
+    };
     Ok(())
 }
 

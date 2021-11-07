@@ -1,5 +1,6 @@
 use std::{
-    collections::BTreeMap, io::Write, os::unix::prelude::OsStrExt, str::from_utf8, sync::Arc,
+    collections::BTreeMap, io::Write, os::unix::prelude::OsStrExt, path::PathBuf, str::from_utf8,
+    sync::Arc,
 };
 
 use anyhow::Context;
@@ -77,9 +78,54 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
     let tree = map.take();
     let next = match tree.range(tomorrow..).next() {
         Some((d, v)) => Some((*d, v.clone())),
-        None => tree.iter().next().map(|(d, v)| (*d, v.clone()))
+        None => tree.iter().next().map(|(d, v)| (*d, v.clone())),
     };
     Ok(next)
+}
+
+pub async fn add_bday(
+    g: GuildId,
+    who: UserId,
+    when: NaiveDate,
+) -> anyhow::Result<Option<NaiveDate>> {
+    let calendar = BDAY_MAP.entry(g).or_insert_with(|| {
+        let path = [BASE, &format!("{}.csv", g)]
+            .into_iter()
+            .collect::<PathBuf>();
+        Database::with_ser_and_deser(path, ser, deser)
+    });
+    let mut calendar = calendar.load().await?;
+    let bday = BDay::from(when);
+    let removed = remove_user(&mut *calendar, who);
+    calendar.entry(bday).or_default().push(BDayBoy {
+        id: who,
+        year: when.year(),
+    });
+    Ok(removed)
+}
+
+pub async fn remove_bday(g: GuildId, who: UserId) -> anyhow::Result<Option<NaiveDate>> {
+    let calendar = match BDAY_MAP.get(&g) {
+        Some(c) => c,
+        None => return Ok(None),
+    };
+    let mut calendar = calendar.load().await?;
+    Ok(remove_user(&mut *calendar, who))
+}
+
+fn remove_user(tree: &mut BTreeMap<BDay, Vec<BDayBoy>>, user: UserId) -> Option<NaiveDate> {
+    let mut when = None;
+    tree.retain(
+        |date, users| match users.iter().position(|u| u.id == user) {
+            Some(index) => {
+                let user = users.swap_remove(index);
+                when = Some(NaiveDate::from_ymd(user.year, date.month, date.day));
+                !users.is_empty()
+            }
+            None => true,
+        },
+    );
+    when
 }
 
 fn ser(w: &mut dyn Write, t: &BTreeMap<BDay, Vec<BDayBoy>>) -> anyhow::Result<()> {
