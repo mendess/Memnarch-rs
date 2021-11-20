@@ -216,6 +216,7 @@ async fn check_bday(http: Arc<Http>) -> ControlFlow {
             }
         };
         for (date, users) in guild.iter() {
+            log::debug!("Date: {:?} / Today {:?}, is date today? {:?}", date, today, *date == today);
             if *date == today {
                 for user in users {
                     log::info!("Date: {:?} - User {:?}", date, user);

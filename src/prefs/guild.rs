@@ -1,7 +1,7 @@
 use crate::file_transaction::Database;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use serenity::model::id::{ChannelId, GuildId};
+use serenity::model::id::{ChannelId, GuildId, RoleId};
 use std::{collections::HashMap, io};
 
 lazy_static! {
@@ -13,6 +13,7 @@ lazy_static! {
 pub struct GuildPrefs {
     #[serde(default)]
     pub birthday_channel: Option<ChannelId>,
+    pub birthday_role: Option<RoleId>,
 }
 
 pub async fn get(u: GuildId) -> io::Result<Option<GuildPrefs>> {
