@@ -202,7 +202,10 @@ async fn check_bday(http: Arc<Http>) -> ControlFlow {
             .map(|p| p.and_then(|p| p.birthday_channel))
         {
             Ok(Some(ch)) => ch,
-            Ok(None) => continue,
+            Ok(None) => {
+                log::error!("birthday channel not set for guild {}", gid);
+                continue;
+            },
             Err(e) => {
                 log::error!("Error fetching guild prefs: {:?}", e);
                 continue;
