@@ -6,13 +6,14 @@ use std::{collections::HashMap, io};
 
 lazy_static! {
     static ref GUILD_PREFS: Database<HashMap<GuildId, GuildPrefs>> =
-        Database::new("files/user_prefs.json");
+        Database::new("files/guild_prefs.json");
 }
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct GuildPrefs {
     #[serde(default)]
     pub birthday_channel: Option<ChannelId>,
+    #[serde(default)]
     pub birthday_role: Option<RoleId>,
 }
 
