@@ -197,6 +197,7 @@ async fn check_bday(http: Arc<Http>) -> ControlFlow {
     let today = BDay::from(Utc::now().naive_utc().date());
     for x in BDAY_MAP.iter() {
         let (gid, guild) = (x.key(), x.value());
+        log::trace!("processing birthdays for guild {}", gid);
         let channel = match guild_prefs::get(*gid)
             .await
             .map(|p| p.and_then(|p| p.birthday_channel))
@@ -219,8 +220,9 @@ async fn check_bday(http: Arc<Http>) -> ControlFlow {
             }
         };
         for (date, users) in guild.iter() {
-            log::debug!("Date: {:?} / Today {:?}, is date today? {:?}", date, today, *date == today);
             if *date == today {
+                log::debug!("Date: {:?} / Today {:?}", date, today);
+                log::debug!("There are {} users having their birthday on {:?}", users.len(), date);
                 for user in users {
                     log::info!("Date: {:?} - User {:?}", date, user);
                     let r = channel
@@ -237,6 +239,8 @@ async fn check_bday(http: Arc<Http>) -> ControlFlow {
                         );
                     }
                 }
+            } else {
+                log::debug!("Date {:?} is not today {:?}", date, today);
             }
         }
     }
