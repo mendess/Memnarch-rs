@@ -40,26 +40,26 @@ impl Daemon<false> for Curse {
     async fn run(&mut self, d: &Self::Data) -> ControlFlow {
         async fn _r(this: &mut Curse, d: &serenity::CacheAndHttp) -> anyhow::Result<()> {
             let channels = this.guild.channels(&d.http).await?;
-            let msgs =
+            let msgs = || {
                 futures::stream::iter(channels.values().filter(|c| c.kind == ChannelType::Text))
                     .map(|ch| ch.messages(&d.http, |g| g.limit(10)))
                     .filter_map(|ch| async { ch.await.ok() })
                     .flat_map(futures::stream::iter)
                     .collect::<Vec<Message>>()
-                    .await;
+            };
             if let Some((ch, msg)) = this.last_msg.take() {
-                log::trace!("removing reactions from {}::{}", ch, msg);
                 for e in EMOJIS.iter().flatten() {
                     ch.delete_reaction(&d.http, msg, None, ReactionType::Unicode(e.to_string()))
                         .await?;
                 }
-            } else if let Some(m) = msgs.choose(&mut rand::rngs::OsRng) {
-                log::trace!("adding reactions to {}::{}", m.channel_id, m.id);
+            } else if let Some(m) = msgs().await.choose(&mut rand::rngs::OsRng) {
                 for e in EMOJIS[this.sim as usize] {
                     m.react(d, ReactionType::Unicode(e.to_string())).await?;
                 }
                 this.sim = !this.sim;
                 this.last_msg = Some((m.channel_id, m.id))
+            } else {
+                log::error!("no messages found in the cursed server: {}", this.guild);
             }
             save(*this).await
         }
@@ -123,6 +123,8 @@ async fn curse(guild: GuildId, d: Arc<Mutex<DaemonManager>>) -> ControlFlow {
                 }
             }
         }
+    } else {
+        log::info!("guild {} is blessed 😌", guild);
     }
     ControlFlow::CONTINUE
 }
