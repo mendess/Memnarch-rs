@@ -966,6 +966,7 @@ dependencies = [
  "lazy_static",
  "log 0.4.14",
  "nom 6.1.2",
+ "num-traits 0.2.14",
  "paste 1.0.5",
  "procinfo",
  "proptest",

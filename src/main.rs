@@ -222,10 +222,11 @@ async fn main() -> anyhow::Result<()> {
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
     try_init!(daemon_manager, quiz);
-    try_init!(daemon_manager, birthdays);
     if let Some(channel) = config.monitor_log_channel {
         daemon_manager.add_daemon(HealthMonitor::new(channel)).await;
     }
+    let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
+    try_init!(daemon_manager, birthdays);
     {
         let mut data = client.data.write().await;
         if let Some(id) = std::env::args()
@@ -235,7 +236,7 @@ async fn main() -> anyhow::Result<()> {
         {
             data.insert::<events::UpdateNotify>(id);
         }
-        data.insert::<DaemonManager>(Arc::new(Mutex::new(daemon_manager)));
+        data.insert::<DaemonManager>(daemon_manager);
     }
     use events::{pubsub::events::Ready, UpdateNotify};
     events::pubsub::register::<Ready, _>(|ctx, ready| {

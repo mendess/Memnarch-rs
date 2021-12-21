@@ -5,9 +5,10 @@ use crate::{
     prefs::user::{self as user_prefs, UserPrefs},
     reminders::{self, parser::*},
 };
-use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, Timelike, Utc};
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
+use num_traits::FromPrimitive;
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -364,7 +365,13 @@ async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
                                     .as_deref()
                                     .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
                             )
-                            .footer(|f| f.text(format!("{}/{}", date.day, date.month)))
+                            .footer(|f| {
+                                f.text(format!(
+                                    "{}/{}",
+                                    date.day,
+                                    &Month::from_u32(date.month).unwrap().name()[..3],
+                                ))
+                            })
                     })
                 })
                 .await?;
@@ -383,7 +390,13 @@ async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
                                     .into_iter()
                                     .format_with("\n---\n", |m, f| f(&fmt!(m.user.name, m.nick))),
                             )
-                            .footer(|f| f.text(format!("When: {}/{}", date.day, date.month)))
+                            .footer(|f| {
+                                f.text(format!(
+                                    "When: {}/{}",
+                                    date.day,
+                                    &Month::from_u32(date.month).unwrap().name()[..3],
+                                ))
+                            })
                     })
                 })
                 .await?;
@@ -396,6 +409,7 @@ async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 #[required_permissions(ADMINISTRATOR)]
 #[min_args(2)]
+#[usage("mention YYYY/MM/DD")]
 async fn add_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;
     let uid = args.single::<UserId>()?;

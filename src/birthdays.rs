@@ -1,20 +1,19 @@
 use std::{
     collections::BTreeMap, io::Write, os::unix::prelude::OsStrExt, path::PathBuf, str::from_utf8,
-    sync::Arc,
+    sync::Arc, time::Duration,
 };
 
 use anyhow::Context;
-use chrono::{Datelike, NaiveDate, Utc};
-use daemons::ControlFlow;
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use daemons::{ControlFlow, Daemon};
 use dashmap::DashMap;
-use futures::FutureExt;
 use lazy_static::lazy_static;
 use serenity::{
     http::Http,
     model::id::{GuildId, UserId},
     prelude::Mentionable,
 };
-use tokio::{fs, io};
+use tokio::{fs, io, sync::Mutex};
 
 use crate::{cron::Cron, file_transaction::Database, prefs::guild as guild_prefs, DaemonManager};
 
@@ -47,7 +46,7 @@ lazy_static! {
     static ref BDAY_MAP: BdayMap = DashMap::new();
 }
 
-pub async fn initialize(d: &mut DaemonManager) -> io::Result<()> {
+pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     fs::DirBuilder::new().recursive(true).create(BASE).await?;
     let mut read_dir = fs::read_dir(BASE).await?;
     while let Some(d) = read_dir.next_entry().await? {
@@ -61,10 +60,13 @@ pub async fn initialize(d: &mut DaemonManager) -> io::Result<()> {
         };
         BDAY_MAP.insert(gid, Database::with_ser_and_deser(path, ser, deser));
     }
-    d.add_daemon(BDayChecker::new("bday checker", |c| {
-        check_bday(c.http.clone()).boxed()
-    }))
-    .await;
+    let dm = d.clone();
+    d.lock()
+        .await
+        .add_daemon(BDayChecker::new("bday checker", move |c| {
+            check_bday(c.http.clone(), dm.clone())
+        }))
+        .await;
     Ok(())
 }
 
@@ -193,20 +195,20 @@ fn deser(v: &[u8]) -> anyhow::Result<BTreeMap<BDay, Vec<BDayBoy>>> {
 
 type BDayChecker<F, Fut> = Cron<F, Fut, 0, 0, 30>;
 
-async fn check_bday(http: Arc<Http>) -> ControlFlow {
+async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFlow {
     let today = BDay::from(Utc::now().naive_utc().date());
     for x in BDAY_MAP.iter() {
         let (gid, guild) = (x.key(), x.value());
         log::trace!("processing birthdays for guild {}", gid);
-        let channel = match guild_prefs::get(*gid)
+        let (channel, role) = match guild_prefs::get(*gid)
             .await
-            .map(|p| p.and_then(|p| p.birthday_channel))
+            .map(|p| p.and_then(|p| p.birthday_channel.map(|ch| (ch, p.birthday_role))))
         {
             Ok(Some(ch)) => ch,
             Ok(None) => {
                 log::error!("birthday channel not set for guild {}", gid);
                 continue;
-            },
+            }
             Err(e) => {
                 log::error!("Error fetching guild prefs: {:?}", e);
                 continue;
@@ -222,7 +224,11 @@ async fn check_bday(http: Arc<Http>) -> ControlFlow {
         for (date, users) in guild.iter() {
             if *date == today {
                 log::debug!("Date: {:?} / Today {:?}", date, today);
-                log::debug!("There are {} users having their birthday on {:?}", users.len(), date);
+                log::debug!(
+                    "There are {} users having their birthday on {:?}",
+                    users.len(),
+                    date
+                );
                 for user in users {
                     log::info!("Date: {:?} - User {:?}", date, user);
                     let r = channel
@@ -238,6 +244,15 @@ async fn check_bday(http: Arc<Http>) -> ControlFlow {
                             e
                         );
                     }
+                    if role.is_some() {
+                        dm.lock()
+                            .await
+                            .add_daemon(UnBdayBoy {
+                                user: user.id,
+                                guild: *gid,
+                            })
+                            .await;
+                    }
                 }
             } else {
                 log::debug!("Date {:?} is not today {:?}", date, today);
@@ -245,4 +260,50 @@ async fn check_bday(http: Arc<Http>) -> ControlFlow {
         }
     }
     ControlFlow::CONTINUE
+}
+
+struct UnBdayBoy {
+    user: UserId,
+    guild: GuildId,
+}
+
+#[serenity::async_trait]
+impl Daemon<false> for UnBdayBoy {
+    type Data = serenity::CacheAndHttp;
+
+    async fn run(&mut self, data: &Self::Data) -> ControlFlow {
+        async fn _r(this: &mut UnBdayBoy, data: &serenity::CacheAndHttp) -> anyhow::Result<()> {
+            let role = match guild_prefs::get(this.guild)
+                .await?
+                .and_then(|p| p.birthday_role)
+            {
+                Some(bday_role) => bday_role,
+                None => {
+                    log::warn!("birthday role unconfigured");
+                    return Ok(());
+                }
+            };
+            this.guild
+                .member(data, this.user)
+                .await?
+                .remove_role(&data.http, role)
+                .await?;
+            Ok(())
+        }
+        if let Err(e) = _r(self, data).await {
+            log::error!("failed to remove birthday role: {:?}", e)
+        }
+        ControlFlow::BREAK
+    }
+
+    async fn name(&self) -> String {
+        format!("un birthday boys {:?}", self.user)
+    }
+
+    async fn interval(&self) -> Duration {
+        let now = Utc::now();
+        let mid_night =
+            NaiveDateTime::new(now.date().succ().naive_utc(), NaiveTime::from_hms(0, 0, 0));
+        (mid_night - now.naive_utc()).to_std().unwrap_or_default()
+    }
 }
