@@ -8,6 +8,7 @@ mod calendar;
 mod commands;
 mod consts;
 mod cron;
+mod curse_of_indicision;
 mod daemons;
 mod events;
 mod file_transaction;
@@ -227,6 +228,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
     try_init!(daemon_manager, birthdays);
+    try_init!(daemon_manager, curse_of_indicision);
     {
         let mut data = client.data.write().await;
         if let Some(id) = std::env::args()

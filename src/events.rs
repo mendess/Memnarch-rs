@@ -7,6 +7,7 @@ use serenity::{
     model::{
         channel::Reaction,
         gateway::Ready,
+        guild::Guild,
         id::{ChannelId, GuildId, MessageId},
         voice::VoiceState,
     },
@@ -78,6 +79,10 @@ impl EventHandler for Handler {
 
     async fn ready(&self, ctx: Context, ready: Ready) {
         pubsub::emit::<events::Ready>(ctx, ready).await;
+    }
+
+    async fn guild_create(&self, ctx: Context, guild: Guild, is_new: bool) {
+        pubsub::emit::<events::GuildCreate>(ctx, (guild, is_new)).await;
     }
 }
 

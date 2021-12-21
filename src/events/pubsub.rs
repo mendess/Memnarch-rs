@@ -69,6 +69,7 @@ pub mod events {
         channel::Reaction,
         id::{ChannelId, GuildId, MessageId},
         voice::VoiceState,
+        guild::Guild,
     };
     macro_rules! events {
         ($($event:ident => $arg:ty),* $(,)?) => {
@@ -87,5 +88,6 @@ pub mod events {
         VoiceStateUpdate => (Option<GuildId>, Option<VoiceState>, VoiceState),
         Ready => serenity::model::gateway::Ready,
         CacheReady => Vec<GuildId>,
+        GuildCreate => (Guild, bool),
     }
 }
