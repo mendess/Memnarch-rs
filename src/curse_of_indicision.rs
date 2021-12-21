@@ -123,8 +123,6 @@ async fn curse(guild: GuildId, d: Arc<Mutex<DaemonManager>>) -> ControlFlow {
                 }
             }
         }
-    } else {
-        log::info!("guild {} is blessed 😌", guild);
     }
     ControlFlow::CONTINUE
 }
