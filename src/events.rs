@@ -82,6 +82,7 @@ impl EventHandler for Handler {
     }
 
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: bool) {
+        log::info!("found guild {}::{}", guild.name, guild.id);
         pubsub::emit::<events::GuildCreate>(ctx, (guild, is_new)).await;
     }
 }
