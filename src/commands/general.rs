@@ -305,7 +305,7 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
 #[group]
 #[prefix("bday")]
 #[default_command(next_bday)]
-#[commands(set_birthday_channel, next_bday, add_bday, remove_bday)]
+#[commands(set_birthday_channel, next_bday, add_bday, remove_bday, set_bday_role)]
 struct BDays;
 
 #[command("set_channel")]
