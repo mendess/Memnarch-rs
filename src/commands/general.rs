@@ -2,6 +2,7 @@ use crate::{
     consts::NUMBERS,
     daemons::DaemonManager,
     get,
+    prefs::guild as guild_prefs,
     prefs::user::{self as user_prefs, UserPrefs},
     reminders::{self, parser::*},
 };
@@ -17,7 +18,7 @@ use serenity::{
     model::{
         channel::{Message, ReactionType},
         guild::Member,
-        id::{ChannelId, UserId},
+        id::{ChannelId, RoleId, UserId},
     },
     prelude::*,
 };
@@ -303,6 +304,7 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
 
 #[group]
 #[prefix("bday")]
+#[default_command(next_bday)]
 #[commands(set_birthday_channel, next_bday, add_bday, remove_bday)]
 struct BDays;
 
@@ -406,10 +408,11 @@ async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-#[command]
+#[command("add")]
+#[aliases("add_bday")]
 #[required_permissions(ADMINISTRATOR)]
 #[min_args(2)]
-#[usage("mention YYYY/MM/DD")]
+#[usage("@mention YYYY/MM/DD")]
 async fn add_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;
     let uid = args.single::<UserId>()?;
@@ -429,9 +432,11 @@ async fn add_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
     Ok(())
 }
 
-#[command]
+#[command("remove")]
+#[aliases("remove_bday")]
 #[required_permissions(ADMINISTRATOR)]
 #[min_args(1)]
+#[usage("@mention")]
 async fn remove_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;
     let uid = args.single::<UserId>()?;
@@ -454,6 +459,20 @@ async fn remove_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandRes
                 .await?
         }
     };
+    Ok(())
+}
+
+#[command]
+#[required_permissions(ADMINISTRATOR)]
+#[min_args(1)]
+#[usage("@role")]
+async fn set_bday_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let role_id = args.single::<RoleId>()?;
+    guild_prefs::update(msg.guild_id.ok_or("not in a guild")?, |prefs| {
+        prefs.birthday_role = Some(role_id)
+    })
+    .await?;
+    msg.channel_id.say(ctx, "birthday role set!").await?;
     Ok(())
 }
 

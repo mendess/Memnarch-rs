@@ -7,6 +7,7 @@ use anyhow::Context;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use dashmap::DashMap;
+use futures::TryFutureExt;
 use lazy_static::lazy_static;
 use serenity::{
     http::Http,
@@ -244,14 +245,29 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                             e
                         );
                     }
-                    if role.is_some() {
-                        dm.lock()
-                            .await
-                            .add_daemon(UnBdayBoy {
-                                user: user.id,
-                                guild: *gid,
-                            })
+                    if let Some(role) = role {
+                        let http = &http;
+                        let r = gid
+                            .member(http, user.id)
+                            .and_then(|mut m| async move { m.add_role(http, role).await })
                             .await;
+                        if let Err(e) = r {
+                            log::error!(
+                                "failed to add birthday role({}) to user({}) in guild({}): {:?}",
+                                role,
+                                user.id,
+                                gid,
+                                e,
+                            );
+                        } else {
+                            dm.lock()
+                                .await
+                                .add_daemon(UnBdayBoy {
+                                    user: user.id,
+                                    guild: *gid,
+                                })
+                                .await;
+                        }
                     }
                 }
             } else {
