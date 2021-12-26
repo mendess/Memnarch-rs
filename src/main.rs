@@ -104,7 +104,7 @@ fn config_logger() {
     use simplelog::*;
     let config = ConfigBuilder::new()
         .add_filter_allow_str(module_path!())
-        // .add_filter_allow_str(stringify!(daemons))
+        .add_filter_allow_str(stringify!(daemons))
         .set_thread_level(LevelFilter::Off)
         .set_location_level(LevelFilter::Error)
         .set_level_padding(LevelPadding::Right)
