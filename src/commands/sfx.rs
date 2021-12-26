@@ -109,7 +109,9 @@ impl Daemon<false> for LeaveVoice {
     }
 
     async fn interval(&self) -> StdDuration {
-        (self.when - Utc::now()).to_std().unwrap_or_default()
+        let d = (self.when - Utc::now()).to_std().unwrap_or_default();
+        log::debug!("Scheduled for {}, returning: {:?}", self.when, d);
+        d
     }
 
     async fn name(&self) -> String {
