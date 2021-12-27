@@ -1,6 +1,7 @@
 use crate::consts::FILES_DIR;
 use crate::get;
 use crate::permissions::*;
+use crate::util::Mutex;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -15,7 +16,7 @@ use std::{path::PathBuf, sync::Arc};
 use tokio::{
     fs::{DirBuilder, File},
     io::{AsyncReadExt, AsyncWriteExt},
-    sync::Mutex,
+    // sync::Mutex,
 };
 
 const QUOTES_DIR: &str = "quotes";
@@ -110,6 +111,8 @@ async fn fetch_quotes(ctx: &Context) -> Arc<Mutex<QuoteManager>> {
         None => {
             share_map.insert::<QuoteManager>(Arc::new(Mutex::new(
                 QuoteManager::load().await.unwrap_or_default(),
+                file!(),
+                line!(),
             )));
             Arc::clone(get!(> share_map, QuoteManager))
         }

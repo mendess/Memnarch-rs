@@ -1,6 +1,7 @@
 use serenity::{prelude::TypeMapKey, CacheAndHttp};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+// use tokio::sync::Mutex;
+use crate::util::Mutex;
 
 daemons::monomorphise!(CacheAndHttp);
 

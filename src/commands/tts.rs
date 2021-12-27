@@ -11,7 +11,8 @@ use serenity::{
     prelude::*,
 };
 use std::error::Error;
-use tokio::sync::RwLock;
+// use tokio::sync::RwLock;
+use crate::util::RwLock;
 
 #[group]
 #[commands(say, save, config, list, stop)]
@@ -39,8 +40,9 @@ pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 lazy_static! {
-    static ref CURRENT_SERVICE: RwLock<String> = RwLock::new(String::from("Polly"));
-    static ref CURRENT_VOICE: RwLock<String> = RwLock::new(String::from("Brian"));
+    static ref CURRENT_SERVICE: RwLock<String> =
+        RwLock::new(String::from("Polly"), file!(), line!());
+    static ref CURRENT_VOICE: RwLock<String> = RwLock::new(String::from("Brian"), file!(), line!());
 }
 
 #[command]

@@ -1,3 +1,4 @@
+use crate::util::Mutex;
 use chrono::DateTime;
 use lazy_static::lazy_static;
 use reqwest::{header, Client};
@@ -20,7 +21,7 @@ use tokio::{
     fs::{self, File},
     io::AsyncWriteExt,
     process::Command as Fork,
-    sync::Mutex,
+    // sync::Mutex,
 };
 
 const EXE_NAME: &str = "memnarch-rs";
@@ -59,7 +60,7 @@ async fn restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
 }
 
 lazy_static! {
-    static ref UPDATING: Mutex<()> = Mutex::new(());
+    static ref UPDATING: Mutex<()> = Mutex::new((), file!(), line!());
 }
 
 #[command]

@@ -2,7 +2,8 @@ use daemons::Daemon;
 use lazy_static::lazy_static;
 use log::*;
 use procinfo::pid::{statm_self, Statm};
-use serenity::prelude::Mutex;
+// use serenity::prelude::Mutex;
+use crate::util::Mutex;
 use serenity::{model::id::ChannelId, CacheAndHttp};
 use std::time::Duration;
 use std::{
@@ -26,7 +27,7 @@ impl HealthMonitor {
 }
 
 lazy_static! {
-    static ref LAST_MEASURE: Mutex<Option<Statm>> = Mutex::new(None);
+    static ref LAST_MEASURE: Mutex<Option<Statm>> = Mutex::new(None, file!(), line!());
 }
 
 static ALLOWED_SKIPS: AtomicUsize = AtomicUsize::new(0);

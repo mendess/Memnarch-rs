@@ -41,7 +41,7 @@ struct SFXAliases;
 pub struct SfxStats(HashMap<String, usize>);
 
 impl TypeMapKey for SfxStats {
-    type Value = Arc<Mutex<SfxStats>>;
+    type Value = Arc<crate::util::Mutex<SfxStats>>;
 }
 
 impl SfxStats {

@@ -5,18 +5,16 @@ use futures::{stream::StreamExt, FutureExt};
 use rand::seq::SliceRandom;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serenity::{
-    model::{
-        channel::{ChannelType, Message, ReactionType},
-        id::{ChannelId, GuildId, MessageId},
-    },
-    prelude::Mutex,
+use serenity::model::{
+    channel::{ChannelType, Message, ReactionType},
+    id::{ChannelId, GuildId, MessageId},
 };
 
 use crate::{
     daemons::DaemonManager,
     events::pubsub::{self, events},
     file_transaction::Database,
+    util::Mutex,
 };
 
 lazy_static::lazy_static! {

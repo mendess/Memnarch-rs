@@ -57,6 +57,8 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
+use util::Mutex;
+use util::RwLock;
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -210,10 +212,18 @@ async fn main() -> anyhow::Result<()> {
         )
         .intents(GatewayIntents::all())
         .register_songbird()
-        .type_map_insert::<CustomCommands>(Arc::new(RwLock::new(CustomCommands::default())))
-        .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
+        .type_map_insert::<CustomCommands>(Arc::new(RwLock::new(
+            CustomCommands::default(),
+            file!(),
+            line!(),
+        )))
+        .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(
+            InterrailConfig::new(),
+            file!(),
+            line!(),
+        )))
         .type_map_insert::<LeaveVoiceDaemons>(Default::default())
-        .type_map_insert::<SfxStats>(Arc::new(Mutex::new(SfxStats::new())))
+        .type_map_insert::<SfxStats>(Arc::new(Mutex::new(SfxStats::new(), file!(), line!())))
         .event_handler(events::Handler)
         .await
         .expect("Err creating client");
@@ -226,7 +236,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(channel) = config.monitor_log_channel {
         daemon_manager.add_daemon(HealthMonitor::new(channel)).await;
     }
-    let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
+    let mut daemon_manager = Arc::new(Mutex::new(daemon_manager, file!(), line!()));
     try_init!(daemon_manager, birthdays);
     try_init!(daemon_manager, curse_of_indicision);
     {

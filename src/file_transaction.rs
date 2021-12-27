@@ -1,3 +1,4 @@
+use crate::util::{Mutex, MutexGuard};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     error::Error,
@@ -9,7 +10,7 @@ use std::{
 use tokio::{
     fs::File,
     io::AsyncReadExt,
-    sync::{Mutex, MutexGuard},
+    // sync::{Mutex, MutexGuard},
 };
 
 pub struct Database<T, E = io::Error> {
@@ -35,8 +36,10 @@ impl<T, E: Into<Box<dyn Error>>> Database<T, E> {
         S: Fn(&mut dyn Write, &T) -> Result<(), E> + Sync + Send + 'static,
         D: Fn(&[u8]) -> Result<T, E> + Sync + Send + 'static,
     {
+        let filename = filename.into();
+        let filename_display = Box::leak(filename.display().to_string().into_boxed_str());
         Self {
-            filename: Mutex::new(filename.into()),
+            filename: Mutex::new(filename, filename_display, 0),
             serializer: Box::new(move |w, t| serializer(w, t)),
             deserializer: Box::new(move |slice| deserializer(slice)),
         }
