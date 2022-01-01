@@ -174,7 +174,7 @@ async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let Reminder { text, when } =
         parse(args.rest()).map_err(|e| anyhow::anyhow!("Invalid time spec: {}", e))?;
     let when = calculate_when(ctx, msg, when).await?;
-    let data = ctx.data.read().await;
+    let data = crate::log_lock_read!(ctx.data);
     let mut dm = get!(> data, DaemonManager, lock);
     reminders::remind(&mut *dm, text.into(), when, msg.author.id).await?;
     msg.channel_id.say(&ctx, "You shall be reminded!").await?;
@@ -190,7 +190,7 @@ async fn remind(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let Reminder { text, when } =
         parse(args.rest()).map_err(|e| anyhow::anyhow!("Invalid time spec: {}", e))?;
     let when = calculate_when(ctx, msg, when).await?;
-    let data = ctx.data.read().await;
+    let data = crate::log_lock_read!(ctx.data);
     let mut dm = get!(> data, DaemonManager, lock);
     let mut got_one = false;
     for user_id in user_ids {

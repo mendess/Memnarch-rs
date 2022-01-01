@@ -16,12 +16,16 @@ pub struct UserPrefs {
 }
 
 pub async fn get(u: UserId) -> io::Result<Option<UserPrefs>> {
-    Ok(USER_PREFS.load().await?.get(&u).cloned())
+    Ok(USER_PREFS.load(file!(), line!()).await?.get(&u).cloned())
 }
 
 pub async fn update<F, R>(u: UserId, mut f: F) -> io::Result<R>
 where
     F: FnMut(&mut UserPrefs) -> R,
 {
-    Ok(f(USER_PREFS.load().await?.entry(u).or_default()))
+    Ok(f(USER_PREFS
+        .load(file!(), line!())
+        .await?
+        .entry(u)
+        .or_default()))
 }

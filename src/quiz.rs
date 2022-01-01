@@ -39,7 +39,7 @@ pub async fn add_quizer<C: CacheHttp>(
     guild: GuildId,
     user_id: UserId,
 ) -> anyhow::Result<()> {
-    if let Some(q) = DATABASE.load().await?.get_mut(&guild) {
+    if let Some(q) = DATABASE.load(file!(), line!()).await?.get_mut(&guild) {
         let mut member = guild.member(&ctx, user_id).await?;
         member.add_role(ctx.http(), q.role).await?;
     }
@@ -51,7 +51,7 @@ pub async fn rm_quizer<C: CacheHttp>(
     guild: GuildId,
     user_id: UserId,
 ) -> anyhow::Result<()> {
-    if let Some(q) = DATABASE.load().await?.get_mut(&guild) {
+    if let Some(q) = DATABASE.load(file!(), line!()).await?.get_mut(&guild) {
         let mut member = guild.member(&ctx, user_id).await?;
         member.remove_role(ctx.http(), q.role).await?;
     }
@@ -63,7 +63,7 @@ pub async fn add_quiz_guild(
     guild: GuildId,
     channel: ChannelId,
 ) -> anyhow::Result<()> {
-    let mut quizers = DATABASE.load().await?;
+    let mut quizers = DATABASE.load(file!(), line!()).await?;
     match quizers.get_mut(&guild) {
         Some(q) => q.channel = channel,
         None => {
@@ -80,7 +80,7 @@ pub async fn add_quiz_guild(
                 role: role.id,
             };
             quizers.insert(guild, quisers);
-            let data = ctx.data.read().await;
+            let data = crate::log_lock_read!(ctx.data);
             let mut daemon_mgr_lock = crate::get!(> data, DaemonManager, lock);
             add_quiz_daemon(quisers, &mut daemon_mgr_lock).await;
         }
@@ -89,7 +89,7 @@ pub async fn add_quiz_guild(
 }
 
 pub async fn remove_quiz_guild(http: impl AsRef<Http>, guild: GuildId) -> anyhow::Result<()> {
-    if let Some(q) = DATABASE.load().await?.remove(&guild) {
+    if let Some(q) = DATABASE.load(file!(), line!()).await?.remove(&guild) {
         guild.delete_role(http, q.role).await?;
     }
     Ok(())
@@ -125,7 +125,7 @@ async fn add_quiz_daemon(quizers: Quizers, daemon: &mut DaemonManager) {
 }
 
 pub async fn initialize(daemon: &mut DaemonManager) -> io::Result<()> {
-    for quizers in DATABASE.load().await?.take().into_values() {
+    for quizers in DATABASE.load(file!(), line!()).await?.take().into_values() {
         add_quiz_daemon(quizers, daemon).await;
     }
 

@@ -41,7 +41,7 @@ struct SFXAliases;
 pub struct SfxStats(HashMap<String, usize>);
 
 impl TypeMapKey for SfxStats {
-    type Value = Arc<crate::util::Mutex<SfxStats>>;
+    type Value = Arc<Mutex<SfxStats>>;
 }
 
 impl SfxStats {
@@ -128,7 +128,7 @@ pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
         .expect("Songbird not initialized")
         .get(msg.guild_id.unwrap())
     {
-        call.lock().await.stop();
+        crate::log_lock_mutex!(call).stop();
         Ok(())
     } else {
         Err("Not in a voice channel".into())
@@ -188,13 +188,11 @@ where
 
     let call_lock = util::join_or_get_call(ctx, guild_id, msg.author.id).await?;
     let audio = audio_source().await?;
-    call_lock.lock().await.play_source(audio);
+    crate::log_lock_mutex!(call_lock).play_source(audio);
 
-    let data = ctx.data.read().await;
+    let data = crate::log_lock_read!(ctx.data);
     let dm = get!(> data, DaemonManager);
-    let id = dm
-        .lock()
-        .await
+    let id = crate::log_lock_mutex!(dm)
         .add_daemon(LeaveVoice {
             when: Utc::now()
                 .checked_add_signed(Duration::minutes(30))
@@ -204,7 +202,7 @@ where
         })
         .await;
 
-    let mut dm = dm.lock().await;
+    let mut dm = crate::log_lock_mutex!(dm);
     get!(> data, util::LeaveVoiceDaemons, lock)
         .set(&mut *dm, guild_id, id)
         .await;

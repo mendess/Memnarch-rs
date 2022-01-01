@@ -3,7 +3,6 @@ use lazy_static::lazy_static;
 use log::*;
 use procinfo::pid::{statm_self, Statm};
 // use serenity::prelude::Mutex;
-use crate::util::Mutex;
 use serenity::{model::id::ChannelId, CacheAndHttp};
 use std::time::Duration;
 use std::{
@@ -11,6 +10,7 @@ use std::{
     fmt::{self, Display},
     sync::atomic::{self, AtomicBool, AtomicUsize},
 };
+use tokio::sync::Mutex;
 
 pub struct HealthMonitor {
     log_channel: ChannelId,
@@ -27,7 +27,7 @@ impl HealthMonitor {
 }
 
 lazy_static! {
-    static ref LAST_MEASURE: Mutex<Option<Statm>> = Mutex::new(None, file!(), line!());
+    static ref LAST_MEASURE: Mutex<Option<Statm>> = Mutex::new(None);
 }
 
 static ALLOWED_SKIPS: AtomicUsize = AtomicUsize::new(0);
@@ -40,7 +40,7 @@ impl Daemon<true> for HealthMonitor {
         match statm_self() {
             Ok(new) => {
                 debug!("Memory usage: {:?}", new);
-                let diff = match &*LAST_MEASURE.lock().await {
+                let diff = match &**crate::log_lock_mutex!(LAST_MEASURE) {
                     Some(old) => Diff::new(old, &new),
                     None => Diff::new(&new, &new),
                 };
@@ -55,7 +55,7 @@ impl Daemon<true> for HealthMonitor {
                     if let Err(e) = res {
                         error!("Failed to send message to log channel: {}", e);
                     } else {
-                        *LAST_MEASURE.lock().await = Some(new);
+                        **crate::log_lock_mutex!(LAST_MEASURE) = Some(new);
                     }
                 } else {
                     ALLOWED_SKIPS.fetch_sub(1, atomic::Ordering::Relaxed);

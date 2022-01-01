@@ -14,11 +14,9 @@ use serenity::{
     model::id::{GuildId, UserId},
     prelude::Mentionable,
 };
-use tokio::{fs, io /*sync::Mutex */};
+use tokio::{fs, io, sync::Mutex};
 
-use crate::{
-    cron::Cron, file_transaction::Database, prefs::guild as guild_prefs, util::Mutex, DaemonManager,
-};
+use crate::{cron::Cron, file_transaction::Database, prefs::guild as guild_prefs, DaemonManager};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BDayBoy {
@@ -64,8 +62,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
         BDAY_MAP.insert(gid, Database::with_ser_and_deser(path, ser, deser));
     }
     let dm = d.clone();
-    d.lock()
-        .await
+    crate::log_lock_mutex!(d)
         .add_daemon(BDayChecker::new("bday checker", move |c| {
             check_bday(c.http.clone(), dm.clone())
         }))
@@ -79,7 +76,7 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
         Some(b) => b,
     };
     let tomorrow = BDay::from(Utc::now().date().naive_utc().succ());
-    let mut map = map.load().await?;
+    let mut map = map.load(file!(), line!()).await?;
     let tree = map.take();
     let next = match tree.range(tomorrow..).next() {
         Some((d, v)) => Some((*d, v.clone())),
@@ -99,7 +96,7 @@ pub async fn add_bday(
             .collect::<PathBuf>();
         Database::with_ser_and_deser(path, ser, deser)
     });
-    let mut calendar = calendar.load().await?;
+    let mut calendar = calendar.load(file!(), line!()).await?;
     let bday = BDay::from(when);
     let removed = remove_user(&mut *calendar, who);
     calendar.entry(bday).or_default().push(BDayBoy {
@@ -114,7 +111,7 @@ pub async fn remove_bday(g: GuildId, who: UserId) -> anyhow::Result<Option<Naive
         Some(c) => c,
         None => return Ok(None),
     };
-    let mut calendar = calendar.load().await?;
+    let mut calendar = calendar.load(file!(), line!()).await?;
     Ok(remove_user(&mut *calendar, who))
 }
 
@@ -217,7 +214,7 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                 continue;
             }
         };
-        let guild = match guild.load().await {
+        let guild = match guild.load(file!(), line!()).await {
             Ok(mut g) => g.take(),
             Err(e) => {
                 log::error!("Error fetching guild birthdays: {:?}", e);
@@ -262,8 +259,7 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                                 e,
                             );
                         } else {
-                            dm.lock()
-                                .await
+                            crate::log_lock_mutex!(dm)
                                 .add_daemon(UnBdayBoy {
                                     user: user.id,
                                     guild: *gid,

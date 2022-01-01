@@ -14,8 +14,9 @@ use crate::{
     daemons::DaemonManager,
     events::pubsub::{self, events},
     file_transaction::Database,
-    util::Mutex,
 };
+
+use tokio::sync::Mutex;
 
 lazy_static::lazy_static! {
     static ref CURSE_REGEX: Regex = Regex::new("Curse\\(([0-9]+)\\)").unwrap();
@@ -78,8 +79,8 @@ impl Daemon<false> for Curse {
 
 pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> anyhow::Result<()> {
     {
-        let mut d = d.lock().await;
-        for (g, c) in DATABASE.load().await?.take() {
+        let mut d = crate::log_lock_mutex!(d);
+        for (g, c) in DATABASE.load(file!(), line!()).await?.take() {
             if is_cursed(g).await {
                 log::info!("cursing {}", g);
                 d.add_daemon(c).await;
@@ -93,7 +94,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> anyhow::Result<()>
 
 async fn curse(guild: GuildId, d: Arc<Mutex<DaemonManager>>) -> ControlFlow {
     if is_cursed(guild).await {
-        let mut mng = d.lock().await;
+        let mut mng = crate::log_lock_mutex!(d);
         let is_registered = mng
             .daemon_names()
             .filter_map(|(_, h)| CURSE_REGEX.captures(h.name()))
@@ -111,7 +112,7 @@ async fn curse(guild: GuildId, d: Arc<Mutex<DaemonManager>>) -> ControlFlow {
                 sim: false,
             };
             log::info!("cursing {}", guild);
-            match DATABASE.load().await {
+            match DATABASE.load(file!(), line!()).await {
                 Ok(mut v) => {
                     v.insert(guild, curse);
                     mng.add_daemon(curse).await;
@@ -135,6 +136,6 @@ async fn is_cursed(guild: GuildId) -> bool {
 }
 
 async fn save(curse: Curse) -> anyhow::Result<()> {
-    DATABASE.load().await?.insert(curse.guild, curse);
+    DATABASE.load(file!(), line!()).await?.insert(curse.guild, curse);
     Ok(())
 }

@@ -1,4 +1,3 @@
-use crate::util::{Mutex, MutexGuard};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     error::Error,
@@ -10,7 +9,7 @@ use std::{
 use tokio::{
     fs::File,
     io::AsyncReadExt,
-    // sync::{Mutex, MutexGuard},
+    sync::{Mutex, MutexGuard},
 };
 
 pub struct Database<T, E = io::Error> {
@@ -36,10 +35,8 @@ impl<T, E: Into<Box<dyn Error>>> Database<T, E> {
         S: Fn(&mut dyn Write, &T) -> Result<(), E> + Sync + Send + 'static,
         D: Fn(&[u8]) -> Result<T, E> + Sync + Send + 'static,
     {
-        let filename = filename.into();
-        let filename_display = Box::leak(filename.display().to_string().into_boxed_str());
         Self {
-            filename: Mutex::new(filename, filename_display, 0),
+            filename: Mutex::new(filename.into()),
             serializer: Box::new(move |w, t| serializer(w, t)),
             deserializer: Box::new(move |slice| deserializer(slice)),
         }
@@ -52,9 +49,18 @@ where
     E: Into<anyhow::Error>,
     E: From<io::Error>,
 {
-    pub async fn load(&self) -> Result<DbGuard<'_, T, E>, E> {
-        let pathbuf = self.filename.lock().await;
-        let mut file = match File::open(&*pathbuf).await {
+    pub async fn load(&self, file: &'static str, line: u32) -> Result<DbGuard<'_, T, E>, E> {
+        let pathbuf = crate::util::LogDrop {
+            ctx: crate::util::lock(
+                crate::util::LockKind::from_str(::std::stringify!(lock)),
+                file,
+                line,
+            ),
+            t: ::tokio::time::timeout(::std::time::Duration::from_secs(10), self.filename.lock())
+                .await
+                .expect("lock took too long to unlock"),
+        };
+        let mut file = match File::open(&**pathbuf).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Ok(DbGuard {
@@ -79,7 +85,7 @@ where
 }
 
 pub struct DbGuard<'db, T: Debug, E: Into<anyhow::Error> = serde_json::Error> {
-    pathbuf: MutexGuard<'db, PathBuf>,
+    pathbuf: crate::util::LogDrop<MutexGuard<'db, PathBuf>>,
     serializer: &'db (dyn Fn(&mut dyn Write, &T) -> Result<(), E> + Send + Sync),
     t: T,
     save: bool,
@@ -128,7 +134,7 @@ impl<'db, T: Debug, E: Into<anyhow::Error>> Drop for DbGuard<'db, T, E> {
                     e.into()
                 );
             }
-            if let Err(e) = std::fs::rename(&temp_path, &*self.pathbuf) {
+            if let Err(e) = std::fs::rename(&temp_path, &**self.pathbuf) {
                 log::error!(
                     "Failed to rename '{}' to '{}': {}",
                     temp_path.display(),

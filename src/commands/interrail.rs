@@ -1,5 +1,4 @@
 use crate::get;
-use crate::util::RwLock;
 use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
@@ -87,8 +86,8 @@ pub async fn config(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 #[check]
 #[name = "is_interrail_channel"]
 async fn is_interrail_channel(ctx: &Context, msg: &Message, _: &mut Args) -> Result<(), Reason> {
-    if let Some(ic) = ctx.data.read().await.get::<InterrailConfig>() {
-        if msg.channel_id == ic.read().await.talk {
+    if let Some(ic) = crate::log_lock_read!(ctx.data).get::<InterrailConfig>() {
+        if msg.channel_id == crate::log_lock_read!(ic).talk {
             return Ok(());
         }
     }
