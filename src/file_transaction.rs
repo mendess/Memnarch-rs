@@ -50,15 +50,19 @@ where
     E: From<io::Error>,
 {
     pub async fn load(&self, file: &'static str, line: u32) -> Result<DbGuard<'_, T, E>, E> {
+        let ctx = crate::util::lock(
+            crate::util::LockKind::from_str(::std::stringify!(log_lock_failure)),
+            file,
+            line,
+        );
         let pathbuf = crate::util::LogDrop {
-            ctx: crate::util::lock(
-                crate::util::LockKind::from_str(::std::stringify!(lock)),
-                file,
-                line,
-            ),
-            t: ::tokio::time::timeout(::std::time::Duration::from_secs(10), self.filename.lock())
-                .await
-                .expect("lock took too long to unlock"),
+            ctx,
+            t: ::tokio::time::timeout(
+                ::std::time::Duration::from_secs(10),
+                crate::util::log_lock_failure(ctx, &self.filename),
+            )
+            .await
+            .expect("lock took too long to unlock"),
         };
         let mut file = match File::open(&**pathbuf).await {
             Ok(f) => f,

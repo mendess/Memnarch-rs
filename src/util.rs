@@ -2,11 +2,12 @@ use chrono::{NaiveDateTime, Utc};
 use dashmap::DashSet;
 use futures::future::TryFutureExt;
 use serde::{Deserialize, Serialize};
-use serenity::{http::Http, model::id::UserId};
+use serenity::{http::Http, model::id::UserId, prelude::Mutex};
 use std::{
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicU64, Ordering},
 };
+use tokio::sync::{MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 static BOT_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -90,9 +91,9 @@ pub enum LockKind {
 impl LockKind {
     pub fn from_str(s: &str) -> Self {
         match s {
-            "lock" => Self::Mutex,
-            "write" => Self::Write,
-            "read" => Self::Read,
+            "log_lock_failure" => Self::Mutex,
+            "log_read_failure" => Self::Read,
+            "log_write_failure" => Self::Write,
             _ => panic!("cant from_str {}", s),
         }
     }
@@ -120,22 +121,47 @@ pub fn lock(kind: LockKind, file: &'static str, line: u32) -> LockCtx {
     };
     log::trace!("LOCKING {:?}", ctx);
     LOCKS.locks.insert(format!("{:?}", ctx));
-    serde_json::to_writer(
-        std::fs::File::create("files/locks.json").unwrap(),
-        &*LOCKS,
-    )
-    .unwrap();
+    serde_json::to_writer(std::fs::File::create("files/locks.json").unwrap(), &*LOCKS).unwrap();
     ctx
+}
+
+#[inline(always)]
+pub async fn log_lock_failure<T>(ctx: LockCtx, m: &'_ Mutex<T>) -> MutexGuard<'_, T> {
+    match m.try_lock() {
+        Ok(l) => l,
+        Err(_) => {
+            log::warn!("FAILED TO LOCK: {:?}", ctx);
+            m.lock().await
+        }
+    }
+}
+
+#[inline(always)]
+pub async fn log_read_failure<T>(ctx: LockCtx, m: &'_ RwLock<T>) -> RwLockReadGuard<'_, T> {
+    match m.try_read() {
+        Ok(l) => l,
+        Err(_) => {
+            log::warn!("FAILED TO LOCK READ: {:?}", ctx);
+            m.read().await
+        }
+    }
+}
+
+#[inline(always)]
+pub async fn log_write_failure<T>(ctx: LockCtx, m: &'_ RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    match m.try_write() {
+        Ok(l) => l,
+        Err(_) => {
+            log::warn!("FAILED TO LOCK WRITE: {:?}", ctx);
+            m.write().await
+        }
+    }
 }
 
 fn lock_drop(ctx: LockCtx) {
     log::trace!("UNLOCKING {:?}", ctx);
     LOCKS.locks.remove(&format!("{:?}", ctx));
-    serde_json::to_writer(
-        std::fs::File::create("files/locks.json").unwrap(),
-        &*LOCKS,
-    )
-    .unwrap();
+    serde_json::to_writer(std::fs::File::create("files/locks.json").unwrap(), &*LOCKS).unwrap();
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -149,38 +175,42 @@ pub struct LockCtx {
 
 #[macro_export]
 macro_rules! log_lock {
-    ($lock:expr, $kind:ident) => {
+    ($lock:expr, $kind:ident) => {{
+        let ctx = $crate::util::lock(
+            $crate::util::LockKind::from_str(::std::stringify!($kind)),
+            file!(),
+            line!(),
+        );
         $crate::util::LogDrop {
-            ctx: $crate::util::lock(
-                $crate::util::LockKind::from_str(::std::stringify!($kind)),
-                file!(),
-                line!(),
-            ),
-            t: ::tokio::time::timeout(::std::time::Duration::from_secs(10), $lock.$kind())
-                .await
-                .expect("lock took too long to unlock"),
+            ctx,
+            t: ::tokio::time::timeout(
+                ::std::time::Duration::from_secs(10),
+                $crate::util::$kind(ctx, &$lock),
+            )
+            .await
+            .expect("lock took too long to unlock"),
         }
-    };
+    }};
 }
 
 #[macro_export]
 macro_rules! log_lock_mutex {
     ($lock:expr) => {
-        $crate::log_lock!($lock, lock)
+        $crate::log_lock!($lock, log_lock_failure)
     };
 }
 
 #[macro_export]
 macro_rules! log_lock_read {
     ($lock:expr) => {
-        $crate::log_lock!($lock, read)
+        $crate::log_lock!($lock, log_read_failure)
     };
 }
 
 #[macro_export]
 macro_rules! log_lock_write {
     ($lock:expr) => {
-        $crate::log_lock!($lock, write)
+        $crate::log_lock!($lock, log_write_failure)
     };
 }
 
