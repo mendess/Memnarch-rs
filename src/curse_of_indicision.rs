@@ -73,7 +73,7 @@ impl Daemon<false> for Curse {
     }
 
     async fn interval(&self) -> Duration {
-        Duration::from_secs(if self.last_msg.is_some() { 10 } else { 30 })
+        Duration::from_secs(if self.last_msg.is_some() { 5 } else { 35 })
     }
 }
 
@@ -136,6 +136,9 @@ async fn is_cursed(guild: GuildId) -> bool {
 }
 
 async fn save(curse: Curse) -> anyhow::Result<()> {
-    DATABASE.load(file!(), line!()).await?.insert(curse.guild, curse);
+    DATABASE
+        .load(file!(), line!())
+        .await?
+        .insert(curse.guild, curse);
     Ok(())
 }
