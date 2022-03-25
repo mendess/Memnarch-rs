@@ -1,4 +1,5 @@
 use crate::{
+    birthdays::BDay,
     consts::NUMBERS,
     daemons::DaemonManager,
     get,
@@ -11,6 +12,7 @@ use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use num_traits::FromPrimitive;
 use serenity::{
+    builder::CreateEmbed,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -334,7 +336,7 @@ async fn set_birthday_channel(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[command("next")]
-async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
+async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     macro_rules! fmt {
         ($name:expr, $nick:expr) => {
             format_args!(
@@ -345,63 +347,89 @@ async fn next_bday(ctx: &Context, msg: &Message) -> CommandResult {
         };
     }
 
-    let gid = msg.guild_id.ok_or("must be in a guild")?;
-    let (date, users) = crate::birthdays::next_bday(gid)
-        .await?
-        .ok_or("No birthdays saved for this server :sob:")?;
+    fn make_embed(
+        e: &mut CreateEmbed,
+        Member { nick, user, .. }: Member,
+        date: BDay,
+        title: String,
+    ) -> &mut CreateEmbed {
+        e.title(title)
+            .description(fmt!(user.name, nick).to_string())
+            .thumbnail(
+                user.avatar_url()
+                    .as_deref()
+                    .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
+            )
+            .footer(|f| {
+                f.text(format!(
+                    "{}/{}",
+                    date.day,
+                    &Month::from_u32(date.month).unwrap().name()[..3],
+                ))
+            })
+    }
 
-    match &users[..] {
-        [] => {
-            log::error!("Users should never be empty. It was for date {:?}", date);
-            return Err("Bot dev fucked up somehow".into());
-        }
-        [u] => {
-            let Member { nick, user, .. } = gid.member(ctx, u.id).await?;
+    let gid = msg.guild_id.ok_or("must be in a guild")?;
+    match args.current() {
+        Some("month") => return Err("TODO: implement this"),
+        Some(x) => {
+            let user = x.parse::<UserId>()?;
+            let date = crate::birthdays::of(gid, user)
+                .await?
+                .ok_or("No birthdays saved for this user 😭")?;
+            let member = gid.member(ctx, user).await?;
             msg.channel_id
                 .send_message(ctx, |m| {
                     m.embed(|e| {
-                        e.title("Next birthday :tada:")
-                            .description(fmt!(user.name, nick).to_string())
-                            .thumbnail(
-                                user.avatar_url()
-                                    .as_deref()
-                                    .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
-                            )
-                            .footer(|f| {
-                                f.text(format!(
-                                    "{}/{}",
-                                    date.day,
-                                    &Month::from_u32(date.month).unwrap().name()[..3],
-                                ))
-                            })
+                        make_embed(e, member, date, format!("{}'s birthday 🎉", user.mention()))
                     })
                 })
                 .await?;
         }
-        many => {
-            let members: Vec<Member> = futures::stream::iter(many)
-                .then(|u| gid.member(ctx, u.id))
-                .try_collect()
-                .await?;
-            msg.channel_id
-                .send_message(ctx, |m| {
-                    m.embed(|e| {
-                        e.title("Woah multiple birthdays! :tada: :tada:")
-                            .description(
-                                members
-                                    .into_iter()
-                                    .format_with("\n---\n", |m, f| f(&fmt!(m.user.name, m.nick))),
-                            )
-                            .footer(|f| {
-                                f.text(format!(
-                                    "When: {}/{}",
-                                    date.day,
-                                    &Month::from_u32(date.month).unwrap().name()[..3],
-                                ))
+        None => {
+            let (date, users) = crate::birthdays::next_bday(gid)
+                .await?
+                .ok_or("No birthdays saved for this server 😭")?;
+
+            match &users[..] {
+                [] => {
+                    log::error!("Users should never be empty. It was for date {:?}", date);
+                    return Err("Bot dev fucked up somehow".into());
+                }
+                [u] => {
+                    let member = gid.member(ctx, u.id).await?;
+                    msg.channel_id
+                        .send_message(ctx, |m| {
+                            m.embed(|e| make_embed(e, member, date, "Next birthday :tada:".into()))
+                        })
+                        .await?;
+                }
+                many => {
+                    let members: Vec<Member> = futures::stream::iter(many)
+                        .then(|u| gid.member(ctx, u.id))
+                        .try_collect()
+                        .await?;
+                    msg.channel_id
+                        .send_message(ctx, |m| {
+                            m.embed(|e| {
+                                e.title("Woah multiple birthdays! :tada: :tada:")
+                                    .description(
+                                        members.into_iter().format_with("\n---\n", |m, f| {
+                                            f(&fmt!(m.user.name, m.nick))
+                                        }),
+                                    )
+                                    .footer(|f| {
+                                        f.text(format!(
+                                            "When: {}/{}",
+                                            date.day,
+                                            &Month::from_u32(date.month).unwrap().name()[..3],
+                                        ))
+                                    })
                             })
-                    })
-                })
-                .await?;
+                        })
+                        .await?;
+                }
+            }
         }
     }
 

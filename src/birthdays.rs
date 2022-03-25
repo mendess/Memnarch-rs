@@ -85,6 +85,18 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
     Ok(next)
 }
 
+pub async fn of(g: GuildId, user_id: UserId) -> anyhow::Result<Option<BDay>> {
+    let map = match BDAY_MAP.get(&g) {
+        None => return Ok(None),
+        Some(b) => b,
+    };
+    let database = map.load(file!(), line!()).await?;
+    Ok(database
+        .iter()
+        .find(|(_, users)| users.iter().any(|u| u.id == user_id))
+        .map(|(date, _)| *date))
+}
+
 pub async fn add_bday(
     g: GuildId,
     who: UserId,
