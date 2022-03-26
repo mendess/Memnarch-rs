@@ -12,7 +12,6 @@ use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use num_traits::FromPrimitive;
 use serenity::{
-    builder::CreateEmbed,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -347,26 +346,8 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         };
     }
 
-    fn make_embed(
-        e: &mut CreateEmbed,
-        Member { nick, user, .. }: Member,
-        date: BDay,
-        title: String,
-    ) -> &mut CreateEmbed {
-        e.title(title)
-            .description(fmt!(user.name, nick).to_string())
-            .thumbnail(
-                user.avatar_url()
-                    .as_deref()
-                    .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
-            )
-            .footer(|f| {
-                f.text(format!(
-                    "{}/{}",
-                    date.day,
-                    &Month::from_u32(date.month).unwrap().name()[..3],
-                ))
-            })
+    fn short_month(m: &BDay) -> &'static str {
+        &Month::from_u32(m.month).unwrap().name()[..3]
     }
 
     let gid = msg.guild_id.ok_or("must be in a guild")?;
@@ -385,15 +366,17 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                         .try_collect::<Vec<_>>()
                         .await?;
                     bdays.sort_by_key(|x| x.0);
-                    msg.channel_id.send_message(ctx, |m| {
-                        m.embed(|e| {
-                            e.title("Birthdays this month 🥳").description(
-                                bdays.into_iter().format_with("\n", |(d, u), f| {
-                                    f(&format_args!("{:2}: {}", d, u))
-                                }),
-                            )
+                    msg.channel_id
+                        .send_message(ctx, |m| {
+                            m.embed(|e| {
+                                e.title("Birthdays this month 🥳").description(
+                                    bdays.into_iter().format_with("\n", |(d, u), f| {
+                                        f(&format_args!("{:2}: {}", d, u))
+                                    }),
+                                )
+                            })
                         })
-                    }).await?;
+                        .await?;
                 }
             };
         }
@@ -406,8 +389,15 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             msg.channel_id
                 .send_message(ctx, |m| {
                     m.embed(|e| {
-                        let title = format!("{}'s birthday 🎉", member.display_name());
-                        make_embed(e, member, date, title)
+                        let now = Utc::now().naive_utc().date();
+                        let bday = NaiveDate::from_ymd(now.year(), date.month, date.day);
+                        e.title(format!("{}'s birthday 🎉", member.display_name()))
+                            .description(format!(
+                                "{}/{}. {} days left 👀",
+                                date.day,
+                                short_month(&date),
+                                (bday - now).num_days()
+                            ))
                     })
                 })
                 .await?;
@@ -423,10 +413,21 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                     return Err("Bot dev fucked up somehow".into());
                 }
                 [u] => {
-                    let member = gid.member(ctx, u.id).await?;
+                    let Member { user, nick, .. } = gid.member(ctx, u.id).await?;
                     msg.channel_id
                         .send_message(ctx, |m| {
-                            m.embed(|e| make_embed(e, member, date, "Next birthday :tada:".into()))
+                            m.embed(|e| {
+                                e.title("Next birthday :tada:")
+                                    .description(fmt!(user.name, nick).to_string())
+                                    .thumbnail(
+                                        user.avatar_url()
+                                            .as_deref()
+                                            .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
+                                    )
+                                    .footer(|f| {
+                                        f.text(format!("{}/{}", date.day, short_month(&date)))
+                                    })
+                            })
                         })
                         .await?;
                 }
