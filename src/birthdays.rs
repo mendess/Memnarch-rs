@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Context;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{Datelike, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use dashmap::DashMap;
 use futures::TryFutureExt;
@@ -95,6 +95,23 @@ pub async fn of(g: GuildId, user_id: UserId) -> anyhow::Result<Option<BDay>> {
         .iter()
         .find(|(_, users)| users.iter().any(|u| u.id == user_id))
         .map(|(date, _)| *date))
+}
+
+pub async fn of_month(
+    g: GuildId,
+    month: Month,
+) -> anyhow::Result<Option<impl Iterator<Item = (BDay, BDayBoy)>>> {
+    let map = match BDAY_MAP.get(&g) {
+        None => return Ok(None),
+        Some(b) => b,
+    };
+    let database = map.load(file!(), line!()).await?.take();
+    Ok(Some(
+        database
+            .into_iter()
+            .filter(move |(date, _)| date.month == month.number_from_month())
+            .flat_map(|(date, users)| users.into_iter().map(move |u| (date, u))),
+    ))
 }
 
 pub async fn add_bday(

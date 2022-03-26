@@ -8,7 +8,7 @@ use crate::{
     reminders::{self, parser::*},
 };
 use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, Timelike, Utc};
-use futures::{StreamExt, TryStreamExt};
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use num_traits::FromPrimitive;
 use serenity::{
@@ -371,7 +371,32 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
     let gid = msg.guild_id.ok_or("must be in a guild")?;
     match args.current() {
-        Some("month") => return Err("TODO: implement this".into()),
+        Some("month") => {
+            use crate::birthdays::BDayBoy;
+            let month = Month::from_u32(Utc::now().month()).unwrap();
+            match crate::birthdays::of_month(gid, month).await? {
+                None => return Err("No birthdays this month 😭".into()),
+                Some(i) => {
+                    let mut bdays = stream::iter(i)
+                        .then(|(d, u): (BDay, BDayBoy)| async move {
+                            let member = gid.member(ctx, u.id).await?;
+                            serenity::Result::Ok((d.day, member.display_name().into_owned()))
+                        })
+                        .try_collect::<Vec<_>>()
+                        .await?;
+                    bdays.sort_by_key(|x| x.0);
+                    msg.channel_id.send_message(ctx, |m| {
+                        m.embed(|e| {
+                            e.title("Birthdays this month 🥳").description(
+                                bdays.into_iter().format_with("\n", |(d, u), f| {
+                                    f(&format_args!("{:2}: {}", d, u))
+                                }),
+                            )
+                        })
+                    }).await?;
+                }
+            };
+        }
         Some(x) => {
             let user = x.parse::<UserId>()?;
             let date = crate::birthdays::of(gid, user)
@@ -381,7 +406,8 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             msg.channel_id
                 .send_message(ctx, |m| {
                     m.embed(|e| {
-                        make_embed(e, member, date, format!("{}'s birthday 🎉", user.mention()))
+                        let title = format!("{}'s birthday 🎉", member.display_name());
+                        make_embed(e, member, date, title)
                     })
                 })
                 .await?;
