@@ -371,7 +371,7 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
     let gid = msg.guild_id.ok_or("must be in a guild")?;
     match args.current() {
-        Some("month") => return Err("TODO: implement this"),
+        Some("month") => return Err("TODO: implement this".into()),
         Some(x) => {
             let user = x.parse::<UserId>()?;
             let date = crate::birthdays::of(gid, user)

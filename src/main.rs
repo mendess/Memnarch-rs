@@ -49,7 +49,6 @@ use serenity::{
 };
 use songbird::SerenityInit;
 use std::{
-    array::IntoIter as ArrayIter,
     collections::HashSet,
     env,
     fs::{DirBuilder, OpenOptions},
@@ -132,8 +131,7 @@ fn config_logger() {
         let home = env::var("HOME")
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             .expect("Can't find home directory");
-        let file_path =
-            ArrayIter::new([home, "memnarch_critical_error.log".into()]).collect::<PathBuf>();
+        let file_path = PathBuf::from_iter([home, "memnarch_critical_error.log".into()]);
         OpenOptions::new()
             .write(true)
             .append(true)
@@ -177,7 +175,7 @@ async fn main() -> anyhow::Result<()> {
         Err(why) => {
             log::error!("Could not access application info: {}", why);
             (
-                ArrayIter::new([UserId(98500250540478464)]).collect(),
+                [UserId(98500250540478464)].into_iter().collect(),
                 Some(UserId(352881326044741644)),
             )
         }
