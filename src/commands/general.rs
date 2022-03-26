@@ -1,5 +1,4 @@
 use crate::{
-    birthdays::BDay,
     consts::NUMBERS,
     daemons::DaemonManager,
     get,
@@ -306,7 +305,15 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
 #[group]
 #[prefix("bday")]
 #[default_command(next_bday)]
-#[commands(set_birthday_channel, next_bday, add_bday, remove_bday, set_bday_role)]
+#[commands(
+    set_birthday_channel,
+    next_bday,
+    bday_month,
+    bday_list,
+    add_bday,
+    remove_bday,
+    set_bday_role
+)]
 struct BDays;
 
 #[command("set_channel")]
@@ -334,8 +341,72 @@ async fn set_birthday_channel(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+fn short_month(m: u32) -> &'static str {
+    &Month::from_u32(m).unwrap().name()[..3]
+}
+
+#[command("list")]
+#[required_permissions(ADMINISTRATOR)]
+async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
+    let gid = msg.guild_id.ok_or("must be in a server")?;
+    let bdays = stream::iter(crate::birthdays::all(gid).await?)
+        .then(|(m, v)| async move {
+            stream::iter(v)
+                .then(|u| gid.member(ctx, u.id))
+                .map_ok(|m| m.display_name().into_owned())
+                .try_collect::<Vec<_>>()
+                .await
+                .map(|nicks| (m, nicks))
+        })
+        .try_collect::<Vec<_>>()
+        .await?;
+    msg.channel_id
+        .send_message(ctx, |m| {
+            m.embed(|e| {
+                e.title("all the birthdays 🥳🎉🥳").fields(
+                    bdays
+                        .into_iter()
+                        .map(|(m, nicks)| (short_month(m), nicks.into_iter().format("\n"), true)),
+                )
+            })
+        })
+        .await?;
+    Ok(())
+}
+
+#[command("month")]
+async fn bday_month(ctx: &Context, msg: &Message) -> CommandResult {
+    let gid = msg.guild_id.ok_or("must be in a guild")?;
+    let month = Month::from_u32(Utc::now().month()).unwrap();
+    match crate::birthdays::of_month(gid, month).await? {
+        None => return Err("No birthdays this month 😭".into()),
+        Some(i) => {
+            let mut bdays = stream::iter(i)
+                .then(|(d, u)| async move {
+                    let member = gid.member(ctx, u.id).await?;
+                    serenity::Result::Ok((d.day, member.display_name().into_owned()))
+                })
+                .try_collect::<Vec<_>>()
+                .await?;
+            bdays.sort_by_key(|x| x.0);
+            msg.channel_id
+                .send_message(ctx, |m| {
+                    m.embed(|e| {
+                        e.title("Birthdays this month 🥳").description(
+                            bdays
+                                .into_iter()
+                                .format_with("\n", |(d, u), f| f(&format_args!("{:2}: {}", d, u))),
+                        )
+                    })
+                })
+                .await?;
+        }
+    };
+    Ok(())
+}
+
 #[command("next")]
-async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     macro_rules! fmt {
         ($name:expr, $nick:expr) => {
             format_args!(
@@ -346,42 +417,9 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         };
     }
 
-    fn short_month(m: &BDay) -> &'static str {
-        &Month::from_u32(m.month).unwrap().name()[..3]
-    }
-
     let gid = msg.guild_id.ok_or("must be in a guild")?;
-    match args.current() {
-        Some("month") => {
-            use crate::birthdays::BDayBoy;
-            let month = Month::from_u32(Utc::now().month()).unwrap();
-            match crate::birthdays::of_month(gid, month).await? {
-                None => return Err("No birthdays this month 😭".into()),
-                Some(i) => {
-                    let mut bdays = stream::iter(i)
-                        .then(|(d, u): (BDay, BDayBoy)| async move {
-                            let member = gid.member(ctx, u.id).await?;
-                            serenity::Result::Ok((d.day, member.display_name().into_owned()))
-                        })
-                        .try_collect::<Vec<_>>()
-                        .await?;
-                    bdays.sort_by_key(|x| x.0);
-                    msg.channel_id
-                        .send_message(ctx, |m| {
-                            m.embed(|e| {
-                                e.title("Birthdays this month 🥳").description(
-                                    bdays.into_iter().format_with("\n", |(d, u), f| {
-                                        f(&format_args!("{:2}: {}", d, u))
-                                    }),
-                                )
-                            })
-                        })
-                        .await?;
-                }
-            };
-        }
-        Some(x) => {
-            let user = x.parse::<UserId>()?;
+    match args.single::<UserId>() {
+        Ok(user) => {
             let date = crate::birthdays::of(gid, user)
                 .await?
                 .ok_or("No birthdays saved for this user 😭")?;
@@ -398,7 +436,7 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                             .description(format!(
                                 "{}/{}.\n{} days left 👀",
                                 date.day,
-                                short_month(&date),
+                                short_month(date.month),
                                 (bday - now).num_days()
                             ))
                             .thumbnail(
@@ -412,7 +450,7 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 })
                 .await?;
         }
-        None => {
+        Err(_) => {
             let (date, users) = crate::birthdays::next_bday(gid)
                 .await?
                 .ok_or("No birthdays saved for this server 😭")?;
@@ -435,7 +473,7 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                                             .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
                                     )
                                     .footer(|f| {
-                                        f.text(format!("{}/{}", date.day, short_month(&date)))
+                                        f.text(format!("{}/{}", date.day, short_month(date.month)))
                                     })
                             })
                         })
