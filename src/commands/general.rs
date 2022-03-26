@@ -390,7 +390,10 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 .send_message(ctx, |m| {
                     m.embed(|e| {
                         let now = Utc::now().naive_utc().date();
-                        let bday = NaiveDate::from_ymd(now.year(), date.month, date.day);
+                        let mut bday = NaiveDate::from_ymd(now.year(), date.month, date.day);
+                        if bday < now {
+                            bday = bday.with_year(now.year() + 1).unwrap();
+                        }
                         e.title(format!("{}'s birthday 🎉", member.display_name()))
                             .description(format!(
                                 "{}/{}.\n{} days left 👀",
