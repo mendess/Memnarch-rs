@@ -393,11 +393,18 @@ async fn next_bday(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                         let bday = NaiveDate::from_ymd(now.year(), date.month, date.day);
                         e.title(format!("{}'s birthday 🎉", member.display_name()))
                             .description(format!(
-                                "{}/{}. {} days left 👀",
+                                "{}/{}.\n{} days left 👀",
                                 date.day,
                                 short_month(&date),
                                 (bday - now).num_days()
                             ))
+                            .thumbnail(
+                                member
+                                    .user
+                                    .avatar_url()
+                                    .as_deref()
+                                    .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
+                            )
                     })
                 })
                 .await?;
