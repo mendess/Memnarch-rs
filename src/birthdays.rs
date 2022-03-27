@@ -91,13 +91,13 @@ pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<BDayBoy>>> {
         Some(b) => b,
     };
     let database = map.load(file!(), line!()).await?.take();
-    Ok(database
-        .into_iter()
-        .map(|(d, u)| (d.month, u))
-        .fold(Default::default(), |mut acc, (d, u)| {
+    Ok(database.into_iter().map(|(d, u)| (d.month, u)).fold(
+        Default::default(),
+        |mut acc, (d, u)| {
             acc.entry(d).or_default().extend_from_slice(&u);
-                acc
-        }))
+            acc
+        },
+    ))
 }
 
 pub async fn of(g: GuildId, user_id: UserId) -> anyhow::Result<Option<BDay>> {
