@@ -85,19 +85,20 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
     Ok(next)
 }
 
-pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<BDayBoy>>> {
+pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<(u32, BDayBoy)>>> {
     let map = match BDAY_MAP.get(&g) {
         None => return Ok(Default::default()),
         Some(b) => b,
     };
     let database = map.load(file!(), line!()).await?.take();
-    Ok(database.into_iter().map(|(d, u)| (d.month, u)).fold(
-        Default::default(),
-        |mut acc, (d, u)| {
-            acc.entry(d).or_default().extend_from_slice(&u);
+    Ok(database
+        .into_iter()
+        .fold(Default::default(), |mut acc, (d, users)| {
+            acc.entry(d.month)
+                .or_default()
+                .extend(users.into_iter().map(|u| (d.day, u)));
             acc
-        },
-    ))
+        }))
 }
 
 pub async fn of(g: GuildId, user_id: UserId) -> anyhow::Result<Option<BDay>> {

@@ -346,28 +346,33 @@ fn short_month(m: u32) -> &'static str {
 }
 
 #[command("list")]
-#[required_permissions(ADMINISTRATOR)]
 async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;
     let bdays = stream::iter(crate::birthdays::all(gid).await?)
         .then(|(m, v)| async move {
             stream::iter(v)
-                .then(|u| gid.member(ctx, u.id))
-                .map_ok(|m| m.display_name().into_owned())
+                .then(|(d, u)| async move { gid.member(ctx, u.id).await.map(|m| (d, m)) })
+                .map_ok(|(d, m)| (d, m.display_name().into_owned()))
                 .try_collect::<Vec<_>>()
                 .await
-                .map(|nicks| (m, nicks))
+                .map(|mut nicks| {
+                    nicks.sort_by_key(|(d, _)| *d);
+                    (m, nicks)
+                })
         })
         .try_collect::<Vec<_>>()
         .await?;
     msg.channel_id
         .send_message(ctx, |m| {
             m.embed(|e| {
-                e.title("all the birthdays 🥳🎉🥳").fields(
-                    bdays
-                        .into_iter()
-                        .map(|(m, nicks)| (short_month(m), nicks.into_iter().format("\n"), true)),
-                )
+                e.title("all the birthdays 🥳🎉🥳")
+                    .fields(bdays.into_iter().map(|(m, nicks)| {
+                        (
+                            short_month(m),
+                            nicks.into_iter().map(|(_, n)| n).format("\n"),
+                            true,
+                        )
+                    }))
             })
         })
         .await?;
