@@ -368,7 +368,7 @@ async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
                 e.title("all the birthdays 🥳🎉🥳")
                     .fields(bdays.into_iter().map(|(m, nicks)| {
                         (
-                            short_month(m),
+                            format!("{} ({})", Month::from_u32(m).unwrap().name(), nicks.len()),
                             nicks.into_iter().map(|(_, n)| n).format("\n"),
                             true,
                         )
