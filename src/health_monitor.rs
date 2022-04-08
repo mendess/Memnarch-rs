@@ -40,7 +40,7 @@ impl Daemon<true> for HealthMonitor {
         match statm_self() {
             Ok(new) => {
                 debug!("Memory usage: {:?}", new);
-                let diff = match &**crate::log_lock_mutex!(LAST_MEASURE) {
+                let diff = match &*LAST_MEASURE.lock().await {
                     Some(old) => Diff::new(old, &new),
                     None => Diff::new(&new, &new),
                 };
@@ -55,7 +55,7 @@ impl Daemon<true> for HealthMonitor {
                     if let Err(e) = res {
                         error!("Failed to send message to log channel: {}", e);
                     } else {
-                        **crate::log_lock_mutex!(LAST_MEASURE) = Some(new);
+                        *LAST_MEASURE.lock().await = Some(new);
                     }
                 } else {
                     ALLOWED_SKIPS.fetch_sub(1, atomic::Ordering::Relaxed);

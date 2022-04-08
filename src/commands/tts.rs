@@ -27,8 +27,8 @@ struct Tts;
 pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     super::sfx::play_sfx(ctx, msg, || async {
         let text = args.rest();
-        let service = crate::log_lock_read!(CURRENT_SERVICE);
-        let voice = crate::log_lock_read!(CURRENT_VOICE);
+        let service = CURRENT_SERVICE.read().await;
+        let voice = CURRENT_VOICE.read().await;
         let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
         match songbird::ytdl(&tts_link).await {
             Ok(source) => Ok(source),
@@ -59,8 +59,8 @@ pub async fn config(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             ),
         )
         .await?;
-    **crate::log_lock_write!(CURRENT_SERVICE) = service;
-    **crate::log_lock_write!(CURRENT_VOICE) = voice;
+    *CURRENT_SERVICE.write().await = service;
+    *CURRENT_VOICE.write().await = voice;
     Ok(())
 }
 
@@ -99,8 +99,8 @@ async fn generate_tts(
 #[example("pogchamp")]
 pub async fn save(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let text = args.rest();
-    let service = crate::log_lock_read!(CURRENT_SERVICE);
-    let voice = crate::log_lock_read!(CURRENT_VOICE);
+    let service = CURRENT_SERVICE.read().await;
+    let voice = CURRENT_VOICE.read().await;
     let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
     msg.channel_id.say(&ctx, tts_link).await?;
     Ok(())

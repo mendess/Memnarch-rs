@@ -79,8 +79,8 @@ impl Daemon<false> for Curse {
 
 pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> anyhow::Result<()> {
     {
-        let mut d = crate::log_lock_mutex!(d);
-        for (g, c) in DATABASE.load(file!(), line!()).await?.take() {
+        let mut d = d.lock().await;
+        for (g, c) in DATABASE.load().await?.take() {
             if is_cursed(g).await {
                 log::info!("cursing {}", g);
                 d.add_daemon(c).await;
@@ -94,7 +94,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> anyhow::Result<()>
 
 async fn curse(guild: GuildId, d: Arc<Mutex<DaemonManager>>) -> ControlFlow {
     if is_cursed(guild).await {
-        let mut mng = crate::log_lock_mutex!(d);
+        let mut mng = d.lock().await;
         let is_registered = mng
             .daemon_names()
             .filter_map(|(_, h)| CURSE_REGEX.captures(h.name()))
@@ -112,7 +112,7 @@ async fn curse(guild: GuildId, d: Arc<Mutex<DaemonManager>>) -> ControlFlow {
                 sim: false,
             };
             log::info!("cursing {}", guild);
-            match DATABASE.load(file!(), line!()).await {
+            match DATABASE.load().await {
                 Ok(mut v) => {
                     v.insert(guild, curse);
                     mng.add_daemon(curse).await;
@@ -137,7 +137,7 @@ async fn is_cursed(guild: GuildId) -> bool {
 
 async fn save(curse: Curse) -> anyhow::Result<()> {
     DATABASE
-        .load(file!(), line!())
+        .load()
         .await?
         .insert(curse.guild, curse);
     Ok(())

@@ -49,22 +49,9 @@ where
     E: Into<anyhow::Error>,
     E: From<io::Error>,
 {
-    pub async fn load(&self, file: &'static str, line: u32) -> Result<DbGuard<'_, T, E>, E> {
-        let ctx = crate::util::lock(
-            crate::util::LockKind::from_str(::std::stringify!(log_lock_failure)),
-            file,
-            line,
-        );
-        let pathbuf = crate::util::LogDrop {
-            ctx,
-            t: ::tokio::time::timeout(
-                ::std::time::Duration::from_secs(10),
-                crate::util::log_lock_failure(ctx, &self.filename),
-            )
-            .await
-            .expect("lock took too long to unlock"),
-        };
-        let mut file = match File::open(&**pathbuf).await {
+    pub async fn load(&self) -> Result<DbGuard<'_, T, E>, E> {
+        let pathbuf = self.filename.lock().await;
+        let mut file = match File::open(&*pathbuf).await {
             Ok(f) => f,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Ok(DbGuard {
@@ -89,7 +76,7 @@ where
 }
 
 pub struct DbGuard<'db, T: Debug, E: Into<anyhow::Error> = serde_json::Error> {
-    pathbuf: crate::util::LogDrop<MutexGuard<'db, PathBuf>>,
+    pathbuf: MutexGuard<'db, PathBuf>,
     serializer: &'db (dyn Fn(&mut dyn Write, &T) -> Result<(), E> + Send + Sync),
     t: T,
     save: bool,

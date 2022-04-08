@@ -20,16 +20,12 @@ pub struct GuildPrefs {
 }
 
 pub async fn get(u: GuildId) -> io::Result<Option<GuildPrefs>> {
-    Ok(GUILD_PREFS.load(file!(), line!()).await?.get(&u).cloned())
+    Ok(GUILD_PREFS.load().await?.get(&u).cloned())
 }
 
 pub async fn update<F, R>(u: GuildId, mut f: F) -> io::Result<R>
 where
     F: FnMut(&mut GuildPrefs) -> R,
 {
-    Ok(f(GUILD_PREFS
-        .load(file!(), line!())
-        .await?
-        .entry(u)
-        .or_default()))
+    Ok(f(GUILD_PREFS.load().await?.entry(u).or_default()))
 }

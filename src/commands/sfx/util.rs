@@ -99,7 +99,7 @@ fn init_voice_leave() {
                             if let Err(e) = sb.remove(guild_id).await {
                                 log::error!("Could not leave voice channel: {}", e);
                             } else {
-                                let data = crate::log_lock_read!(ctx.data);
+                                let data = ctx.data.read().await;
                                 let mut dm = crate::get!(> data, DaemonManager, lock);
                                 crate::get!(> data, LeaveVoiceDaemons, lock)
                                     .remove(&mut *dm, guild_id)

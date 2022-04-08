@@ -62,7 +62,7 @@ impl Daemon<false> for Reminder {
 }
 
 pub async fn is_blocked_by(from: UserId, to: UserId) -> io::Result<bool> {
-    if let Some(blocked) = BLOCKED_USERS.load(file!(), line!()).await?.get(&to) {
+    if let Some(blocked) = BLOCKED_USERS.load().await?.get(&to) {
         Ok(blocked.contains(&from))
     } else {
         Ok(false)
@@ -70,7 +70,7 @@ pub async fn is_blocked_by(from: UserId, to: UserId) -> io::Result<bool> {
 }
 
 async fn remove_reminder(reminder: &Reminder) -> io::Result<()> {
-    let mut reminders = DATABASE.load(file!(), line!()).await?;
+    let mut reminders = DATABASE.load().await?;
     reminders.retain(|r| r != reminder);
     Ok(())
 }
@@ -82,7 +82,7 @@ pub async fn remind(
     id: UserId,
 ) -> io::Result<()> {
     let reminder = Reminder { message, when, id };
-    let mut reminders = DATABASE.load(file!(), line!()).await?;
+    let mut reminders = DATABASE.load().await?;
     reminders.push(reminder.clone());
     daemons.add_daemon(reminder).await;
     Ok(())
@@ -90,7 +90,7 @@ pub async fn remind(
 
 pub async fn reminders(u: UserId) -> io::Result<impl Iterator<Item = (String, DateTime<Utc>)>> {
     Ok(DATABASE
-        .load(file!(), line!())
+        .load()
         .await?
         .take()
         .into_iter()
@@ -103,7 +103,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
     use serenity::model::channel::Reaction;
 
     let mut i = 0usize;
-    for r in DATABASE.load(file!(), line!()).await?.take() {
+    for r in DATABASE.load().await?.take() {
         daemons.add_daemon(r).await;
         i += 1;
     }
@@ -148,11 +148,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             }
         };
         Ok(change(
-            BLOCKED_USERS
-                .load(file!(), line!())
-                .await?
-                .entry(blocker)
-                .or_default(),
+            BLOCKED_USERS.load().await?.entry(blocker).or_default(),
             blocked,
         ))
     }

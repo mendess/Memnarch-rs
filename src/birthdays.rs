@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Context;
-use chrono::{Datelike, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+use chrono::{Datelike, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc, Local};
 use daemons::{ControlFlow, Daemon};
 use dashmap::DashMap;
 use futures::TryFutureExt;
@@ -62,7 +62,8 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
         BDAY_MAP.insert(gid, Database::with_ser_and_deser(path, ser, deser));
     }
     let dm = d.clone();
-    crate::log_lock_mutex!(d)
+    d.lock()
+        .await
         .add_daemon(BDayChecker::new("bday checker", move |c| {
             check_bday(c.http.clone(), dm.clone())
         }))
@@ -76,7 +77,7 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
         Some(b) => b,
     };
     let tomorrow = BDay::from(Utc::now().date().naive_utc().succ());
-    let mut map = map.load(file!(), line!()).await?;
+    let mut map = map.load().await?;
     let tree = map.take();
     let next = match tree.range(tomorrow..).next() {
         Some((d, v)) => Some((*d, v.clone())),
@@ -90,7 +91,7 @@ pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<(u32, BDayBoy)>
         None => return Ok(Default::default()),
         Some(b) => b,
     };
-    let database = map.load(file!(), line!()).await?.take();
+    let database = map.load().await?.take();
     Ok(database
         .into_iter()
         .fold(Default::default(), |mut acc, (d, users)| {
@@ -106,7 +107,7 @@ pub async fn of(g: GuildId, user_id: UserId) -> anyhow::Result<Option<BDay>> {
         None => return Ok(None),
         Some(b) => b,
     };
-    let database = map.load(file!(), line!()).await?;
+    let database = map.load().await?;
     Ok(database
         .iter()
         .find(|(_, users)| users.iter().any(|u| u.id == user_id))
@@ -121,7 +122,7 @@ pub async fn of_month(
         None => return Ok(None),
         Some(b) => b,
     };
-    let database = map.load(file!(), line!()).await?.take();
+    let database = map.load().await?.take();
     Ok(Some(
         database
             .into_iter()
@@ -141,7 +142,7 @@ pub async fn add_bday(
             .collect::<PathBuf>();
         Database::with_ser_and_deser(path, ser, deser)
     });
-    let mut calendar = calendar.load(file!(), line!()).await?;
+    let mut calendar = calendar.load().await?;
     let bday = BDay::from(when);
     let removed = remove_user(&mut *calendar, who);
     calendar.entry(bday).or_default().push(BDayBoy {
@@ -156,7 +157,7 @@ pub async fn remove_bday(g: GuildId, who: UserId) -> anyhow::Result<Option<Naive
         Some(c) => c,
         None => return Ok(None),
     };
-    let mut calendar = calendar.load(file!(), line!()).await?;
+    let mut calendar = calendar.load().await?;
     Ok(remove_user(&mut *calendar, who))
 }
 
@@ -259,7 +260,7 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                 continue;
             }
         };
-        let guild = match guild.load(file!(), line!()).await {
+        let guild = match guild.load().await {
             Ok(mut g) => g.take(),
             Err(e) => {
                 log::error!("Error fetching guild birthdays: {:?}", e);
@@ -304,7 +305,8 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                                 e,
                             );
                         } else {
-                            crate::log_lock_mutex!(dm)
+                            dm.lock()
+                                .await
                                 .add_daemon(UnBdayBoy {
                                     user: user.id,
                                     guild: *gid,
@@ -360,7 +362,7 @@ impl Daemon<false> for UnBdayBoy {
     }
 
     async fn interval(&self) -> Duration {
-        let now = Utc::now();
+        let now = Local::now();
         let mid_night =
             NaiveDateTime::new(now.date().succ().naive_utc(), NaiveTime::from_hms(0, 0, 0));
         (mid_night - now.naive_utc()).to_std().unwrap_or_default()

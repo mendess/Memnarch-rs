@@ -85,7 +85,7 @@ async fn quote(ctx: &Context, msg: &Message) -> CommandResult {
     msg.channel_id
         .say(
             &ctx,
-            crate::log_lock_mutex!(quotes).choose().unwrap_or("No quotes found!"),
+            quotes.lock().await.choose().unwrap_or("No quotes found!"),
         )
         .await?;
     Ok(())
@@ -98,13 +98,13 @@ async fn quote(ctx: &Context, msg: &Message) -> CommandResult {
 async fn add(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let quotes = fetch_quotes(ctx).await;
     let quote = args.rest();
-    crate::log_lock_mutex!(quotes).add(quote.to_owned()).await?;
+    quotes.lock().await.add(quote.to_owned()).await?;
     msg.channel_id.say(ctx, "Quote added").await?;
     Ok(())
 }
 
 async fn fetch_quotes(ctx: &Context) -> Arc<Mutex<QuoteManager>> {
-    let mut share_map = crate::log_lock_write!(ctx.data);
+    let mut share_map = ctx.data.write().await;
     match share_map.get::<QuoteManager>() {
         Some(quotes) => Arc::clone(quotes),
         None => {

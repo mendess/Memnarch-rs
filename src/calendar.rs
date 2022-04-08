@@ -77,10 +77,7 @@ pub async fn new(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<()> 
     {
         messages[i] = send_message(ctx_ref, channel, d).await?;
     }
-    DATABASE
-        .load(file!(), line!())
-        .await?
-        .push(Calendar { channel, messages });
+    DATABASE.load().await?.push(Calendar { channel, messages });
     Ok(())
 }
 
@@ -111,7 +108,7 @@ async fn send_message(
 }
 
 pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<()> {
-    let mut calendars = DATABASE.load(file!(), line!()).await?;
+    let mut calendars = DATABASE.load().await?;
     if let Some(i) = calendars.iter().position(|c| c.channel == channel) {
         let cal = &calendars[i];
         if channel
@@ -133,7 +130,7 @@ pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<(
 }
 
 async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
-    let mut cals = DATABASE.load(file!(), line!()).await?;
+    let mut cals = DATABASE.load().await?;
     let today = Utc::today();
     for Calendar { channel, messages } in cals.iter_mut() {
         log::debug!("Ticking calendar in channel {}", channel);
@@ -207,7 +204,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
                 None => return Ok(()),
             };
             if DATABASE
-                .load(file!(), line!())
+                .load()
                 .await?
                 .iter()
                 .all(|c| c.messages.iter().all(|m| *m != message.id))

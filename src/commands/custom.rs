@@ -61,7 +61,7 @@ async fn remove(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
 #[command]
 async fn list(ctx: &Context, msg: &Message) -> CommandResult {
-    let share_map = crate::log_lock_read!(ctx.data);
+    let share_map = ctx.data.read().await;
     let mut cc = get!(> share_map, CustomCommands, write);
     let cmds = cc.list(msg.guild_id.ok_or("guild_id is missing")?)?;
     msg.channel_id

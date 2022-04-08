@@ -126,7 +126,7 @@ pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
         .expect("Songbird not initialized")
         .get(msg.guild_id.unwrap())
     {
-        crate::log_lock_mutex!(call).stop();
+        call.lock().await.stop();
         Ok(())
     } else {
         Err("Not in a voice channel".into())
@@ -186,11 +186,13 @@ where
 
     let call_lock = util::join_or_get_call(ctx, guild_id, msg.author.id).await?;
     let audio = audio_source().await?;
-    crate::log_lock_mutex!(call_lock).play_source(audio);
+    call_lock.lock().await.play_source(audio);
 
-    let data = crate::log_lock_read!(ctx.data);
+    let data = ctx.data.read().await;
     let dm = get!(> data, DaemonManager);
-    let id = crate::log_lock_mutex!(dm)
+    let id = dm
+        .lock()
+        .await
         .add_daemon(LeaveVoice {
             when: Utc::now()
                 .checked_add_signed(Duration::minutes(30))
@@ -200,7 +202,7 @@ where
         })
         .await;
 
-    let mut dm = crate::log_lock_mutex!(dm);
+    let mut dm = dm.lock().await;
     get!(> data, util::LeaveVoiceDaemons, lock)
         .set(&mut *dm, guild_id, id)
         .await;

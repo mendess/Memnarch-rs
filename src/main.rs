@@ -228,7 +228,7 @@ async fn main() -> anyhow::Result<()> {
     try_init!(daemon_manager, birthdays);
     try_init!(daemon_manager, curse_of_indicision);
     {
-        let mut data = log_lock_write!(client.data);
+        let mut data = client.data.write().await;
         if let Some(id) = std::env::args()
             .skip_while(|x| x != "-r")
             .nth(1)
@@ -253,7 +253,7 @@ async fn main() -> anyhow::Result<()> {
                 "Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot",
                 ready.user.id
             );
-            if let Some(id) = log_lock_write!(ctx.data).remove::<UpdateNotify>() {
+            if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>() {
                 if let Err(e) = id
                     .send_message(&ctx, |m| m.content("Updated successfully!"))
                     .await
@@ -344,15 +344,15 @@ async fn on_dispatch_error(ctx: &Context, msg: &Message, e: DispatchError) {
 #[macro_export]
 macro_rules! get {
     ($ctx:ident, $t:ty) => {
-        $crate::log_lock_read!($ctx.data)
-            .get::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
+        $ctx.data.read().await.get::<$t>().expect(::std::concat!(
+            ::std::stringify!($t),
+            " was not initialized"
+        ))
     };
     (mut $ctx:ident, $t:ty) => {
-        $crate::log_lock_write!($ctx.data)
+        $ctx.data
+            .write()
+            .await
             .expect("lock took too long")
             .get_mut::<$t>()
             .expect(::std::concat!(
@@ -361,7 +361,9 @@ macro_rules! get {
             ))
     };
     ($ctx:ident, $t:ty, $lock:ident) => {
-        $crate::log_lock_read!($ctx.data)
+        $ctx.data
+            .read()
+            .await
             .get::<$t>()
             .expect(::std::concat!(
                 ::std::stringify!($t),
@@ -371,7 +373,9 @@ macro_rules! get {
             .await
     };
     (mut $ctx:ident, $t:ty, $lock:ident) => {
-        $crate::log_lock_write!($ctx.data)
+        $ctx.data
+            .write()
+            .await
             .get_mut::<$t>()
             .expect(::std::concat!(
                 ::std::stringify!($t),
