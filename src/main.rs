@@ -24,6 +24,7 @@ use crate::health_monitor::HealthMonitor;
 use self::daemons::DaemonManager;
 use ::daemons::ControlFlow;
 use anyhow::Context as _;
+use bot_api as api;
 use commands::{
     command_groups::*,
     custom::CustomCommands,
@@ -55,7 +56,9 @@ use std::{
     io::{self, Read, Write},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
+use tokio::time::timeout;
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -265,10 +268,16 @@ async fn main() -> anyhow::Result<()> {
         }
         .boxed()
     });
-
-    if let Err(why) = client.start().await {
-        log::error!("Sad face :(  {:?}", why);
+    let task = tokio::spawn(api::start(client.cache_and_http.clone()));
+    tokio::select! {
+        r = client.start() => if let Err(why) = r {
+            log::error!("Sad face :(  {:?}", why);
+        },
+        _ = tokio::signal::ctrl_c() => {}
     }
+    task.abort();
+    log::info!("waiting for server to shutdown");
+    let _ = timeout(Duration::from_secs(10), task);
     Ok(())
 }
 

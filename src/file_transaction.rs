@@ -12,10 +12,14 @@ use tokio::{
     sync::{Mutex, MutexGuard},
 };
 
+type Serializer<T, E> = Box<dyn Fn(&mut dyn Write, &T) -> Result<(), E> + Sync + Send>;
+
+type Deserializer<T, E> = Box<dyn Fn(&[u8]) -> Result<T, E> + Sync + Send>;
+
 pub struct Database<T, E = io::Error> {
     filename: Mutex<PathBuf>,
-    serializer: Box<dyn Fn(&mut dyn Write, &T) -> Result<(), E> + Sync + Send>,
-    deserializer: Box<dyn Fn(&[u8]) -> Result<T, E> + Sync + Send>,
+    serializer: Serializer<T, E>,
+    deserializer: Deserializer<T, E>,
 }
 
 impl<T: DeserializeOwned + Serialize> Database<T, io::Error> {

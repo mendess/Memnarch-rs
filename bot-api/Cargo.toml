@@ -1,0 +1,16 @@
+[package]
+name = "bot-api"
+version = "0.1.0"
+authors = ["mendess <pedro.mendes.26@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+serde = "1"
+serde_json ="1"
+serenity = { version = "0.10", features = ["collector"] }
+reqwest = "0.11"
+
+[dependencies.actix-web]
+version = "4.1.0"
+features = ["rustls", "compress-brotli", "compress-gzip", "compress-zstd"]
+default-features = false

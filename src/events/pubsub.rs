@@ -35,7 +35,7 @@ where
         type_name::<F>()
     );
     let callback: Box<Callback> = Box::new(move |ctx: &Context, any: &Argument| {
-        f(&*ctx, any.downcast_ref::<T::Argument>().unwrap())
+        f(ctx, any.downcast_ref::<T::Argument>().unwrap())
     });
     INSTANCE
         .entry(TypeId::of::<T>())
@@ -67,9 +67,9 @@ pub mod events {
     use super::Event;
     use serenity::model::{
         channel::Reaction,
+        guild::Guild,
         id::{ChannelId, GuildId, MessageId},
         voice::VoiceState,
-        guild::Guild,
     };
     macro_rules! events {
         ($($event:ident => $arg:ty),* $(,)?) => {

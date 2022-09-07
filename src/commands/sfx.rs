@@ -164,7 +164,7 @@ async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         log::info!("Playing sfx: {:?}", file);
         match songbird::ffmpeg(&file).await {
             Ok(source) => Ok(source),
-            Err(e) => return Err(format!("Failed getting audio source: {:?}", e).into()),
+            Err(e) => Err(format!("Failed getting audio source: {:?}", e).into()),
         }
     })
     .await?;
@@ -348,7 +348,7 @@ async fn find_file(search_string: &Args) -> io::Result<PathBuf> {
             },
         );
     let search_string = search_string.rest();
-    match search.search(search_string).get(0) {
+    match search.search(search_string).first() {
         Some(&i) => Ok(vec[i].path()),
         None => Err(Error::new(
             NotFound,

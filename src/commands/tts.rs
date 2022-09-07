@@ -32,7 +32,7 @@ pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
         match songbird::ytdl(&tts_link).await {
             Ok(source) => Ok(source),
-            Err(e) => return Err(format!("Failed getting audio source: {:?}", e).into()),
+            Err(e) => Err(format!("Failed getting audio source: {:?}", e).into()),
         }
     })
     .await
