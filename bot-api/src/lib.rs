@@ -1,30 +1,13 @@
+pub mod request_types;
+
 use std::{fmt, sync::Arc};
 
 use actix_web::{
     web::{self, Data},
     App, HttpResponse, HttpServer, Responder, ResponseError,
 };
-use serde::{Deserialize, Serialize};
+use request_types::{Dm, MessageBody};
 use serenity::{model::id::UserId, CacheAndHttp};
-
-#[derive(Serialize, Deserialize)]
-struct Dm {
-    user_id: UserId,
-    body: MessageBody,
-}
-
-#[derive(Serialize, Deserialize)]
-enum MessageBody {
-    Text(String),
-    Embed {
-        title: String,
-        fields: Vec<(String, String)>,
-        #[serde(default)]
-        img: Option<String>,
-        #[serde(default)]
-        url: Option<String>,
-    },
-}
 
 #[derive(Debug)]
 enum Error {
@@ -57,7 +40,7 @@ async fn send_dm(
     cache_http: Data<CacheAndHttp>,
     req: web::Json<Dm>,
 ) -> Result<impl Responder, Error> {
-    req.user_id
+    UserId(req.user_id)
         .create_dm_channel(&*cache_http)
         .await?
         .send_message(&cache_http.http, |dm| match &req.body {
@@ -88,7 +71,7 @@ pub async fn start(c: Arc<CacheAndHttp>) -> std::io::Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&Dm {
-            user_id: 123.into(),
+            user_id: 123,
             body: MessageBody::Text("aaaaaaa".into())
         })
         .unwrap()
@@ -96,7 +79,7 @@ pub async fn start(c: Arc<CacheAndHttp>) -> std::io::Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&Dm {
-            user_id: 123.into(),
+            user_id: 123,
             body: MessageBody::Embed {
                 title: "title".into(),
                 fields: vec![("t".into(), "c".into())],
