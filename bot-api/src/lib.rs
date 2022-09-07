@@ -50,12 +50,16 @@ async fn send_dm(
                 fields,
                 img,
                 url,
+                thumbnail,
             } => dm.embed(|e| {
                 if let Some(img) = img {
                     e.image(img);
                 }
                 if let Some(url) = url {
                     e.url(url);
+                }
+                if let Some(thumbnail) = thumbnail {
+                    e.thumbnail(thumbnail);
                 }
                 e.title(title)
                     .fields(fields.iter().map(|(t, c)| (t, c, true)))
@@ -68,27 +72,6 @@ async fn send_dm(
 
 pub async fn start(c: Arc<CacheAndHttp>) -> std::io::Result<()> {
     let cache_http = Data::from(c);
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&Dm {
-            user_id: 123,
-            body: MessageBody::Text("aaaaaaa".into())
-        })
-        .unwrap()
-    );
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&Dm {
-            user_id: 123,
-            body: MessageBody::Embed {
-                title: "title".into(),
-                fields: vec![("t".into(), "c".into())],
-                img: Some("url".into()),
-                url: Some("url".into()),
-            }
-        })
-        .unwrap()
-    );
     let server = HttpServer::new(move || {
         App::new()
             .app_data(cache_http.clone())

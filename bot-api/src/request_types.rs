@@ -15,6 +15,8 @@ pub enum MessageBody {
         #[serde(default)]
         img: Option<String>,
         #[serde(default)]
+        thumbnail: Option<String>,
+        #[serde(default)]
         url: Option<String>,
     },
 }
