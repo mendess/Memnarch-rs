@@ -277,7 +277,10 @@ async fn main() -> anyhow::Result<()> {
     }
     task.abort();
     log::info!("waiting for server to shutdown");
-    let _ = timeout(Duration::from_secs(10), task);
+    if timeout(Duration::from_secs(10), task).await.is_err() {
+        log::error!("Server didn't shutdown, forcing it");
+        std::process::exit(1);
+    }
     Ok(())
 }
 
