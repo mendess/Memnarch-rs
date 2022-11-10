@@ -44,6 +44,6 @@ proptest = "0.9"
 codegen-units = 1
 
 [workspace]
-members = ["py-eval", "bot-api"]
+members = ["py-eval", "bot-api", "bot-api-types"]
 
 [features]

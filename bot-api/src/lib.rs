@@ -1,4 +1,4 @@
-pub mod request_types;
+pub use bot_api_types as request_types;
 
 use std::{fmt, sync::Arc};
 
