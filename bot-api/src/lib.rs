@@ -38,20 +38,20 @@ impl ResponseError for Error {
 
 async fn send_dm(
     cache_http: Data<CacheAndHttp>,
-    req: web::Json<Dm>,
+    mut req: web::Json<Dm>,
 ) -> Result<impl Responder, Error> {
     UserId(req.user_id)
         .create_dm_channel(&*cache_http)
         .await?
-        .send_message(&cache_http.http, |dm| match &req.body {
+        .send_message(&cache_http.http, |dm| match &mut req.body {
             MessageBody::Text(content) => dm.content(content),
-            MessageBody::Embed {
+            MessageBody::Embed(bot_api_types::Embed {
                 title,
                 fields,
                 img,
                 url,
                 thumbnail,
-            } => dm.embed(|e| {
+            }) => dm.embed(|e| {
                 if let Some(img) = img {
                     e.image(img);
                 }
@@ -61,8 +61,7 @@ async fn send_dm(
                 if let Some(thumbnail) = thumbnail {
                     e.thumbnail(thumbnail);
                 }
-                e.title(title)
-                    .fields(fields.iter().map(|(t, c)| (t, c, true)))
+                e.title(title).fields(fields.drain(..))
             }),
         })
         .await?;
