@@ -25,6 +25,7 @@ num-traits = "0.2.14"
 bot-api = { path = "./bot-api" }
 daemons = { git = "https://github.com/mendess/daemons" }
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
+mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 serenity.workspace = true
 futures.workspace = true
 serde.workspace = true

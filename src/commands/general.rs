@@ -25,7 +25,7 @@ use serenity::{
 use std::iter::from_fn;
 
 #[group]
-#[commands(ping, who_are_you, vote, remindme, remind, version, reminders)]
+#[commands(ping, who_are_you, vote, remindme, remind, version, reminders, toggle_spoilers)]
 struct General;
 
 #[command]
@@ -600,5 +600,13 @@ async fn set_quiz(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 async fn unset_quiz(ctx: &Context, msg: &Message) -> CommandResult {
     crate::quiz::remove_quiz_guild(ctx, msg.guild_id.ok_or("not in a guild")?).await?;
     msg.channel_id.say(ctx, "done").await?;
+    Ok(())
+}
+
+#[command("toggle-spoilers")]
+#[required_permissions(ADMINISTRATOR)]
+async fn toggle_spoilers(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let action = crate::mtg_spoilers::toggle_channel(args.single()?).await?;
+    msg.channel_id.say(ctx, format!("{action:?}")).await?;
     Ok(())
 }
