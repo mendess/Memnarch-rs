@@ -1685,7 +1685,7 @@ dependencies = [
 [[package]]
 name = "mtg-spoilers"
 version = "0.1.0"
-source = "git+https://github.com/mendess/mtg-spoilers#82e073a9a7292a728136d6eda3eab2aaa77908d4"
+source = "git+https://github.com/mendess/mtg-spoilers#962541db44c976b4078ca99dd1deb2171714aed7"
 dependencies = [
  "async-trait",
  "futures",
