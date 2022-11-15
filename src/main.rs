@@ -157,6 +157,7 @@ macro_rules! try_init {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    console_subscriber::init();
     println!(
         "
 ========================================

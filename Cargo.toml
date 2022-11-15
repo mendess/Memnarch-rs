@@ -33,10 +33,11 @@ serde_json.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
+console-subscriber = "0.1.8"
 
 [workspace.dependencies.tokio]
 version = "1"
-features = ["rt", "rt-multi-thread", "io-util", "macros", "sync"]
+features = ["rt", "rt-multi-thread", "io-util", "macros", "sync", "tracing"]
 
 [dev-dependencies]
 paste = "*"
