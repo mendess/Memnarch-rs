@@ -204,7 +204,7 @@ where
 
     let mut dm = dm.lock().await;
     get!(> data, util::LeaveVoiceDaemons, lock)
-        .set(&mut *dm, guild_id, id)
+        .set(&mut dm, guild_id, id)
         .await;
 
     Ok(())

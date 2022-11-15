@@ -17,7 +17,7 @@ pub async fn bot_id(http: impl AsRef<Http>) -> Option<UserId> {
             {
                 Some(uid) => {
                     BOT_ID.store(uid.0, Ordering::Relaxed);
-                    Some(uid)
+                    Some(UserId(uid.0))
                 }
                 None => None,
             }

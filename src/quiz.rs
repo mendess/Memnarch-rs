@@ -14,9 +14,9 @@ use serenity::{
     model::{
         channel::{Reaction, ReactionType},
         id::{ChannelId, GuildId, RoleId, UserId},
-        misc::Mentionable,
         Permissions,
     },
+    prelude::Mentionable,
 };
 use std::collections::HashMap;
 use tokio::io;
@@ -100,15 +100,15 @@ async fn add_quiz_daemon(quizers: Quizers, daemon: &mut DaemonManager) {
         .add_daemon(QuizDaemon::new(
             format!("quiz for channel {}", quizers.guild),
             move |data| {
-                let data = data.clone();
                 let msg = format!(
                     "Quiz bros: {}.\nReact with ✅ to become a quizer. React with ❌ to unbecome a quizer.",
                     quizers.role.mention()
                 );
                 let channel = quizers.channel;
                 let guild = quizers.guild;
+                let http = data.http.clone();
                 async move {
-                    if let Err(e) = channel.send_message(data.http(), |m| m.content(msg)).await
+                    if let Err(e) = channel.send_message(&http, |m| m.content(msg)).await
                     {
                         log::error!(
                             "Couldn't send quiz alert to channel {} in guild {}: {}",

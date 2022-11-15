@@ -9,12 +9,12 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serenity::{
-    http::CacheHttp,
+    http::{CacheHttp, Http},
     model::{
         channel::ReactionType,
         id::{ChannelId, MessageId},
-        misc::Mentionable,
     },
+    prelude::Mentionable,
 };
 use std::iter::successors;
 
@@ -59,8 +59,7 @@ pub async fn new(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<()> 
     let bot_id = ctx
         .cache()
         .expect("Should be using cache feature")
-        .current_user_id()
-        .await;
+        .current_user_id();
     let ctx_ref = &ctx;
     channel
         .messages_iter(ctx.http())
@@ -71,23 +70,19 @@ pub async fn new(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<()> 
         })
         .await;
     let mut messages = [MessageId(0); 7];
-    for (i, d) in successors(Some(Utc::today().naive_utc()), |d| d.succ_opt())
+    for (i, d) in successors(Some(Utc::now().date_naive()), |d| d.succ_opt())
         .take(7)
         .enumerate()
     {
-        messages[i] = send_message(ctx_ref, channel, d).await?;
+        messages[i] = send_message(ctx_ref.http(), channel, d).await?;
     }
     DATABASE.load().await?.push(Calendar { channel, messages });
     Ok(())
 }
 
-async fn send_message(
-    ctx: impl CacheHttp,
-    channel: ChannelId,
-    d: NaiveDate,
-) -> anyhow::Result<MessageId> {
+async fn send_message(ctx: &Http, channel: ChannelId, d: NaiveDate) -> anyhow::Result<MessageId> {
     let message = channel
-        .send_message(ctx.http(), |m| {
+        .send_message(ctx, |m| {
             m.embed(|e| {
                 e.title(format!(
                     "{}/{} ({})",
@@ -129,9 +124,9 @@ pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<(
     }
 }
 
-async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
+async fn tick(ctx: &Http) -> anyhow::Result<()> {
     let mut cals = DATABASE.load().await?;
-    let today = Utc::today();
+    let today = Utc::now().date_naive();
     for Calendar { channel, messages } in cals.iter_mut() {
         log::debug!("Ticking calendar in channel {}", channel);
         loop {
@@ -148,12 +143,12 @@ async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
                     x.parse::<u32>().context("failed to parse number in title")
                 })
             };
-            let old_date = NaiveDate::from_ymd(today.year(), month?, day?);
-            if old_date >= today.naive_utc() {
+            let old_date = NaiveDate::from_ymd_opt(today.year(), month?, day?).unwrap();
+            if old_date >= today {
                 break;
             }
             let date = old_date + chrono::Duration::days(7);
-            *messages.first_mut().unwrap() = send_message(&ctx, *channel, date)
+            *messages.first_mut().unwrap() = send_message(ctx, *channel, date)
                 .await
                 .context("sending a new message")?;
             channel
@@ -265,7 +260,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
     });
     pubsub::register::<CacheReady, _>(|c, _| {
         async move {
-            if let Err(e) = tick(c).await {
+            if let Err(e) = tick(c.http()).await {
                 log::error!("Failed to tick calenders after ready: {}", e);
             }
             ControlFlow::BREAK
@@ -275,9 +270,9 @@ pub async fn initialize(dm: &mut DaemonManager) {
     dm.add_daemon(CalendarDaemon::new(
         String::from("calendar daemon"),
         |data| {
-            let data = data.clone();
-            async {
-                if let Err(e) = tick(data).await {
+            let data = data.http.clone();
+            async move {
+                if let Err(e) = tick(&data).await {
                     log::error!("Failed to tick a calendar forward: {:?}", e);
                 }
                 ControlFlow::CONTINUE

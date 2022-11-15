@@ -22,13 +22,12 @@ impl EventHandler for Handler {
     async fn voice_state_update(
         &self,
         ctx: Context,
-        guild_id: Option<GuildId>,
         old: Option<VoiceState>,
         new: VoiceState,
     ) {
         // Disconnect channel of mirrodin
         if let (Some(gid @ GuildId(352399774818762759)), Some(id @ ChannelId(707561909846802462))) =
-            (guild_id, new.channel_id)
+            (new.guild_id, new.channel_id)
         {
             async fn f(id: ChannelId, gid: GuildId, ctx: &Context) -> anyhow::Result<()> {
                 let c = id.to_channel(ctx).await.and_then(|c| {
@@ -54,7 +53,7 @@ impl EventHandler for Handler {
                 log::error!("Failed to disconnect user: {}", e);
             }
         }
-        pubsub::emit::<events::VoiceStateUpdate>(ctx, (guild_id, old, new)).await;
+        pubsub::emit::<events::VoiceStateUpdate>(ctx, (new.guild_id, old, new)).await;
     }
 
     async fn reaction_add(&self, ctx: Context, add_reaction: Reaction) {

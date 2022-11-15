@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::Context;
-use chrono::{Datelike, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc, Local};
+use chrono::{Datelike, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use dashmap::DashMap;
 use futures::TryFutureExt;
@@ -76,7 +76,12 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
         None => return Ok(None),
         Some(b) => b,
     };
-    let tomorrow = BDay::from(Utc::now().date().naive_utc().succ());
+    let tomorrow = BDay::from(
+        Utc::now()
+            .date_naive()
+            .succ_opt()
+            .expect("not reach the end of time"),
+    );
     let mut map = map.load().await?;
     let tree = map.take();
     let next = match tree.range(tomorrow..).next() {
@@ -144,7 +149,7 @@ pub async fn add_bday(
     });
     let mut calendar = calendar.load().await?;
     let bday = BDay::from(when);
-    let removed = remove_user(&mut *calendar, who);
+    let removed = remove_user(&mut calendar, who);
     calendar.entry(bday).or_default().push(BDayBoy {
         id: who,
         year: when.year(),
@@ -158,7 +163,7 @@ pub async fn remove_bday(g: GuildId, who: UserId) -> anyhow::Result<Option<Naive
         None => return Ok(None),
     };
     let mut calendar = calendar.load().await?;
-    Ok(remove_user(&mut *calendar, who))
+    Ok(remove_user(&mut calendar, who))
 }
 
 fn remove_user(tree: &mut BTreeMap<BDay, Vec<BDayBoy>>, user: UserId) -> Option<NaiveDate> {
@@ -167,7 +172,10 @@ fn remove_user(tree: &mut BTreeMap<BDay, Vec<BDayBoy>>, user: UserId) -> Option<
         |date, users| match users.iter().position(|u| u.id == user) {
             Some(index) => {
                 let user = users.swap_remove(index);
-                when = Some(NaiveDate::from_ymd(user.year, date.month, date.day));
+                when = Some(
+                    NaiveDate::from_ymd_opt(user.year, date.month, date.day)
+                        .expect("formed from valid dates"),
+                );
                 !users.is_empty()
             }
             None => true,
@@ -363,8 +371,12 @@ impl Daemon<false> for UnBdayBoy {
 
     async fn interval(&self) -> Duration {
         let now = Local::now();
-        let mid_night =
-            NaiveDateTime::new(now.date().succ().naive_utc(), NaiveTime::from_hms(0, 0, 0));
+        let mid_night = NaiveDateTime::new(
+            now.date_naive()
+                .succ_opt()
+                .expect("not to reach the end of time"),
+            NaiveTime::from_hms_opt(0, 0, 0).expect("midnight exists"),
+        );
         (mid_night - now.naive_utc()).to_std().unwrap_or_default()
     }
 }

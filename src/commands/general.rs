@@ -176,7 +176,7 @@ async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let when = calculate_when(ctx, msg, when).await?;
     let data = ctx.data.read().await;
     let mut dm = get!(> data, DaemonManager, lock);
-    reminders::remind(&mut *dm, text.into(), when, msg.author.id).await?;
+    reminders::remind(&mut dm, text.into(), when, msg.author.id).await?;
     msg.channel_id.say(&ctx, "You shall be reminded!").await?;
     Ok(())
 }
@@ -201,7 +201,7 @@ async fn remind(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             continue;
         }
         reminders::remind(
-            &mut *dm,
+            &mut dm,
             format!(
                 r"{} asked me to remind you:
 \~\~\~\~
@@ -232,26 +232,24 @@ async fn calculate_when(
     msg: &Message,
     when: TimeSpec,
 ) -> anyhow::Result<DateTime<Utc>> {
-    let now = msg.timestamp;
+    let now = msg.timestamp.with_timezone(&Utc);
     let when = match when {
         TimeSpec::Duration(dur) => now + dur,
         TimeSpec::Date((date, time)) => {
-            let date = NaiveDate::from_ymd(
+            let date = NaiveDate::from_ymd_opt(
                 date.year.unwrap_or_else(|| now.year()),
                 date.month.unwrap_or_else(|| now.month()),
                 date.day,
-            );
+            )
+            .expect("date is valid because it was formed from valid a date");
             let date = NaiveDateTime::new(date, time);
             let offset = get_user_timezone(ctx, msg).await?;
             DateTime::from_utc(date - Duration::hours(offset), Utc)
         }
         TimeSpec::Time(time) => {
             let offset = get_user_timezone(ctx, msg).await?;
-            let when = now
-                .date()
-                .and_time(time)
-                .ok_or_else(|| anyhow::anyhow!("Invalid time"))?
-                - Duration::hours(offset);
+            let when =
+                DateTime::from_utc(now.date_naive().and_time(time), Utc) - Duration::hours(offset);
             if when < now {
                 when + Duration::days(1)
             } else {
@@ -280,7 +278,7 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
     let answer = {
         let answer = &msg
             .author
-            .await_reply(&ctx)
+            .await_reply(ctx)
             .await
             .ok_or_else(|| anyhow::anyhow!("no reply given"))?
             .content;
@@ -433,7 +431,8 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                 .send_message(ctx, |m| {
                     m.embed(|e| {
                         let now = Utc::now().naive_utc().date();
-                        let mut bday = NaiveDate::from_ymd(now.year(), date.month, date.day);
+                        let mut bday = NaiveDate::from_ymd_opt(now.year(), date.month, date.day)
+                            .expect("formed from valid dates");
                         if bday < now {
                             bday = bday.with_year(now.year() + 1).unwrap();
                         }

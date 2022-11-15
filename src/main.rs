@@ -34,7 +34,6 @@ use commands::{
 use consts::FILES_DIR;
 use serde::{Deserialize, Serialize};
 use serenity::{
-    client::bridge::gateway::GatewayIntents,
     framework::standard::{
         help_commands,
         macros::{help, hook},
@@ -168,28 +167,39 @@ async fn main() -> anyhow::Result<()> {
     );
     config_logger();
     let config = Config::new().context("loading config")?;
-    let http = Http::new_with_token(&config.token);
+    let http = Http::new(&config.token);
     let (owners, bot_id) = match http.get_current_application_info().await {
         Ok(info) => {
             let mut owners = HashSet::new();
-            owners.insert(info.owner.id);
-            (owners, Some(info.id))
+            if let Some(team) = info.team {
+                owners.insert(team.owner_user_id);
+            } else {
+                owners.insert(info.owner.id);
+            }
+            match http.get_current_user().await {
+                Ok(bot_id) => (owners, bot_id.id),
+                Err(why) => {
+                    log::error!("Could not access current user: {why}");
+                    (owners, UserId(352881326044741644))
+                }
+            }
         }
         Err(why) => {
-            log::error!("Could not access application info: {}", why);
+            log::error!("Could not access application info: {why}");
             (
                 [UserId(98500250540478464)].into_iter().collect(),
-                Some(UserId(352881326044741644)),
+                UserId(352881326044741644),
             )
         }
     };
-    let mut client = Client::builder(&config.token)
+
+    let mut client = Client::builder(&config.token, GatewayIntents::all())
         .framework(
             StandardFramework::new()
                 .configure(|c| {
                     c.prefix("|")
                         .no_dm_prefix(true)
-                        .on_mention(bot_id)
+                        .on_mention(Some(bot_id))
                         .owners(owners)
                 })
                 .normal_message(normal_message)
@@ -209,7 +219,6 @@ async fn main() -> anyhow::Result<()> {
                 .group(&PY_GROUP)
                 .help(&MY_HELP),
         )
-        .intents(GatewayIntents::all())
         .register_songbird()
         .type_map_insert::<CustomCommands>(Arc::new(RwLock::new(CustomCommands::default())))
         .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
@@ -308,7 +317,7 @@ async fn my_help(
 
 #[hook]
 async fn normal_message(ctx: &Context, msg: &Message) {
-    if ctx.cache.current_user_id().await == msg.author.id {
+    if ctx.cache.current_user_id() == msg.author.id {
         return;
     }
     if !msg.content.starts_with('|') {
@@ -346,9 +355,9 @@ async fn after(ctx: &Context, msg: &Message, cmd_name: &str, error: Result<(), C
 }
 
 #[hook]
-async fn on_dispatch_error(ctx: &Context, msg: &Message, e: DispatchError) {
+async fn on_dispatch_error(ctx: &Context, msg: &Message, e: DispatchError, command_name: &str) {
     msg.channel_id
-        .say(ctx, format!("{:?}", e))
+        .say(ctx, format!("failed to dispatch {command_name}. {:?}", e))
         .await
         .expect("Couldn't communicate dispatch error");
 }

@@ -8,7 +8,8 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::Context,
-    model::{channel::Channel, id::UserId, misc::Mentionable},
+    model::{channel::Channel, id::UserId},
+    prelude::Mentionable,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -127,15 +128,15 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             return Ok(None);
         }
         let blocker = match m.channel(ctx).await {
-            Some(Channel::Private(ch)) => ch.recipient.id,
-            None => match ctx.http.get_channel(m.channel_id.0).await? {
+            Ok(Channel::Private(ch)) => ch.recipient.id,
+            Err(_) => match ctx.http.get_channel(m.channel_id.0).await? {
                 Channel::Private(ch) => ch.recipient.id,
                 ch => {
                     log::trace!("Not a private channel {:?}", ch);
                     return Ok(None);
                 }
             },
-            Some(ch) => {
+            Ok(ch) => {
                 log::trace!("Not a private channel {:?}", ch);
                 return Ok(None);
             }
@@ -155,7 +156,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
     pubsub::register::<ReactionAdd, _>(|ctx, arg| {
         async move {
             match intervenients(ctx, arg, |set, blocked| {
-                set.insert(blocked).then(|| blocked)
+                set.insert(blocked).then_some(blocked)
             })
             .await
             {
@@ -180,7 +181,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
     pubsub::register::<ReactionRemove, _>(|ctx, arg| {
         async move {
             match intervenients(ctx, arg, |set, blocked| {
-                set.remove(&blocked).then(|| blocked)
+                set.remove(&blocked).then_some(blocked)
             })
             .await
             {

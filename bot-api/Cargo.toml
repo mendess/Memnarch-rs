@@ -5,8 +5,8 @@ authors = ["mendess <pedro.mendes.26@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-serenity = { version = "0.10", features = ["collector"] }
-reqwest = "0.11"
+serenity.workspace = true
+reqwest.workspace = true
 bot-api-types = { path = "../bot-api-types" }
 
 [dependencies.actix-web]

@@ -24,7 +24,7 @@ pub async fn join_or_get_call(
     let call = match sb.get(gid) {
         Some(call) => call,
         None => {
-            let guild = ctx.cache.guild(gid).await.ok_or("Invalid guild")?;
+            let guild = ctx.cache.guild(gid).ok_or("Invalid guild")?;
             let voice_channel = guild
                 .voice_states
                 .get(&author)
@@ -102,7 +102,7 @@ fn init_voice_leave() {
                                 let data = ctx.data.read().await;
                                 let mut dm = crate::get!(> data, DaemonManager, lock);
                                 crate::get!(> data, LeaveVoiceDaemons, lock)
-                                    .remove(&mut *dm, guild_id)
+                                    .remove(&mut dm, guild_id)
                                     .await;
                             }
                         };

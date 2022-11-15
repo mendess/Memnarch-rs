@@ -34,9 +34,16 @@ where
 
     async fn interval(&self) -> std::time::Duration {
         let now = Utc::now().naive_utc();
-        let mut target = NaiveDateTime::new(now.date(), NaiveTime::from_hms(H, M, S));
+        let h_m_s = NaiveTime::from_hms_opt(H, M, S).expect("valid h m s");
+        let mut target = NaiveDateTime::new(now.date(), h_m_s);
         if now > target {
-            target = NaiveDateTime::new(target.date().succ(), NaiveTime::from_hms(H, M, S));
+            target = NaiveDateTime::new(
+                target
+                    .date()
+                    .succ_opt()
+                    .expect("not to reach the end of time"),
+                target.time(),
+            );
         }
         let dur = (target - now).to_std().unwrap_or_default();
         log::trace!(

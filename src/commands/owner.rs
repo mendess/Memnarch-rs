@@ -36,7 +36,7 @@ async fn cargo_restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResu
     msg.channel_id.say(ctx, "Rebooting...").await?;
     std::env::set_var("RUST_BACKTRACE", "1");
     let error = StdFork::new("cargo")
-        .args(&["run", "--release", "--", "-r", &msg.channel_id.to_string()])
+        .args(["run", "--release", "--", "-r", &msg.channel_id.to_string()])
         .exec();
     std::env::remove_var("RUST_BACKTRACE");
     Err(error.into())
@@ -49,7 +49,7 @@ async fn restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     msg.channel_id.say(ctx, "Rebooting...").await?;
     std::env::set_var("RUST_BACKTRACE", "1");
     let error = StdFork::new("bash")
-        .args(&[
+        .args([
             "-c",
             &format!("exec ./{} -r {}", EXE_NAME, &msg.channel_id.to_string()),
         ])
@@ -79,7 +79,7 @@ async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
 
     let message = msg.channel_id.say(&ctx, "Checking remote...").await?;
     let status = Fork::new("git")
-        .args(&["rev-list", "--count", "master...master@{upstream}"])
+        .args(["rev-list", "--count", "master...master@{upstream}"])
         .output()
         .await?;
     check_msg(message, ctx).await?;
@@ -111,7 +111,7 @@ async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
 
     let message = msg.channel_id.say(&ctx, "Compiling...").await?;
     let out = &Fork::new("cargo")
-        .args(&["build", "--release", "-j", "1"])
+        .args(["build", "--release", "-j", "1"])
         .output()
         .await?;
     if !out.status.success() {

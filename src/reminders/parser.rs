@@ -69,7 +69,7 @@ fn time(input: &str) -> IResult<&str, NaiveTime> {
     let (input, sec) = preceded_number(":", 0..60)(input)?.map_snd(Option::unwrap_or_default);
     Ok((
         input,
-        NaiveTime::from_hms(u32::from(hour), u32::from(min), u32::from(sec)),
+        NaiveTime::from_hms_opt(u32::from(hour), u32::from(min), u32::from(sec)).unwrap(),
     ))
 }
 
@@ -87,13 +87,13 @@ fn duration(input: &str) -> IResult<&str, Duration> {
 
     let (input, amt) = terminated(parse_number(..), spc)(input)?.map_snd(i64::from);
     let (input, dur) = alt((
-        map(re(&*SECONDS), |_| Duration::seconds(amt)),
-        map(re(&*MINUTES), |_| Duration::minutes(amt)),
-        map(re(&*HOURS), |_| Duration::hours(amt)),
-        map(re(&*DAYS), |_| Duration::days(amt)),
-        map(re(&*WEEKS), |_| Duration::weeks(amt)),
-        map(re(&*MONTHS), |_| Duration::days(30 * amt)),
-        map(re(&*YEARS), |_| Duration::days(365 * amt)),
+        map(re(&SECONDS), |_| Duration::seconds(amt)),
+        map(re(&MINUTES), |_| Duration::minutes(amt)),
+        map(re(&HOURS), |_| Duration::hours(amt)),
+        map(re(&DAYS), |_| Duration::days(amt)),
+        map(re(&WEEKS), |_| Duration::weeks(amt)),
+        map(re(&MONTHS), |_| Duration::days(30 * amt)),
+        map(re(&YEARS), |_| Duration::days(365 * amt)),
     ))(input)?;
     Ok((input, dur))
 }
@@ -184,10 +184,7 @@ mod test {
                     when: TimeSpec::Date((date, _)),
                 }) if (0..31).contains(&date.day)
                     && (0..12).contains(&date.month.unwrap())
-                    && text == "cenas" =>
-                {
-                    ()
-                }
+                    && text == "cenas" => {}
                 Ok(o) => panic!("Invalid output {:?} for input {:?}", o, s),
             }
         }
@@ -230,7 +227,7 @@ mod test {
                         month: None,
                         year: None
                     },
-                    NaiveTime::from_hms(8, 0, 0)
+                    NaiveTime::from_hms_opt(8, 0, 0).unwrap()
                 )),
                 text: "cenas"
             })
@@ -248,7 +245,7 @@ mod test {
                         month: Some(5),
                         year: None
                     },
-                    NaiveTime::from_hms(8, 34, 0)
+                    NaiveTime::from_hms_opt(8, 34, 0).unwrap()
                 )),
                 text: "cenas"
             })
