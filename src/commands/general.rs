@@ -25,7 +25,16 @@ use serenity::{
 use std::iter::from_fn;
 
 #[group]
-#[commands(ping, who_are_you, vote, remindme, remind, version, reminders, toggle_spoilers)]
+#[commands(
+    ping,
+    who_are_you,
+    vote,
+    remindme,
+    remind,
+    version,
+    reminders,
+    toggle_spoilers
+)]
 struct General;
 
 #[command]
@@ -68,7 +77,7 @@ async fn who_are_you(ctx: &Context, msg: &Message) -> CommandResult {
             m.embed(|e| {
                 e.title("I AM MEMNARCH")
                     .description("Sauce code: [GitHub](https://github.com/Mendess2526/Memnarch-rs)")
-                    .image("https://img.scryfall.com/mci/scans/en/arc/112.jpg")
+                    .image("https://cards.scryfall.io/art_crop/front/9/2/9203fde4-dbc1-449f-9618-4656f0e25e3c.jpg?1562925842")
             })
         })
         .await?;
