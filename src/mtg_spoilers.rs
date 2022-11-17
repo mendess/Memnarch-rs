@@ -164,7 +164,12 @@ async fn send_card(
     thread_id
         .send_message(ctx.http(), |m| {
             if let Some(SpoilerSource { name, url }) = &card.source {
-                m.embed(|e| e.title("Source").description(name).url(url))
+                m.embed(|e| {
+                    if let Some(url) = url {
+                        e.url(url);
+                    }
+                    e.title("Source").description(name)
+                })
             } else {
                 m.content("Unkown source")
             }
