@@ -47,20 +47,29 @@ pub async fn emit<T>(ctx: Context, arg: T::Argument)
 where
     T: Event,
 {
-    tokio::spawn(async move {
-        let mut to_remove = vec![];
-        if let Some(mut subscribers) = INSTANCE.get_mut(&TypeId::of::<T>()) {
-            for (i, s) in subscribers.iter_mut().enumerate() {
-                if s(&ctx, &arg).await.is_break() {
-                    to_remove.push(i);
+    tokio::task::Builder::new()
+        .name(&format!(
+            "emit-({})",
+            std::any::type_name::<T>()
+                .split("::")
+                .last()
+                .unwrap_or("Unknown")
+        ))
+        .spawn(async move {
+            let mut to_remove = vec![];
+            if let Some(mut subscribers) = INSTANCE.get_mut(&TypeId::of::<T>()) {
+                for (i, s) in subscribers.iter_mut().enumerate() {
+                    if s(&ctx, &arg).await.is_break() {
+                        to_remove.push(i);
+                    }
+                }
+                for i in to_remove {
+                    let _ = subscribers.remove(i);
+                    log::trace!("Removed a callback for {}, index: {}", type_name::<T>(), i);
                 }
             }
-            for i in to_remove {
-                let _ = subscribers.remove(i);
-                log::trace!("Removed a callback for {}, index: {}", type_name::<T>(), i);
-            }
-        }
-    });
+        })
+        .expect("failed to emit");
 }
 
 pub mod events {

@@ -280,7 +280,10 @@ async fn main() -> anyhow::Result<()> {
         }
         .boxed()
     });
-    let task = tokio::spawn(api::start(client.cache_and_http.clone()));
+    let task = tokio::task::Builder::new()
+        .name("bot-api")
+        .spawn(api::start(client.cache_and_http.clone()))
+        .expect("to be able to launch bot api task");
     tokio::select! {
         r = client.start() => if let Err(why) = r {
             log::error!("Sad face :(  {:?}", why);
