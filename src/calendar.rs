@@ -251,13 +251,13 @@ pub async fn initialize(dm: &mut DaemonManager) {
     }
     pubsub::register::<ReactionAdd, _>(|c, a| {
         async move { react_change(c, a.channel_id, a.message_id).await }.boxed()
-    });
+    }).await;
     pubsub::register::<ReactionRemove, _>(|c, a| {
         async move { react_change(c, a.channel_id, a.message_id).await }.boxed()
-    });
+    }).await;
     pubsub::register::<ReactionRemoveAll, _>(|c, (ch_id, msg_id)| {
         async move { react_change(c, *ch_id, *msg_id).await }.boxed()
-    });
+    }).await;
     pubsub::register::<CacheReady, _>(|c, _| {
         async move {
             if let Err(e) = tick(c.http()).await {
@@ -266,7 +266,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
             ControlFlow::BREAK
         }
         .boxed()
-    });
+    }).await;
     dm.add_daemon(CalendarDaemon::new(
         String::from("calendar daemon"),
         |data| {

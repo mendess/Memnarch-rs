@@ -88,7 +88,8 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> anyhow::Result<()>
         }
     }
     let d = d.clone();
-    pubsub::register::<events::GuildCreate, _>(move |_, (g, _)| curse(g.id, d.clone()).boxed());
+    pubsub::register::<events::GuildCreate, _>(move |_, (g, _)| curse(g.id, d.clone()).boxed())
+        .await;
     Ok(())
 }
 
@@ -136,9 +137,6 @@ async fn is_cursed(guild: GuildId) -> bool {
 }
 
 async fn save(curse: Curse) -> anyhow::Result<()> {
-    DATABASE
-        .load()
-        .await?
-        .insert(curse.guild, curse);
+    DATABASE.load().await?.insert(curse.guild, curse);
     Ok(())
 }

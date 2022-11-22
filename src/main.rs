@@ -279,7 +279,8 @@ async fn main() -> anyhow::Result<()> {
             ControlFlow::BREAK
         }
         .boxed()
-    });
+    })
+    .await;
     let task = tokio::task::Builder::new()
         .name("bot-api")
         .spawn(api::start(client.cache_and_http.clone()))

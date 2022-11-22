@@ -177,7 +177,8 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             ControlFlow::CONTINUE
         }
         .boxed()
-    });
+    })
+    .await;
     pubsub::register::<ReactionRemove, _>(|ctx, arg| {
         async move {
             match intervenients(ctx, arg, |set, blocked| {
@@ -202,6 +203,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             ControlFlow::CONTINUE
         }
         .boxed()
-    });
+    })
+    .await;
     Ok(())
 }

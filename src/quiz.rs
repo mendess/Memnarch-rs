@@ -168,6 +168,7 @@ pub async fn initialize(daemon: &mut DaemonManager) -> io::Result<()> {
             ControlFlow::CONTINUE
         }
         .boxed()
-    });
+    })
+    .await;
     Ok(())
 }
