@@ -22,7 +22,7 @@ use serenity::{
     },
     prelude::*,
 };
-use std::iter::from_fn;
+use std::{borrow::Cow, iter::from_fn};
 
 #[group]
 #[commands(
@@ -357,18 +357,16 @@ async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;
     let bdays = stream::iter(crate::birthdays::all(gid).await?)
         .then(|(m, v)| async move {
-            stream::iter(v)
-                .then(|(d, u)| async move { gid.member(ctx, u.id).await.map(|m| (d, m)) })
-                .map_ok(|(d, m)| (d, m.display_name().into_owned()))
-                .try_collect::<Vec<_>>()
-                .await
-                .map(|mut nicks| {
-                    nicks.sort_by_key(|(d, _)| *d);
-                    (m, nicks)
-                })
+            let mut nicks = stream::iter(v)
+                .then(|(d, u)| async move { (d, gid.member(ctx, u.id).await.ok()) })
+                .map(|(d, m)| (d, m.map(|m| m.display_name().into_owned())))
+                .collect::<Vec<_>>()
+                .await;
+            nicks.sort_by_key(|(d, _)| *d);
+            (m, nicks)
         })
-        .try_collect::<Vec<_>>()
-        .await?;
+        .collect::<Vec<_>>()
+        .await;
     msg.channel_id
         .send_message(ctx, |m| {
             m.embed(|e| {
@@ -376,7 +374,12 @@ async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
                     .fields(bdays.into_iter().map(|(m, nicks)| {
                         (
                             format!("{} ({})", Month::from_u32(m).unwrap().name(), nicks.len()),
-                            nicks.into_iter().map(|(_, n)| n).format("\n"),
+                            nicks
+                                .into_iter()
+                                .map(|(_, n)| {
+                                    n.map(Cow::Owned).unwrap_or_else(|| "no_found".into())
+                                })
+                                .format("\n"),
                             true,
                         )
                     }))
