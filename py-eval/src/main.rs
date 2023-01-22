@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use axum::{handler::post, http::StatusCode, Json, Router};
 use pyo3::{
     types::{PyDict, PyFloat, PyFunction, PyInt, PyList, PyString, PyTuple},
@@ -8,6 +6,7 @@ use pyo3::{
 use std::{
     env,
     net::{Ipv4Addr, SocketAddr},
+    time::Duration,
 };
 use tokio::{task::spawn_blocking, time::timeout};
 use tracing::{error, info};
@@ -23,7 +22,13 @@ async fn main() {
         .route("/", post(eval))
         .route("/expr", post(expr));
 
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 31415));
+    let addr = SocketAddr::from((
+        std::env::args()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(Ipv4Addr::LOCALHOST),
+        31415,
+    ));
     info!("Listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
