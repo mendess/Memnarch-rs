@@ -11,7 +11,7 @@ use serenity::{
 };
 use tokio::time::timeout;
 
-use crate::permissions::IS_FRIEND_CHECK;
+use crate::{permissions::IS_FRIEND_CHECK, Config};
 
 lazy_static::lazy_static! {
     static ref HTTP: Client = Client::new();
@@ -42,9 +42,17 @@ pub async fn eval_(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         }
         _ => return Err("write only python code or surround the code in a code block".into()),
     };
+    let py_eval_address = ctx
+        .data
+        .read()
+        .await
+        .get::<Config>()
+        .unwrap()
+        .py_eval_address
+        .clone();
     let r = timeout(
         Duration::from_secs(10),
-        HTTP.post(format!("http://localhost:31415/{}", path))
+        HTTP.post(format!("http://{}/{}", py_eval_address, path))
             .json(&serde_json::json! {{ "t": code }})
             .send(),
     )

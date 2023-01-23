@@ -62,8 +62,18 @@ use tokio::time::timeout;
 
 #[derive(Serialize, Deserialize)]
 struct Config {
-    token: String,
-    monitor_log_channel: Option<ChannelId>,
+    pub token: String,
+    #[serde(default = "default_py_eval_address")]
+    pub py_eval_address: String,
+    pub monitor_log_channel: Option<ChannelId>,
+}
+
+impl TypeMapKey for Config {
+    type Value = Self;
+}
+
+fn default_py_eval_address() -> String {
+    "localhost:31415".into()
 }
 
 impl Config {
@@ -77,7 +87,8 @@ impl Config {
             .create(true)
             .open(&config_file_path)?;
         file.read_to_string(&mut config_str)?;
-        Ok(toml::from_str(&config_str).unwrap_or_else(|_| {
+        Ok(toml::from_str(&config_str).unwrap_or_else(|e| {
+            log::debug!("failed to parse config: {e}");
             file.set_len(0).expect("Couldn't truncate config file");
             let mut token = String::new();
             print!("Token: ");
@@ -89,6 +100,7 @@ impl Config {
 
             let config = Config {
                 token,
+                py_eval_address: default_py_eval_address(),
                 monitor_log_channel: None,
             };
             if let Err(e) = toml::to_string_pretty(&config)
@@ -252,6 +264,7 @@ async fn main() -> anyhow::Result<()> {
             data.insert::<events::UpdateNotify>(id);
         }
         data.insert::<DaemonManager>(daemon_manager);
+        data.insert::<Config>(config);
     }
     use events::{pubsub::events::Ready, UpdateNotify};
     events::pubsub::register::<Ready, _>(|ctx, ready| {
