@@ -4,7 +4,7 @@ use std::{
     fmt::Debug,
     io::{self, Write},
     ops::{Deref, DerefMut},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 use tokio::{
     fs::File,
@@ -110,8 +110,9 @@ impl<'db, T: Default + Debug, E: Into<anyhow::Error>> DbGuard<'db, T, E> {
 impl<'db, T: Debug, E: Into<anyhow::Error>> Drop for DbGuard<'db, T, E> {
     fn drop(&mut self) {
         if self.save {
+            let dirname = self.pathbuf.parent().unwrap_or_else(|| Path::new("/"));
             let (mut temp_file, temp_path) =
-                match tempfile::NamedTempFile::new_in(".").map(|f| f.into_parts()) {
+                match tempfile::NamedTempFile::new_in(dirname).map(|f| f.into_parts()) {
                     Ok(f) => f,
                     Err(e) => {
                         log::error!(
