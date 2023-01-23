@@ -1,0 +1,50 @@
+# inspiration: https://dev.to/rogertorres/first-steps-with-docker-rust-30oi
+
+FROM rust:1.66.1-buster as build
+
+RUN apt update -y && apt install cmake libpython3-dev -y
+
+# create an empty shell project
+RUN USER=root cargo new --bin memnarch-rs
+WORKDIR /memnarch-rs
+
+# copy manifests
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./Cargo.toml ./Cargo.toml
+COPY ./.cargo ./.cargo
+RUN cargo new --bin py-eval && \
+    cargo new --lib bot-api && \
+    cargo new --lib bot-api-types
+
+COPY ./bot-api/Cargo.toml ./bot-api/Cargo.toml
+COPY ./bot-api-types/Cargo.toml ./bot-api-types/Cargo.toml
+COPY ./py-eval/Cargo.toml ./py-eval/Cargo.toml
+
+# cache dependencies
+RUN cargo build --release
+RUN rm -r ./src && \
+    rm -r ./bot-api/src && \
+    rm -r ./bot-api-types/src
+
+# copy real source
+COPY ./src ./src
+COPY ./.git ./.git
+COPY ./bot-api/src ./bot-api/src
+COPY ./bot-api-types/src ./bot-api-types/src
+COPY ./py-eval/src ./py-eval/src
+
+# build for release
+RUN rm ./target/release/memnarch-rs*
+RUN find ./src ./bot-api-types/src ./bot-api/src ./py-eval/src -name '*.rs' -exec touch '{}' ';'
+RUN cargo build --release
+RUN cargo build --release -p py-eval
+
+# executing image
+FROM debian:buster-slim
+
+RUN apt update -y && apt install libopus-dev ffmpeg youtube-dl -y
+
+COPY --from=build /memnarch-rs/target/release/memnarch-rs .
+COPY --from=build /memnarch-rs/target/release/py-eval .
+
+CMD ["./memnarch-rs"]
