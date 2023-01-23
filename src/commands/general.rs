@@ -22,7 +22,7 @@ use serenity::{
     },
     prelude::*,
 };
-use std::{borrow::Cow, iter::from_fn};
+use std::iter::from_fn;
 
 #[group]
 #[commands(
@@ -358,7 +358,7 @@ async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
     let bdays = stream::iter(crate::birthdays::all(gid).await?)
         .then(|(m, v)| async move {
             let mut nicks = stream::iter(v)
-                .then(|(d, u)| async move { (d, gid.member(ctx, u.id).await.ok()) })
+                .then(|(d, u)| async move { (d, gid.member(ctx, u.id).await.map_err(|_| u.id)) })
                 .map(|(d, m)| (d, m.map(|m| m.display_name().into_owned())))
                 .collect::<Vec<_>>()
                 .await;
@@ -377,7 +377,7 @@ async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
                             nicks
                                 .into_iter()
                                 .map(|(_, n)| {
-                                    n.map(Cow::Owned).unwrap_or_else(|| "no_found".into())
+                                    n.unwrap_or_else(|id| format!("user with id {id} not found"))
                                 })
                                 .format("\n"),
                             true,
