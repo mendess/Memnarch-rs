@@ -21,7 +21,7 @@ COPY ./bot-api-types/Cargo.toml ./bot-api-types/Cargo.toml
 COPY ./py-eval/Cargo.toml ./py-eval/Cargo.toml
 
 # cache dependencies
-RUN cargo build --release
+RUN cargo build --release --workspace
 RUN rm -r ./src && \
     rm -r ./bot-api/src && \
     rm -r ./bot-api-types/src
@@ -35,16 +35,28 @@ COPY ./py-eval/src ./py-eval/src
 
 # build for release
 RUN rm ./target/release/memnarch-rs*
+RUN rm ./target/release/py-eval*
 RUN find ./src ./bot-api-types/src ./bot-api/src ./py-eval/src -name '*.rs' -exec touch '{}' ';'
-RUN cargo build --release
-RUN cargo build --release -p py-eval
+RUN cargo build --release --workspace
 
 # executing image
 FROM debian:buster-slim
 
-RUN apt update -y && apt install libopus-dev ffmpeg youtube-dl -y
+RUN apt update -y && apt install libopus-dev ffmpeg youtube-dl libpython3-dev -y
+
+RUN echo '#!/bin/sh           \n\
+case $1 in                    \n\
+    py)                       \n\
+        [ $# -gt 0 ] && shift \n\
+       ./py-eval "$@"         \n\
+        ;;                    \n\
+    *)                        \n\
+        [ $# -gt 0 ] && shift \n\
+        ./memnarch-rs "$@"    \n\
+        ;;                    \n\
+esac' > entrypoint.sh && chmod +x entrypoint.sh
 
 COPY --from=build /memnarch-rs/target/release/memnarch-rs .
 COPY --from=build /memnarch-rs/target/release/py-eval .
 
-CMD ["./memnarch-rs"]
+ENTRYPOINT ["./entrypoint.sh"]

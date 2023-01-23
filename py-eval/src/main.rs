@@ -54,7 +54,7 @@ async fn eval(json_program: Json<Program>) -> HttpResponse {
             let py = py.python();
             let locals = PyDict::new(py);
             match py.run(&t, None, Some(locals)) {
-                Ok(_) => serialize_into_response(&locals),
+                Ok(_) => serialize_into_response(locals),
                 Err(e) => {
                     error!("Failed to run: {:?}", e);
                     Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
@@ -91,7 +91,7 @@ async fn expr(json_program: Json<Program>) -> HttpResponse {
             let py = py.python();
             let locals = PyDict::new(py);
             match py.eval(&t, None, Some(locals)) {
-                Ok(obj) => serialize_into_response(&obj),
+                Ok(obj) => serialize_into_response(obj),
                 Err(e) => {
                     error!("Failed to eval: {:?}", e);
                     Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
@@ -158,7 +158,7 @@ fn serialize(obj: &PyAny) -> anyhow::Result<Option<serde_json::Value>> {
                     let tup = x.cast_as::<PyTuple>().unwrap();
                     let (key, value) = (tup.get_item(0), tup.get_item(1));
                     Some(
-                        serialize(&value)
+                        serialize(value)
                             .transpose()?
                             .and_then(|v| Ok((key.str()?.to_string_lossy().into_owned(), v))),
                     )
