@@ -76,7 +76,7 @@ pub async fn start(c: Arc<CacheAndHttp>) -> std::io::Result<()> {
             .app_data(cache_http.clone())
             .route("/send-dm", web::post().to(send_dm))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run();
 
     server.await
