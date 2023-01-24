@@ -7,7 +7,7 @@ use serenity::{
 };
 use std::{
     any::{type_name, Any, TypeId},
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     sync::Arc,
 };
 
@@ -24,7 +24,8 @@ pub trait Event: Any {
 }
 
 lazy_static! {
-    static ref INSTANCE: RwLock<HashMap<TypeId, Arc<Mutex<Subscribers>>>> = Default::default();
+    static ref EVENT_HANDLERS: RwLock<HashMap<TypeId, Arc<Mutex<Subscribers>>>> =
+        Default::default();
 }
 
 pub async fn register<T, F>(mut f: F)
@@ -43,42 +44,34 @@ where
     let callback: Box<Callback> = Box::new(move |ctx: &Context, any: &Argument| {
         f(ctx, any.downcast_ref::<T::Argument>().unwrap())
     });
-    INSTANCE
-        .write()
-        .await
-        .entry(TypeId::of::<T>())
-        .or_insert_with(|| Arc::new(Mutex::new(vec![callback])));
+    match EVENT_HANDLERS.write().await.entry(TypeId::of::<T>()) {
+        Entry::Occupied(subs) => subs.get().lock().await.push(callback),
+        Entry::Vacant(subs) => {
+            subs.insert(Arc::new(Mutex::new(vec![callback])));
+        }
+    };
 }
 
 pub async fn emit<T>(ctx: Context, arg: T::Argument)
 where
     T: Event,
 {
-    tokio::task::Builder::new()
-        .name(&format!(
-            "emit-({})",
-            std::any::type_name::<T>()
-                .split("::")
-                .last()
-                .unwrap_or("Unknown")
-        ))
-        .spawn(async move {
-            let mut to_remove = vec![];
-            let subscribers = INSTANCE.read().await.get(&TypeId::of::<T>()).cloned();
-            if let Some(subscribers) = subscribers {
-                let mut subscribers = subscribers.lock().await;
-                for (i, s) in subscribers.iter_mut().enumerate() {
-                    if s(&ctx, &arg).await.is_break() {
-                        to_remove.push(i);
-                    }
-                }
-                for i in to_remove {
-                    let _ = subscribers.remove(i);
-                    log::trace!("Removed a callback for {}, index: {}", type_name::<T>(), i);
+    tokio::spawn(async move {
+        let mut to_remove = vec![];
+        let subscribers = EVENT_HANDLERS.read().await.get(&TypeId::of::<T>()).cloned();
+        if let Some(subscribers) = subscribers {
+            let mut subscribers = subscribers.lock().await;
+            for (i, s) in subscribers.iter_mut().enumerate() {
+                if s(&ctx, &arg).await.is_break() {
+                    to_remove.push(i);
                 }
             }
-        })
-        .expect("failed to emit");
+            for i in to_remove {
+                let _ = subscribers.remove(i);
+                log::trace!("Removed a callback for {}, index: {}", type_name::<T>(), i);
+            }
+        }
+    });
 }
 
 pub mod events {
