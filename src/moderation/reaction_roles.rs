@@ -112,8 +112,10 @@ pub(crate) async fn reaction_role_add(
         .entry(guild_id)
         .or_insert(Database::new(path));
     let mut roles = database.load().await?;
-    roles.retain(|(e, m, _)| e != &emoji && m != &mid);
-    roles.push((emoji.clone(), mid, role));
+    match roles.iter_mut().find(|(e, m, _)| e == &emoji && m == &mid) {
+        Some(entry) => entry.2 = role,
+        None => roles.push((emoji.clone(), mid, role)),
+    }
 
     let message = channel_id.message(http.http(), mid).await?;
     message.react(http, emoji).await?;
