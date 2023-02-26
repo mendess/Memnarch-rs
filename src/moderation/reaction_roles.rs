@@ -36,7 +36,7 @@ pub async fn initialize() -> io::Result<()> {
     }
 
     use events::pubsub::events::{GuildRoleDelete, ReactionAdd, ReactionRemove};
-    async fn handler(ctx: &Context, reaction: &Reaction) {
+    async fn handler<const ADD: bool>(ctx: &Context, reaction: &Reaction) {
         let Some(gid) = reaction.guild_id else {
             return
         };
@@ -60,17 +60,17 @@ pub async fn initialize() -> io::Result<()> {
                 return;
             }
         };
-        if member.roles.iter().any(|r| r == role) {
-            if let Err(e) = member.remove_role(ctx, role).await {
+        if ADD {
+            if let Err(e) = member.add_role(ctx, role).await {
                 log::error!("failed to add role: {e:?}");
             }
-        } else if let Err(e) = member.add_role(ctx, role).await {
+        } else if let Err(e) = member.remove_role(ctx, role).await {
             log::error!("failed to add role: {e:?}");
         }
     }
     events::pubsub::register::<ReactionAdd, _>(|ctx: &Context, args: &Reaction| {
         async move {
-            handler(ctx, args).await;
+            handler::<true>(ctx, args).await;
             ControlFlow::CONTINUE
         }
         .boxed()
@@ -78,7 +78,7 @@ pub async fn initialize() -> io::Result<()> {
     .await;
     events::pubsub::register::<ReactionRemove, _>(|ctx: &Context, args: &Reaction| {
         async move {
-            handler(ctx, args).await;
+            handler::<false>(ctx, args).await;
             ControlFlow::CONTINUE
         }
         .boxed()
