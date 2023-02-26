@@ -80,7 +80,7 @@ pub mod events {
         channel::Reaction,
         guild::Guild,
         id::{ChannelId, GuildId, MessageId},
-        voice::VoiceState,
+        voice::VoiceState, prelude::{RoleId, Role},
     };
     macro_rules! events {
         ($($event:ident => $arg:ty),* $(,)?) => {
@@ -96,6 +96,7 @@ pub mod events {
         ReactionAdd => Reaction,
         ReactionRemove => Reaction,
         ReactionRemoveAll => (ChannelId, MessageId),
+        GuildRoleDelete => (GuildId, RoleId, Option<Role>),
         VoiceStateUpdate => (Option<GuildId>, Option<VoiceState>, VoiceState),
         Ready => serenity::model::gateway::Ready,
         CacheReady => Vec<GuildId>,

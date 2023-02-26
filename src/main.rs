@@ -13,6 +13,7 @@ mod daemons;
 mod events;
 mod file_transaction;
 mod health_monitor;
+mod moderation;
 mod mtg_spoilers;
 mod permissions;
 mod prefs;
@@ -231,6 +232,7 @@ async fn main() -> anyhow::Result<()> {
                 .group(&CALENDAR_GROUP)
                 .group(&QUIZ_GROUP)
                 .group(&PY_GROUP)
+                .group(&MODERATION_GROUP)
                 .help(&MY_HELP),
         )
         .register_songbird()
@@ -246,6 +248,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
+    moderation::reaction_roles::initialize().await?;
     try_init!(daemon_manager, quiz);
     if let Some(channel) = config.monitor_log_channel {
         daemon_manager.add_daemon(HealthMonitor::new(channel)).await;

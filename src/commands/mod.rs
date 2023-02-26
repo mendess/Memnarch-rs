@@ -2,6 +2,7 @@ pub mod calendar;
 pub mod custom;
 pub mod general;
 pub mod interrail;
+pub mod moderation;
 pub mod owner;
 pub mod python;
 pub mod quotes;
@@ -16,6 +17,7 @@ pub mod command_groups {
     pub use general::GENERAL_GROUP;
     pub use general::QUIZ_GROUP;
     pub use interrail::INTERRAIL_GROUP;
+    pub use moderation::MODERATION_GROUP;
     pub use owner::OWNER_GROUP;
     pub use python::PY_GROUP;
     pub use quotes::QUOTES_GROUP;
