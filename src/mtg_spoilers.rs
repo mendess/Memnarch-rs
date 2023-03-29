@@ -53,7 +53,7 @@ impl Daemon<true> for SpoilerChecker {
     }
 
     async fn interval(&self) -> Duration {
-        Duration::from_secs(60 * 60)
+        Duration::from_secs(60 * 20)
     }
 
     async fn name(&self) -> String {
