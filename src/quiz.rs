@@ -1,12 +1,8 @@
-use crate::{
-    cron::Cron,
-    daemons::DaemonManager,
-    events::pubsub::{self, events::ReactionAdd},
-    file_transaction::Database,
-};
+use crate::{cron::Cron, daemons::DaemonManager};
 use daemons::ControlFlow;
 use futures::FutureExt;
-use lazy_static::lazy_static;
+use json_db::{Database, GlobalDatabase};
+use pubsub::{self, events::ReactionAdd};
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::Context,
@@ -28,9 +24,8 @@ struct Quizers {
     role: RoleId,
 }
 
-lazy_static! {
-    static ref DATABASE: Database<HashMap<GuildId, Quizers>> = Database::new("files/quizers.json");
-}
+static DATABASE: GlobalDatabase<HashMap<GuildId, Quizers>> =
+    Database::const_new("files/quizers.json");
 
 type QuizDaemon<F, Fut> = Cron<F, Fut, 21, 50, 00>;
 
@@ -162,7 +157,7 @@ pub async fn initialize(daemon: &mut DaemonManager) -> io::Result<()> {
             }
         }
     }
-    pubsub::register::<ReactionAdd, _>(|c, a| {
+    pubsub::subscribe::<ReactionAdd, _>(|c, a| {
         async move {
             handle_reaction(c, a).await;
             ControlFlow::CONTINUE

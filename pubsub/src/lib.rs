@@ -1,3 +1,6 @@
+pub mod event_handler;
+pub mod events;
+
 use daemons::ControlFlow;
 use futures::future::BoxFuture;
 use lazy_static::lazy_static;
@@ -28,7 +31,8 @@ lazy_static! {
         Default::default();
 }
 
-pub async fn register<T, F>(mut f: F)
+/// Subscribe to an event of type `T`. See [events].
+pub async fn subscribe<T, F>(mut f: F)
 where
     T: Event,
     F: for<'args> FnMut(&'args Context, &'args T::Argument) -> BoxFuture<'args, ControlFlow>
@@ -52,7 +56,7 @@ where
     };
 }
 
-pub async fn emit<T>(ctx: Context, arg: T::Argument)
+pub(crate) async fn publish<T>(ctx: Context, arg: T::Argument)
 where
     T: Event,
 {
@@ -72,34 +76,4 @@ where
             }
         }
     });
-}
-
-pub mod events {
-    use super::Event;
-    use serenity::model::{
-        channel::Reaction,
-        guild::Guild,
-        id::{ChannelId, GuildId, MessageId},
-        voice::VoiceState, prelude::{RoleId, Role},
-    };
-    macro_rules! events {
-        ($($event:ident => $arg:ty),* $(,)?) => {
-            $(
-                pub struct $event;
-                impl Event for $event {
-                    type Argument = $arg;
-                }
-            )*
-        }
-    }
-    events! {
-        ReactionAdd => Reaction,
-        ReactionRemove => Reaction,
-        ReactionRemoveAll => (ChannelId, MessageId),
-        GuildRoleDelete => (GuildId, RoleId, Option<Role>),
-        VoiceStateUpdate => (Option<GuildId>, Option<VoiceState>, VoiceState),
-        Ready => serenity::model::gateway::Ready,
-        CacheReady => Vec<GuildId>,
-        GuildCreate => (Guild, bool),
-    }
 }

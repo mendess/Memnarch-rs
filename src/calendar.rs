@@ -1,12 +1,10 @@
-use crate::{
-    cron::Cron, daemons::DaemonManager, file_transaction::Database, util::tuple_map::tuple_map_both,
-};
+use crate::{cron::Cron, daemons::DaemonManager, util::tuple_map::tuple_map_both};
 use anyhow::Context;
 use chrono::{Datelike, NaiveDate, Utc, Weekday};
 use daemons::ControlFlow;
 use futures::*;
 use itertools::Itertools;
-use lazy_static::lazy_static;
+use json_db::{Database, GlobalDatabase};
 use serde::{Deserialize, Serialize};
 use serenity::{
     http::{CacheHttp, Http},
@@ -45,9 +43,7 @@ mod reacts {
     }
 }
 
-lazy_static! {
-    static ref DATABASE: Database<Vec<Calendar>> = Database::new("files/calendars.json");
-}
+static DATABASE: GlobalDatabase<Vec<Calendar>> = Database::const_new("files/calendars.json");
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Calendar {
@@ -174,10 +170,7 @@ fn translate_weekday(w: Weekday) -> &'static str {
 }
 
 pub async fn initialize(dm: &mut DaemonManager) {
-    use crate::events::pubsub::{
-        self,
-        events::{CacheReady, ReactionAdd, ReactionRemove, ReactionRemoveAll},
-    };
+    use pubsub::events::{CacheReady, ReactionAdd, ReactionRemove, ReactionRemoveAll};
     use serenity::{client::Context, model::channel::Message};
     use std::mem::take;
 
@@ -249,16 +242,19 @@ pub async fn initialize(dm: &mut DaemonManager) {
         }
         ControlFlow::CONTINUE
     }
-    pubsub::register::<ReactionAdd, _>(|c, a| {
+    pubsub::subscribe::<ReactionAdd, _>(|c, a| {
         async move { react_change(c, a.channel_id, a.message_id).await }.boxed()
-    }).await;
-    pubsub::register::<ReactionRemove, _>(|c, a| {
+    })
+    .await;
+    pubsub::subscribe::<ReactionRemove, _>(|c, a| {
         async move { react_change(c, a.channel_id, a.message_id).await }.boxed()
-    }).await;
-    pubsub::register::<ReactionRemoveAll, _>(|c, (ch_id, msg_id)| {
+    })
+    .await;
+    pubsub::subscribe::<ReactionRemoveAll, _>(|c, (ch_id, msg_id)| {
         async move { react_change(c, *ch_id, *msg_id).await }.boxed()
-    }).await;
-    pubsub::register::<CacheReady, _>(|c, _| {
+    })
+    .await;
+    pubsub::subscribe::<CacheReady, _>(|c, _| {
         async move {
             if let Err(e) = tick(c.http()).await {
                 log::error!("Failed to tick calenders after ready: {}", e);
@@ -266,7 +262,8 @@ pub async fn initialize(dm: &mut DaemonManager) {
             ControlFlow::BREAK
         }
         .boxed()
-    }).await;
+    })
+    .await;
     dm.add_daemon(CalendarDaemon::new(
         String::from("calendar daemon"),
         |data| {

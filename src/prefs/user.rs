@@ -1,13 +1,10 @@
-use crate::file_transaction::Database;
-use lazy_static::lazy_static;
+use json_db::{Database, GlobalDatabase};
 use serde::{Deserialize, Serialize};
 use serenity::model::id::UserId;
 use std::{collections::HashMap, io};
 
-lazy_static! {
-    static ref USER_PREFS: Database<HashMap<UserId, UserPrefs>> =
-        Database::new("files/user_prefs.json");
-}
+static USER_PREFS: GlobalDatabase<HashMap<UserId, UserPrefs>> =
+    Database::const_new("files/user_prefs.json");
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct UserPrefs {

@@ -10,8 +10,6 @@ mod consts;
 mod cron;
 mod curse_of_indicision;
 mod daemons;
-mod events;
-mod file_transaction;
 mod health_monitor;
 mod moderation;
 mod mtg_spoilers;
@@ -34,6 +32,7 @@ use commands::{
     sfx::{util::LeaveVoiceDaemons, SfxStats},
 };
 use consts::FILES_DIR;
+use pubsub::events;
 use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
@@ -71,6 +70,12 @@ struct Config {
 
 impl TypeMapKey for Config {
     type Value = Self;
+}
+
+pub struct UpdateNotify;
+
+impl TypeMapKey for UpdateNotify {
+    type Value = ChannelId;
 }
 
 fn default_py_eval_address() -> String {
@@ -240,7 +245,7 @@ async fn main() -> anyhow::Result<()> {
         .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
         .type_map_insert::<LeaveVoiceDaemons>(Default::default())
         .type_map_insert::<SfxStats>(Arc::new(Mutex::new(SfxStats::new())))
-        .event_handler(events::Handler)
+        .event_handler(pubsub::event_handler::Handler::new(bot_id))
         .await
         .expect("Err creating client");
     let mut daemon_manager = self::daemons::DaemonManager::new(client.cache_and_http.clone());
@@ -264,13 +269,12 @@ async fn main() -> anyhow::Result<()> {
             .nth(1)
             .and_then(|id| id.parse::<ChannelId>().ok())
         {
-            data.insert::<events::UpdateNotify>(id);
+            data.insert::<UpdateNotify>(id);
         }
         data.insert::<DaemonManager>(daemon_manager);
         data.insert::<Config>(config);
     }
-    use events::{pubsub::events::Ready, UpdateNotify};
-    events::pubsub::register::<Ready, _>(|ctx, ready| {
+    pubsub::subscribe::<events::Ready, _>(|ctx, ready| {
         use futures::prelude::*;
         async move {
             println!(

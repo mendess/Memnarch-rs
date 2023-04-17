@@ -1,13 +1,18 @@
 use std::{
-    collections::BTreeMap, io::Write, os::unix::prelude::OsStrExt, path::PathBuf, str::from_utf8,
-    sync::Arc, time::Duration,
+    collections::{hash_map::Entry, BTreeMap, HashMap},
+    io::Write,
+    os::unix::prelude::OsStrExt,
+    path::PathBuf,
+    str::from_utf8,
+    sync::Arc,
+    time::Duration,
 };
 
 use anyhow::Context;
 use chrono::{Datelike, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use daemons::{ControlFlow, Daemon};
-use dashmap::DashMap;
 use futures::TryFutureExt;
+use json_db::Database;
 use lazy_static::lazy_static;
 use serenity::{
     http::Http,
@@ -16,7 +21,7 @@ use serenity::{
 };
 use tokio::{fs, io, sync::Mutex};
 
-use crate::{cron::Cron, file_transaction::Database, prefs::guild as guild_prefs, DaemonManager};
+use crate::{cron::Cron, prefs::guild as guild_prefs, DaemonManager};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BDayBoy {
@@ -41,25 +46,67 @@ impl From<NaiveDate> for BDay {
 
 const BASE: &str = "files/birthdays";
 
-type BdayMap = DashMap<GuildId, Database<BTreeMap<BDay, Vec<BDayBoy>>, anyhow::Error>>;
+#[derive(Debug)]
+struct Error {
+    serializing: bool,
+    kind: ErrorKind,
+}
+
+#[derive(Debug)]
+enum ErrorKind {
+    Io(io::Error),
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mode = if self.serializing {
+            "serializing"
+        } else {
+            "deserializing"
+        };
+        match &self.kind {
+            ErrorKind::Io(e) => writeln!(f, "io error while {mode}: {e:?}"),
+            ErrorKind::Other(e) => writeln!(f, "other error while {mode}: {e:?}"),
+        }
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Self {
+            serializing: false,
+            kind: ErrorKind::Io(e),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+type BdayMap = Mutex<HashMap<GuildId, Database<BTreeMap<BDay, Vec<BDayBoy>>, Error>>>;
 
 lazy_static! {
-    static ref BDAY_MAP: BdayMap = DashMap::new();
+    static ref BDAY_MAP: BdayMap = Default::default();
 }
 
 pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
-    fs::DirBuilder::new().recursive(true).create(BASE).await?;
-    let mut read_dir = fs::read_dir(BASE).await?;
-    while let Some(d) = read_dir.next_entry().await? {
-        let path = d.path();
-        let gid = match path.file_stem().and_then(|n| {
-            let s = from_utf8(n.as_bytes()).ok()?;
-            Some(GuildId(str::parse(s).ok()?))
-        }) {
-            None => continue,
-            Some(gid) => gid,
-        };
-        BDAY_MAP.insert(gid, Database::with_ser_and_deser(path, ser, deser));
+    match fs::read_dir(BASE).await {
+        Ok(mut read_dir) => {
+            let mut db = BDAY_MAP.lock().await;
+            while let Some(d) = read_dir.next_entry().await? {
+                let path = d.path();
+                let gid = match path.file_stem().and_then(|n| {
+                    let s = from_utf8(n.as_bytes()).ok()?;
+                    Some(GuildId(str::parse(s).ok()?))
+                }) {
+                    None => continue,
+                    Some(gid) => gid,
+                };
+                db.insert(gid, Database::with_ser_and_deser(path, ser, deser).await?);
+            }
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e)
     }
     let dm = d.clone();
     d.lock()
@@ -72,9 +119,11 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
 }
 
 pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)>> {
-    let map = match BDAY_MAP.get(&g) {
-        None => return Ok(None),
-        Some(b) => b,
+    let tree = {
+        match BDAY_MAP.lock().await.get(&g) {
+            None => return Ok(None),
+            Some(b) => b.load().await?.take(),
+        }
     };
     let tomorrow = BDay::from(
         Utc::now()
@@ -82,8 +131,6 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
             .succ_opt()
             .expect("not reach the end of time"),
     );
-    let mut map = map.load().await?;
-    let tree = map.take();
     let next = match tree.range(tomorrow..).next() {
         Some((d, v)) => Some((*d, v.clone())),
         None => tree.iter().next().map(|(d, v)| (*d, v.clone())),
@@ -92,11 +139,10 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
 }
 
 pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<(u32, BDayBoy)>>> {
-    let map = match BDAY_MAP.get(&g) {
+    let database = match BDAY_MAP.lock().await.get(&g) {
         None => return Ok(Default::default()),
-        Some(b) => b,
+        Some(b) => b.load().await?.take(),
     };
-    let database = map.load().await?.take();
     Ok(database
         .into_iter()
         .fold(Default::default(), |mut acc, (d, users)| {
@@ -108,11 +154,10 @@ pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<(u32, BDayBoy)>
 }
 
 pub async fn of(g: GuildId, user_id: UserId) -> anyhow::Result<Option<BDay>> {
-    let map = match BDAY_MAP.get(&g) {
+    let database = match BDAY_MAP.lock().await.get(&g) {
         None => return Ok(None),
-        Some(b) => b,
+        Some(b) => b.load().await?.take(),
     };
-    let database = map.load().await?;
     Ok(database
         .iter()
         .find(|(_, users)| users.iter().any(|u| u.id == user_id))
@@ -123,11 +168,10 @@ pub async fn of_month(
     g: GuildId,
     month: Month,
 ) -> anyhow::Result<Option<impl Iterator<Item = (BDay, BDayBoy)>>> {
-    let map = match BDAY_MAP.get(&g) {
+    let database = match BDAY_MAP.lock().await.get(&g) {
         None => return Ok(None),
-        Some(b) => b,
+        Some(b) => b.load().await?.take(),
     };
-    let database = map.load().await?.take();
     Ok(Some(
         database
             .into_iter()
@@ -141,12 +185,17 @@ pub async fn add_bday(
     who: UserId,
     when: NaiveDate,
 ) -> anyhow::Result<Option<NaiveDate>> {
-    let calendar = BDAY_MAP.entry(g).or_insert_with(|| {
-        let path = [BASE, &format!("{}.csv", g)]
-            .into_iter()
-            .collect::<PathBuf>();
-        Database::with_ser_and_deser(path, ser, deser)
-    });
+    let mut map = BDAY_MAP.lock().await;
+    let calendar = match map.entry(g) {
+        Entry::Occupied(o) => o.into_mut(),
+        Entry::Vacant(o) => {
+            let path = [BASE, &format!("{}.csv", g)]
+                .into_iter()
+                .collect::<PathBuf>();
+            let db = Database::with_ser_and_deser(path, ser, deser).await?;
+            o.insert(db)
+        }
+    };
     let mut calendar = calendar.load().await?;
     let bday = BDay::from(when);
     let removed = remove_user(&mut calendar, who);
@@ -158,12 +207,13 @@ pub async fn add_bday(
 }
 
 pub async fn remove_bday(g: GuildId, who: UserId) -> anyhow::Result<Option<NaiveDate>> {
-    let calendar = match BDAY_MAP.get(&g) {
-        Some(c) => c,
-        None => return Ok(None),
-    };
-    let mut calendar = calendar.load().await?;
-    Ok(remove_user(&mut calendar, who))
+    match BDAY_MAP.lock().await.get(&g) {
+        Some(calendar) => {
+            let mut calendar = calendar.load().await?;
+            Ok(remove_user(&mut calendar, who))
+        }
+        None => Ok(None),
+    }
 }
 
 fn remove_user(tree: &mut BTreeMap<BDay, Vec<BDayBoy>>, user: UserId) -> Option<NaiveDate> {
@@ -184,16 +234,19 @@ fn remove_user(tree: &mut BTreeMap<BDay, Vec<BDayBoy>>, user: UserId) -> Option<
     when
 }
 
-fn ser(w: &mut dyn Write, t: &BTreeMap<BDay, Vec<BDayBoy>>) -> anyhow::Result<()> {
+fn ser(w: &mut dyn Write, t: &BTreeMap<BDay, Vec<BDayBoy>>) -> Result<(), Error> {
     for (BDay { month, day }, v) in t {
         for BDayBoy { id, year } in v {
-            writeln!(w, "{};{}-{}-{}", id, year, month, day)?
+            writeln!(w, "{};{}-{}-{}", id, year, month, day).map_err(|e| Error {
+                serializing: true,
+                kind: ErrorKind::Io(e),
+            })?
         }
     }
     Ok(())
 }
 
-fn deser(v: &[u8]) -> anyhow::Result<BTreeMap<BDay, Vec<BDayBoy>>> {
+fn deser(v: &[u8]) -> Result<BTreeMap<BDay, Vec<BDayBoy>>, Error> {
     v.split(|&c| c == b'\n')
         .filter(|x| !x.is_empty())
         .map(|line| {
@@ -236,7 +289,10 @@ fn deser(v: &[u8]) -> anyhow::Result<BTreeMap<BDay, Vec<BDayBoy>>> {
             }
         })
         .try_fold(BTreeMap::default(), |mut acc, e| {
-            let e = e?;
+            let e = e.map_err(|e| Error {
+                serializing: false,
+                kind: ErrorKind::Other(e),
+            })?;
             acc.entry(BDay::from(e.0))
                 .or_insert_with(Vec::new)
                 .push(BDayBoy {
@@ -251,8 +307,7 @@ type BDayChecker<F, Fut> = Cron<F, Fut, 0, 0, 30>;
 
 async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFlow {
     let today = BDay::from(Utc::now().naive_utc().date());
-    for x in BDAY_MAP.iter() {
-        let (gid, guild) = (x.key(), x.value());
+    for (gid, guild) in BDAY_MAP.lock().await.iter() {
         log::trace!("processing birthdays for guild {}", gid);
         let (channel, role) = match guild_prefs::get(*gid)
             .await

@@ -5,50 +5,55 @@ authors = ["Mendess2526 <pedro.mendes.26@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-chrono = "0.4"
-itertools = "0.8"
-rand = "0.7"
-simsearch = "0.1.4"
-regex = "1"
-lazy_static = "1"
-unicase = "2"
-tempfile = "3"
-songbird = "0.3"
-dashmap = { version = "5.0.0", features = ["serde"] }
-log = "0.4"
-simplelog = "0.10"
-humantime = "2"
-nom = { version = "6", features = ["regexp"] }
-procinfo = "0.4"
-toml = "0.5"
-num-traits = "0.2.14"
+anyhow.workspace = true
 bot-api = { path = "./bot-api" }
-daemons = { git = "https://github.com/mendess/daemons" }
-git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
-mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
-serenity.workspace = true
+chrono = "0.4"
+console-subscriber = "0.1.8"
+daemons.workspace = true
 futures.workspace = true
+git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
+humantime = "2"
+itertools = "0.8"
+json-db = { path = "./json-db" }
+lazy_static.workspace = true
+log.workspace = true
+mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
+nom = { version = "6", features = ["regexp"] }
+num-traits = "0.2.14"
+procinfo = "0.4"
+pubsub = { path = "./pubsub" }
+rand = "0.7"
+regex = "1"
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-anyhow.workspace = true
-reqwest.workspace = true
+serenity.workspace = true
+simplelog = "0.10"
+simsearch = "0.1.4"
+songbird = "0.3"
+tempfile.workspace = true
 tokio.workspace = true
-console-subscriber = "0.1.8"
+toml = "0.5"
+unicase = "2"
 
 [dev-dependencies]
 paste = "*"
 proptest = "0.9"
 
 [workspace]
-members = ["py-eval", "bot-api", "bot-api-types"]
+members = ["py-eval", "bot-api", "bot-api-types", "json-db", "pubsub"]
 
 [workspace.dependencies]
-serenity = { version = "0.11", features = ["collector"] }
+anyhow = "1"
+daemons = { git = "https://github.com/mendess/daemons" }
 futures = "0.3"
+lazy_static = "1"
+log = "0.4"
+reqwest = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-anyhow = "1"
-reqwest = "0.11"
+serenity = { version = "0.11", features = ["collector"] }
+tempfile = "3"
 
 [workspace.dependencies.tokio]
 version = "1"

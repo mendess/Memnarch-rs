@@ -1,10 +1,10 @@
 pub mod parser;
 
-use crate::{daemons::DaemonManager, events::pubsub, file_transaction::Database, util::bot_id};
+use crate::{daemons::DaemonManager, util::bot_id};
 use chrono::{DateTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use futures::FutureExt;
-use lazy_static::lazy_static;
+use json_db::{Database, GlobalDatabase};
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::Context,
@@ -19,11 +19,9 @@ use std::{
 
 pub const BLOCK_EMOJI: &str = "🛡️";
 
-lazy_static! {
-    static ref DATABASE: Database<Vec<Reminder>> = Database::new("files/cron/reminders.json");
-    static ref BLOCKED_USERS: Database<HashMap<UserId, HashSet<UserId>>> =
-        Database::new("files/blocked_user.json");
-}
+static DATABASE: GlobalDatabase<Vec<Reminder>> = Database::const_new("files/cron/reminders.json");
+static BLOCKED_USERS: GlobalDatabase<HashMap<UserId, HashSet<UserId>>> =
+    Database::const_new("files/blocked_user.json");
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Serialize, Deserialize)]
 pub struct Reminder {
@@ -153,7 +151,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             blocked,
         ))
     }
-    pubsub::register::<ReactionAdd, _>(|ctx, arg| {
+    pubsub::subscribe::<ReactionAdd, _>(|ctx, arg| {
         async move {
             match intervenients(ctx, arg, |set, blocked| {
                 set.insert(blocked).then_some(blocked)
@@ -179,7 +177,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
         .boxed()
     })
     .await;
-    pubsub::register::<ReactionRemove, _>(|ctx, arg| {
+    pubsub::subscribe::<ReactionRemove, _>(|ctx, arg| {
         async move {
             match intervenients(ctx, arg, |set, blocked| {
                 set.remove(&blocked).then_some(blocked)

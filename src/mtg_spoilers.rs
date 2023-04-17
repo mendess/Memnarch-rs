@@ -14,7 +14,8 @@ use serenity::{
     prelude::Mutex,
 };
 
-use crate::{daemons::DaemonManager, file_transaction::Database};
+use crate::daemons::DaemonManager;
+use json_db::{Database, GlobalDatabase};
 
 struct SpoilerChecker;
 
@@ -62,17 +63,14 @@ impl Daemon<true> for SpoilerChecker {
 }
 
 pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
-    tokio::fs::DirBuilder::new()
-        .recursive(true)
-        .create(paths::BASE)
-        .await?;
-
+    tokio::fs::create_dir_all(paths::BASE).await?;
     d.lock().await.add_daemon(SpoilerChecker).await;
     Ok(())
 }
 
+static SPOILER_CHANNEL_DB: GlobalDatabase<HashSet<ChannelId>> = Database::const_new(paths::DB);
+
 lazy_static! {
-    static ref SPOILER_CHANNEL_DB: Database<HashSet<ChannelId>> = Database::new(paths::DB);
     static ref RETRY_CACHE: Mutex<HashMap<ChannelId, Vec<(Spoiler, CardSendState)>>> =
         Mutex::default();
 }

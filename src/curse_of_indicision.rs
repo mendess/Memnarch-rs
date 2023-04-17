@@ -2,6 +2,9 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use daemons::{ControlFlow, Daemon};
 use futures::{stream::StreamExt, FutureExt};
+use json_db::{Database, GlobalDatabase};
+use lazy_static::lazy_static;
+use pubsub::{self, events};
 use rand::seq::SliceRandom;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -10,17 +13,14 @@ use serenity::model::{
     id::{ChannelId, GuildId, MessageId},
 };
 
-use crate::{
-    daemons::DaemonManager,
-    events::pubsub::{self, events},
-    file_transaction::Database,
-};
+use crate::daemons::DaemonManager;
 
 use tokio::sync::Mutex;
 
-lazy_static::lazy_static! {
+static DATABASE: GlobalDatabase<HashMap<GuildId, Curse>> = Database::const_new("files/curses.json");
+
+lazy_static! {
     static ref CURSE_REGEX: Regex = Regex::new("Curse\\(([0-9]+)\\)").unwrap();
-    static ref DATABASE: Database<HashMap<GuildId, Curse>> = Database::new("files/curses.json");
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -88,7 +88,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> anyhow::Result<()>
         }
     }
     let d = d.clone();
-    pubsub::register::<events::GuildCreate, _>(move |_, (g, _)| curse(g.id, d.clone()).boxed())
+    pubsub::subscribe::<events::GuildCreate, _>(move |_, (g, _)| curse(g.id, d.clone()).boxed())
         .await;
     Ok(())
 }

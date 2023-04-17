@@ -1,9 +1,7 @@
-use crate::{
-    daemons::DaemonManager,
-    events::pubsub::{self, events::VoiceStateUpdate},
-};
+use crate::daemons::DaemonManager;
 use daemons::ControlFlow;
 use futures::prelude::*;
+use pubsub::{self, events::VoiceStateUpdate};
 use serenity::{
     client::Context,
     model::id::{ChannelId, GuildId, UserId},
@@ -67,7 +65,7 @@ async fn init_voice_leave() {
     static INIT_VOICE_LEAVE: OnceCell<()> = OnceCell::const_new();
     INIT_VOICE_LEAVE
         .get_or_init(|| async {
-            pubsub::register::<VoiceStateUpdate, _>(|ctx, (guild_id, old, _)| {
+            pubsub::subscribe::<VoiceStateUpdate, _>(|ctx, (guild_id, old, _)| {
                 async move {
                     #[derive(PartialEq, Eq)]
                     enum Alone {

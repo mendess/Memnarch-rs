@@ -1458,6 +1458,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "json-db"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "language-tags"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1620,11 +1631,11 @@ dependencies = [
  "chrono",
  "console-subscriber",
  "daemons",
- "dashmap",
  "futures",
  "git-describe",
  "humantime",
  "itertools 0.8.2",
+ "json-db",
  "lazy_static",
  "log",
  "mtg-spoilers",
@@ -1633,6 +1644,7 @@ dependencies = [
  "paste 1.0.11",
  "procinfo",
  "proptest",
+ "pubsub",
  "rand 0.7.3",
  "regex",
  "reqwest",
@@ -2234,6 +2246,19 @@ checksum = "a5e0526209433e96d83d750dd81a99118edbc55739e7e61a46764fd2ad537788"
 dependencies = [
  "bytes",
  "prost",
+]
+
+[[package]]
+name = "pubsub"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "daemons",
+ "futures",
+ "lazy_static",
+ "log",
+ "serenity",
+ "tokio",
 ]
 
 [[package]]

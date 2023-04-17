@@ -1,6 +1,7 @@
+pub mod json_hash_map;
+
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
-    error::Error,
     fmt::Debug,
     io::{self, Write},
     ops::{Deref, DerefMut},
@@ -9,49 +10,83 @@ use std::{
 use tokio::{
     fs::File,
     io::AsyncReadExt,
-    sync::{Mutex, MutexGuard},
+    sync::{Mutex, MutexGuard, OnceCell},
 };
 
 type Serializer<T, E> = Box<dyn Fn(&mut dyn Write, &T) -> Result<(), E> + Sync + Send>;
 
 type Deserializer<T, E> = Box<dyn Fn(&[u8]) -> Result<T, E> + Sync + Send>;
 
-pub struct Database<T, E = io::Error> {
+pub struct Database<T, E: std::error::Error = io::Error> {
     filename: Mutex<PathBuf>,
     serializer: Serializer<T, E>,
     deserializer: Deserializer<T, E>,
 }
 
+pub struct GlobalDatabase<T, E: std::error::Error = io::Error> {
+    db: OnceCell<Database<T, E>>,
+    filename: &'static str,
+}
+
+impl<T> GlobalDatabase<T, io::Error>
+where
+    T: Serialize + DeserializeOwned + Default + Debug,
+{
+    pub async fn load(&self) -> io::Result<DbGuard<'_, T, io::Error>> {
+        self.db
+            .get_or_try_init(|| async { Database::new(self.filename).await })
+            .await?
+            .load()
+            .await
+    }
+}
+
 impl<T: DeserializeOwned + Serialize> Database<T, io::Error> {
-    pub fn new<P: Into<PathBuf>>(filename: P) -> Self {
+    pub async fn new<P: Into<PathBuf>>(filename: P) -> io::Result<Self> {
         Self::with_ser_and_deser(
             filename,
             |w, t| serde_json::to_writer(w, t).map_err(Into::into),
             |s| serde_json::from_slice(s).map_err(Into::into),
         )
+        .await
+    }
+
+    pub const fn const_new(filename: &'static str) -> GlobalDatabase<T> {
+        GlobalDatabase {
+            db: OnceCell::const_new(),
+            filename,
+        }
     }
 }
 
-impl<T, E: Into<Box<dyn Error>>> Database<T, E> {
-    pub fn with_ser_and_deser<P, S, D>(filename: P, serializer: S, deserializer: D) -> Self
+impl<T, E: std::error::Error> Database<T, E> {
+    pub async fn with_ser_and_deser<P, S, D>(
+        filename: P,
+        serializer: S,
+        deserializer: D,
+    ) -> io::Result<Self>
     where
         P: Into<PathBuf>,
         S: Fn(&mut dyn Write, &T) -> Result<(), E> + Sync + Send + 'static,
         D: Fn(&[u8]) -> Result<T, E> + Sync + Send + 'static,
     {
-        Self {
-            filename: Mutex::new(filename.into()),
+        let filename: PathBuf = filename.into();
+        let dir = filename
+            .parent()
+            .expect("databases have to point to normal files");
+        std::fs::create_dir_all(dir)?;
+        Ok(Self {
+            filename: Mutex::new(filename),
             serializer: Box::new(move |w, t| serializer(w, t)),
             deserializer: Box::new(move |slice| deserializer(slice)),
-        }
+        })
     }
 }
 
 impl<T, E> Database<T, E>
 where
     T: Default + Debug,
-    E: Into<anyhow::Error>,
-    E: From<io::Error>,
+    E: From<io::Error> + std::error::Error,
 {
     pub async fn load(&self) -> Result<DbGuard<'_, T, E>, E> {
         let pathbuf = self.filename.lock().await;
@@ -79,14 +114,14 @@ where
     }
 }
 
-pub struct DbGuard<'db, T: Debug, E: Into<anyhow::Error> = serde_json::Error> {
+pub struct DbGuard<'db, T: Debug, E: std::error::Error> {
     pathbuf: MutexGuard<'db, PathBuf>,
     serializer: &'db (dyn Fn(&mut dyn Write, &T) -> Result<(), E> + Send + Sync),
     t: T,
     save: bool,
 }
 
-impl<'db, T: Debug, E: Into<anyhow::Error>> Deref for DbGuard<'db, T, E> {
+impl<'db, T: Debug, E: std::error::Error> Deref for DbGuard<'db, T, E> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -94,20 +129,20 @@ impl<'db, T: Debug, E: Into<anyhow::Error>> Deref for DbGuard<'db, T, E> {
     }
 }
 
-impl<'db, T: Debug, E: Into<anyhow::Error>> DerefMut for DbGuard<'db, T, E> {
+impl<'db, T: Debug, E: std::error::Error> DerefMut for DbGuard<'db, T, E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.t
     }
 }
 
-impl<'db, T: Default + Debug, E: Into<anyhow::Error>> DbGuard<'db, T, E> {
+impl<'db, T: Default + Debug, E: std::error::Error> DbGuard<'db, T, E> {
     pub fn take(&mut self) -> T {
         self.save = false;
         std::mem::take(&mut self.t)
     }
 }
 
-impl<'db, T: Debug, E: Into<anyhow::Error>> Drop for DbGuard<'db, T, E> {
+impl<'db, T: Debug, E: std::error::Error> Drop for DbGuard<'db, T, E> {
     fn drop(&mut self) {
         if self.save {
             let dirname = self.pathbuf.parent().unwrap_or_else(|| Path::new("/"));
@@ -127,7 +162,7 @@ impl<'db, T: Debug, E: Into<anyhow::Error>> Drop for DbGuard<'db, T, E> {
                 log::error!(
                     "Failed to store to tempfile for '{}': {:?}",
                     self.pathbuf.display(),
-                    e.into()
+                    e,
                 );
             }
             if let Err(e) = std::fs::rename(&temp_path, &**self.pathbuf) {
