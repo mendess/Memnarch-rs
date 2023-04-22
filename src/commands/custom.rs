@@ -1,4 +1,4 @@
-use crate::{consts::FILES_DIR, get};
+use crate::{get, util::consts::FILES_DIR};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -111,7 +111,7 @@ impl CustomCommands {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
                 let path = Self::save_path(guild_id)?;
-                let gc = serde_json::from_reader(File::open(&path)?).map_err(|e| {
+                let gc = serde_json::from_reader(File::open(path)?).map_err(|e| {
                     log::error!("Error parsing custom commands: '{}'", e);
                     e
                 })?;

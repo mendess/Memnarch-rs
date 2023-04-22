@@ -14,7 +14,7 @@ use serenity::{
     prelude::Mutex,
 };
 
-use crate::daemons::DaemonManager;
+use crate::util::daemons::DaemonManager;
 use json_db::{Database, GlobalDatabase};
 
 struct SpoilerChecker;

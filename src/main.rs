@@ -1,39 +1,19 @@
-#![warn(unused_crate_dependencies)]
-#![warn(unused_features)]
-#![deny(unused_must_use)]
-#![warn(rust_2018_idioms)]
-
-mod birthdays;
-mod calendar;
-mod commands;
-mod consts;
-mod cron;
-mod curse_of_indicision;
-mod daemons;
-mod health_monitor;
-mod moderation;
-mod mtg_spoilers;
-mod permissions;
-mod prefs;
-mod quiz;
-mod reminders;
-mod util;
-
-use crate::health_monitor::HealthMonitor;
-
-use self::daemons::DaemonManager;
 use ::daemons::ControlFlow;
 use anyhow::Context as _;
 use bot_api as api;
-use commands::{
-    command_groups::*,
-    custom::CustomCommands,
-    interrail::InterrailConfig,
-    sfx::{util::LeaveVoiceDaemons, SfxStats},
+use memnarch_rs::commands::custom::CustomCommands;
+use memnarch_rs::commands::interrail::InterrailConfig;
+use memnarch_rs::features::{
+    birthdays, calendar, curse_of_indicision, moderation, mtg_spoilers, quiz, reminders,
 };
-use consts::FILES_DIR;
+use memnarch_rs::{
+    commands::{
+        command_groups::*,
+        sfx::{util::LeaveVoiceDaemons, SfxStats},
+    },
+    util::consts::FILES_DIR,
+};
 use pubsub::events;
-use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
         help_commands,
@@ -60,64 +40,44 @@ use std::{
 };
 use tokio::time::timeout;
 
-#[derive(Serialize, Deserialize)]
-struct Config {
-    pub token: String,
-    #[serde(default = "default_py_eval_address")]
-    pub py_eval_address: String,
-    pub monitor_log_channel: Option<ChannelId>,
-}
+use memnarch_rs::util::daemons::{DaemonManager, DaemonManagerKey};
 
-impl TypeMapKey for Config {
-    type Value = Self;
+fn load_config() -> std::io::Result<memnarch_rs::Config> {
+    DirBuilder::new().recursive(true).create(FILES_DIR)?;
+    let config_file_path = [FILES_DIR, "config.toml"].iter().collect::<PathBuf>();
+    let mut config_str = String::new();
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(config_file_path)?;
+    file.read_to_string(&mut config_str)?;
+    Ok(toml::from_str(&config_str).unwrap_or_else(|e| {
+        log::debug!("failed to parse config: {e}");
+        file.set_len(0).expect("Couldn't truncate config file");
+        let mut token = String::new();
+        print!("Token: ");
+        let _ = std::io::stdout().lock().flush();
+        std::io::stdin()
+            .read_line(&mut token)
+            .expect("Couldn't read token from stdin");
+        token.pop();
+
+        let config = memnarch_rs::Config::new(token);
+        if let Err(e) = toml::to_string_pretty(&config)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .and_then(|config_str| file.write_all(config_str.as_bytes()))
+        {
+            log::error!("Failed to store token: {}", e);
+        }
+        config
+    }))
 }
 
 pub struct UpdateNotify;
 
 impl TypeMapKey for UpdateNotify {
     type Value = ChannelId;
-}
-
-fn default_py_eval_address() -> String {
-    "localhost:31415".into()
-}
-
-impl Config {
-    fn new() -> std::io::Result<Config> {
-        DirBuilder::new().recursive(true).create(FILES_DIR)?;
-        let config_file_path = [FILES_DIR, "config.toml"].iter().collect::<PathBuf>();
-        let mut config_str = String::new();
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(&config_file_path)?;
-        file.read_to_string(&mut config_str)?;
-        Ok(toml::from_str(&config_str).unwrap_or_else(|e| {
-            log::debug!("failed to parse config: {e}");
-            file.set_len(0).expect("Couldn't truncate config file");
-            let mut token = String::new();
-            print!("Token: ");
-            let _ = std::io::stdout().lock().flush();
-            std::io::stdin()
-                .read_line(&mut token)
-                .expect("Couldn't read token from stdin");
-            token.pop();
-
-            let config = Config {
-                token,
-                py_eval_address: default_py_eval_address(),
-                monitor_log_channel: None,
-            };
-            if let Err(e) = toml::to_string_pretty(&config)
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                .and_then(|config_str| file.write_all(config_str.as_bytes()))
-            {
-                log::error!("Failed to store token: {}", e);
-            }
-            config
-        }))
-    }
 }
 
 fn config_logger() {
@@ -129,7 +89,6 @@ fn config_logger() {
         .set_location_level(LevelFilter::Error)
         .set_level_padding(LevelPadding::Right)
         .set_target_level(LevelFilter::Off)
-        .set_time_format_str("%F %T")
         .build();
 
     let term = TermLogger::new(
@@ -186,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
         "
     );
     config_logger();
-    let config = Config::new().context("loading config")?;
+    let config = load_config().context("loading config")?;
     let http = Http::new(&config.token);
     let (owners, bot_id) = match http.get_current_application_info().await {
         Ok(info) => {
@@ -248,16 +207,13 @@ async fn main() -> anyhow::Result<()> {
         .event_handler(pubsub::event_handler::Handler::new(bot_id))
         .await
         .expect("Err creating client");
-    let mut daemon_manager = self::daemons::DaemonManager::new(client.cache_and_http.clone());
+    let mut daemon_manager = DaemonManager::spawn(client.cache_and_http.clone());
     reminders::load_reminders(&mut daemon_manager)
         .await
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
     moderation::reaction_roles::initialize().await?;
     try_init!(daemon_manager, quiz);
-    if let Some(channel) = config.monitor_log_channel {
-        daemon_manager.add_daemon(HealthMonitor::new(channel)).await;
-    }
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
     try_init!(daemon_manager, birthdays);
     try_init!(daemon_manager, curse_of_indicision);
@@ -271,8 +227,8 @@ async fn main() -> anyhow::Result<()> {
         {
             data.insert::<UpdateNotify>(id);
         }
-        data.insert::<DaemonManager>(daemon_manager);
-        data.insert::<Config>(config);
+        data.insert::<DaemonManagerKey>(daemon_manager);
+        data.insert::<memnarch_rs::Config>(config);
     }
     pubsub::subscribe::<events::Ready, _>(|ctx, ready| {
         use futures::prelude::*;
@@ -356,7 +312,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
             _ => return Ok(()),
         };
         log::trace!("looking for command: {}", cmd);
-        if let Some(o) = crate::get!(mut ctx, CustomCommands, write).execute(g, cmd)? {
+        if let Some(o) = memnarch_rs::get!(mut ctx, CustomCommands, write).execute(g, cmd)? {
             msg.channel_id.say(&ctx, o).await?;
         }
         Ok(())
@@ -387,65 +343,4 @@ async fn on_dispatch_error(ctx: &Context, msg: &Message, e: DispatchError, comma
         .say(ctx, format!("failed to dispatch {command_name}. {:?}", e))
         .await
         .expect("Couldn't communicate dispatch error");
-}
-
-#[macro_export]
-macro_rules! get {
-    ($ctx:ident, $t:ty) => {
-        $ctx.data.read().await.get::<$t>().expect(::std::concat!(
-            ::std::stringify!($t),
-            " was not initialized"
-        ))
-    };
-    (mut $ctx:ident, $t:ty) => {
-        $ctx.data
-            .write()
-            .await
-            .expect("lock took too long")
-            .get_mut::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
-    };
-    ($ctx:ident, $t:ty, $lock:ident) => {
-        $ctx.data
-            .read()
-            .await
-            .get::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
-            .$lock()
-            .await
-    };
-    (mut $ctx:ident, $t:ty, $lock:ident) => {
-        $ctx.data
-            .write()
-            .await
-            .get_mut::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
-            .$lock()
-            .await
-    };
-    (> $data:ident, $t:ty) => {
-        $data.get::<$t>().expect(::std::concat!(
-            ::std::stringify!($t),
-            " was not initialized"
-        ))
-    };
-    (> $data:ident, $t:ty, $lock:ident) => {
-        $data
-            .get::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
-            .$lock()
-            .await
-    };
 }

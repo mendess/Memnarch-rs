@@ -13,7 +13,7 @@ use serenity::model::{
     id::{ChannelId, GuildId, MessageId},
 };
 
-use crate::daemons::DaemonManager;
+use crate::util::daemons::DaemonManager;
 
 use tokio::sync::Mutex;
 

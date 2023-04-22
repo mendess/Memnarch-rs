@@ -1,6 +1,8 @@
 pub mod util;
 
-use crate::{consts::FILES_DIR, daemons::DaemonManager, get, permissions::*};
+use crate::get;
+use crate::util::daemons::DaemonManagerKey;
+use crate::util::{consts::FILES_DIR, permissions::*};
 use chrono::{DateTime, Duration, Utc};
 use daemons::{ControlFlow, Daemon};
 use itertools::Itertools;
@@ -39,6 +41,12 @@ struct SFXAliases;
 
 #[derive(Debug, Clone)]
 pub struct SfxStats(HashMap<String, usize>);
+
+impl Default for SfxStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl TypeMapKey for SfxStats {
     type Value = Arc<Mutex<SfxStats>>;
@@ -189,7 +197,7 @@ where
     call_lock.lock().await.play_source(audio);
 
     let data = ctx.data.read().await;
-    let dm = get!(> data, DaemonManager);
+    let dm = get!(> data, DaemonManagerKey);
     let id = dm
         .lock()
         .await

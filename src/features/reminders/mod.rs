@@ -1,6 +1,6 @@
 pub mod parser;
 
-use crate::{daemons::DaemonManager, util::bot_id};
+use crate::{util::bot_id, util::daemons::DaemonManager};
 use chrono::{DateTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use futures::FutureExt;

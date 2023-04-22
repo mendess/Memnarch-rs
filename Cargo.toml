@@ -12,40 +12,39 @@ console-subscriber = "0.1.8"
 daemons.workspace = true
 futures.workspace = true
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
-humantime = "2"
-itertools = "0.8"
+itertools = "0.10"
 json-db = { path = "./json-db" }
 lazy_static.workspace = true
 log.workspace = true
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
-nom = { version = "6", features = ["regexp"] }
+nom = "7"
+nom-regex = "0.2"
 num-traits = "0.2.14"
-procinfo = "0.4"
 pubsub = { path = "./pubsub" }
-rand = "0.7"
+rand = "0.8"
 regex = "1"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serenity.workspace = true
-simplelog = "0.10"
+simplelog = "0.12"
 simsearch = "0.1.4"
 songbird = "0.3"
 tempfile.workspace = true
 tokio.workspace = true
-toml = "0.5"
+toml = "0.7"
 unicase = "2"
 
 [dev-dependencies]
-paste = "*"
-proptest = "0.9"
+paste = "1"
+proptest = "1"
 
 [workspace]
 members = ["py-eval", "bot-api", "bot-api-types", "json-db", "pubsub"]
 
 [workspace.dependencies]
 anyhow = "1"
-daemons = { git = "https://github.com/mendess/daemons" }
+daemons = { git = "https://github.com/mendess/daemons", features = ["cron"] }
 futures = "0.3"
 lazy_static = "1"
 log = "0.4"

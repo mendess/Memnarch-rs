@@ -1,6 +1,6 @@
-use crate::consts::FILES_DIR;
 use crate::get;
-use crate::permissions::*;
+use crate::util::permissions::*;
+use crate::util::consts::FILES_DIR;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use serenity::{

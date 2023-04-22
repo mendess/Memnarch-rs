@@ -1,10 +1,9 @@
 use crate::{
-    consts::NUMBERS,
-    daemons::DaemonManager,
     get,
     prefs::guild as guild_prefs,
     prefs::user::{self as user_prefs, UserPrefs},
     reminders::{self, parser::*},
+    util::{consts::NUMBERS, daemons::DaemonManagerKey},
 };
 use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, Timelike, Utc};
 use futures::{stream, StreamExt, TryStreamExt};
@@ -184,7 +183,7 @@ async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         parse(args.rest()).map_err(|e| anyhow::anyhow!("Invalid time spec: {}", e))?;
     let when = calculate_when(ctx, msg, when).await?;
     let data = ctx.data.read().await;
-    let mut dm = get!(> data, DaemonManager, lock);
+    let mut dm = get!(> data, DaemonManagerKey, lock);
     reminders::remind(&mut dm, text.into(), when, msg.author.id).await?;
     msg.channel_id.say(&ctx, "You shall be reminded!").await?;
     Ok(())
@@ -200,7 +199,7 @@ async fn remind(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         parse(args.rest()).map_err(|e| anyhow::anyhow!("Invalid time spec: {}", e))?;
     let when = calculate_when(ctx, msg, when).await?;
     let data = ctx.data.read().await;
-    let mut dm = get!(> data, DaemonManager, lock);
+    let mut dm = get!(> data, DaemonManagerKey, lock);
     let mut got_one = false;
     for user_id in user_ids {
         if reminders::is_blocked_by(msg.author.id, user_id).await? {

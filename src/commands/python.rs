@@ -11,7 +11,7 @@ use serenity::{
 };
 use tokio::time::timeout;
 
-use crate::{permissions::IS_FRIEND_CHECK, Config};
+use crate::{util::permissions::IS_FRIEND_CHECK, Config};
 
 lazy_static::lazy_static! {
     static ref HTTP: Client = Client::new();

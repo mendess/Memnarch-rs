@@ -1,4 +1,4 @@
-use crate::daemons::DaemonManager;
+use crate::util::daemons::{DaemonManager, DaemonManagerKey};
 use daemons::ControlFlow;
 use futures::prelude::*;
 use pubsub::{self, events::VoiceStateUpdate};
@@ -100,7 +100,7 @@ async fn init_voice_leave() {
                                     log::error!("Could not leave voice channel: {}", e);
                                 } else {
                                     let data = ctx.data.read().await;
-                                    let mut dm = crate::get!(> data, DaemonManager, lock);
+                                    let mut dm = crate::get!(> data, DaemonManagerKey, lock);
                                     crate::get!(> data, LeaveVoiceDaemons, lock)
                                         .remove(&mut dm, guild_id)
                                         .await;

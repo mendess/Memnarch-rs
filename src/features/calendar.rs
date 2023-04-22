@@ -1,4 +1,7 @@
-use crate::{cron::Cron, daemons::DaemonManager, util::tuple_map::tuple_map_both};
+use crate::{
+    util::daemons::{Cron, DaemonManager},
+    util::tuple_map::tuple_map_both,
+};
 use anyhow::Context;
 use chrono::{Datelike, NaiveDate, Utc, Weekday};
 use daemons::ControlFlow;

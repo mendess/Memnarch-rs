@@ -1,4 +1,4 @@
-use crate::{cron::Cron, daemons::DaemonManager};
+use crate::util::daemons::{Cron, DaemonManager, DaemonManagerKey};
 use daemons::ControlFlow;
 use futures::FutureExt;
 use json_db::{Database, GlobalDatabase};
@@ -76,7 +76,7 @@ pub async fn add_quiz_guild(
             };
             quizers.insert(guild, quisers);
             let data = ctx.data.read().await;
-            let mut daemon_mgr_lock = crate::get!(> data, DaemonManager, lock);
+            let mut daemon_mgr_lock = crate::get!(> data, DaemonManagerKey, lock);
             add_quiz_daemon(quisers, &mut daemon_mgr_lock).await;
         }
     }

@@ -21,7 +21,10 @@ use serenity::{
 };
 use tokio::{fs, io, sync::Mutex};
 
-use crate::{cron::Cron, prefs::guild as guild_prefs, DaemonManager};
+use crate::{
+    prefs::guild as guild_prefs,
+    util::daemons::{Cron, DaemonManager},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BDayBoy {
@@ -106,7 +109,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
             }
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e)
+        Err(e) => return Err(e),
     }
     let dm = d.clone();
     d.lock()

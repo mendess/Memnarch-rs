@@ -14,17 +14,23 @@ COPY ./Cargo.toml ./Cargo.toml
 COPY ./.cargo ./.cargo
 RUN cargo new --bin py-eval && \
     cargo new --lib bot-api && \
-    cargo new --lib bot-api-types
+    cargo new --lib bot-api-types && \
+    cargo new --lib json-db && \
+    cargo new --lib pubsub
 
 COPY ./bot-api/Cargo.toml ./bot-api/Cargo.toml
 COPY ./bot-api-types/Cargo.toml ./bot-api-types/Cargo.toml
 COPY ./py-eval/Cargo.toml ./py-eval/Cargo.toml
+COPY ./json-db/Cargo.toml ./json-db/Cargo.toml
+COPY ./pubsub/Cargo.toml ./pubsub/Cargo.toml
 
 # cache dependencies
 RUN cargo build --release --workspace
 RUN rm -r ./src && \
     rm -r ./bot-api/src && \
-    rm -r ./bot-api-types/src
+    rm -r ./bot-api-types/src && \
+    rm -r ./json-db/src && \
+    rm -r ./pubsub/src
 
 # copy real source
 COPY ./src ./src
@@ -32,11 +38,18 @@ COPY ./.git ./.git
 COPY ./bot-api/src ./bot-api/src
 COPY ./bot-api-types/src ./bot-api-types/src
 COPY ./py-eval/src ./py-eval/src
+COPY ./json-db/src ./json-db/src
+COPY ./pubsub/src ./pubsub/src
 
 # build for release
 RUN rm ./target/release/memnarch-rs*
 RUN rm ./target/release/py-eval*
-RUN find ./src ./bot-api-types/src ./bot-api/src ./py-eval/src -name '*.rs' -exec touch '{}' ';'
+RUN find ./src ./bot-api-types/src \
+    ./bot-api/src \
+    ./py-eval/src \
+    ./json-db/src \
+    ./pubsub/src \
+    -name '*.rs' -exec touch '{}' ';'
 RUN cargo build --release --workspace
 
 # executing image

@@ -7,10 +7,10 @@ use nom::{
     character::complete::{self as character, space0 as spc},
     combinator::map,
     error::{make_error, ErrorKind},
-    regexp::str::re_find,
     sequence::{delimited, pair, preceded, terminated, tuple},
     Finish, IResult,
 };
+use nom_regex::str::re_find;
 use regex::Regex;
 use std::ops::RangeBounds;
 
