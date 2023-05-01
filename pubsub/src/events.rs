@@ -8,7 +8,7 @@ use serenity::model::{
     channel::Reaction,
     guild::Guild,
     id::{ChannelId, GuildId, MessageId},
-    prelude::{Role, RoleId, interaction::Interaction},
+    prelude::{Role, RoleId, interaction::Interaction, command::CommandPermission, automod::{Rule, ActionExecution}},
     voice::VoiceState,
 };
 
@@ -24,6 +24,11 @@ macro_rules! events {
 }
 
 events! {
+    ApplicationCommandPermissionUpdate => CommandPermission,
+    AutoModerationRuleCreate => Rule,
+    AutoModerationRuleUpdate => Rule,
+    AutoModerationRuleDelete => Rule,
+    AutoModerationActionExecution => ActionExecution,
     ReactionAdd => Reaction,
     ReactionRemove => Reaction,
     ReactionRemoveAll => (ChannelId, MessageId),

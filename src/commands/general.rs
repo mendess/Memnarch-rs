@@ -397,19 +397,26 @@ async fn bday_month(ctx: &Context, msg: &Message) -> CommandResult {
         Some(i) => {
             let mut bdays = stream::iter(i)
                 .then(|(d, u)| async move {
-                    let member = gid.member(ctx, u.id).await?;
-                    serenity::Result::Ok((d.day, member.display_name().into_owned()))
+                    let member = gid
+                        .member(ctx, u.id)
+                        .await
+                        .map(|m| m.display_name().into_owned());
+                    (d.day, member.map_err(|_| u.id))
                 })
-                .try_collect::<Vec<_>>()
-                .await?;
+                .collect::<Vec<_>>()
+                .await;
             bdays.sort_by_key(|x| x.0);
             msg.channel_id
                 .send_message(ctx, |m| {
                     m.embed(|e| {
                         e.title("Birthdays this month 🥳").description(
-                            bdays
-                                .into_iter()
-                                .format_with("\n", |(d, u), f| f(&format_args!("{:2}: {}", d, u))),
+                            bdays.into_iter().format_with("\n", |(d, u), f| {
+                                f(&format_args!(
+                                    "{:2}: {}",
+                                    d,
+                                    u.unwrap_or_else(|id| format!("user with id {id} not found"))
+                                ))
+                            }),
                         )
                     })
                 })
@@ -454,13 +461,7 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                                 short_month(date.month),
                                 (bday - now).num_days()
                             ))
-                            .thumbnail(
-                                member
-                                    .user
-                                    .avatar_url()
-                                    .as_deref()
-                                    .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
-                            )
+                            .thumbnail(member.face())
                     })
                 })
                 .await?;
@@ -476,17 +477,13 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                     return Err("Bot dev fucked up somehow".into());
                 }
                 [u] => {
-                    let Member { user, nick, .. } = gid.member(ctx, u.id).await?;
+                    let member = gid.member(ctx, u.id).await?;
                     msg.channel_id
                         .send_message(ctx, |m| {
                             m.embed(|e| {
                                 e.title("Next birthday :tada:")
-                                    .description(fmt!(user.name, nick).to_string())
-                                    .thumbnail(
-                                        user.avatar_url()
-                                            .as_deref()
-                                            .unwrap_or("https://i.imgur.com/lKmW0tc.png"),
-                                    )
+                                    .description(fmt!(member.user.name, member.nick).to_string())
+                                    .thumbnail(member.face())
                                     .footer(|f| {
                                         f.text(format!("{}/{}", date.day, short_month(date.month)))
                                     })
