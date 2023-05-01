@@ -88,8 +88,10 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> anyhow::Result<()>
         }
     }
     let d = d.clone();
-    pubsub::subscribe::<events::GuildCreate, _>(move |_, (g, _)| curse(g.id, d.clone()).boxed())
-        .await;
+    pubsub::subscribe::<events::GuildCreate, _>(move |_, events::GuildCreate { guild, .. }| {
+        curse(guild.id, d.clone()).boxed()
+    })
+    .await;
     Ok(())
 }
 

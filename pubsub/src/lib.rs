@@ -56,14 +56,12 @@ where
     };
 }
 
-pub(crate) fn publish<T>(ctx: Context, arg: T::Argument)
-where
-    T: Event,
-{
-    tokio::spawn(async move {
-        let mut to_remove = vec![];
-        let subscribers = EVENT_HANDLERS.read().await.get(&TypeId::of::<T>()).cloned();
-        if let Some(subscribers) = subscribers {
+pub(crate) async fn publish_with<T: Event>(ctx: Context, arg: impl FnOnce() -> T::Argument) {
+    let mut to_remove = vec![];
+    let subscribers = EVENT_HANDLERS.read().await.get(&TypeId::of::<T>()).cloned();
+    if let Some(subscribers) = subscribers {
+        let arg = arg();
+        tokio::spawn(async move {
             let mut subscribers = subscribers.lock().await;
             for (i, s) in subscribers.iter_mut().enumerate() {
                 if s(&ctx, &arg).await.is_break() {
@@ -74,6 +72,13 @@ where
                 let _ = subscribers.remove(*i);
                 log::trace!("Removed a callback for {}, index: {}", type_name::<T>(), i);
             }
-        }
-    });
+        });
+    }
+}
+
+pub(crate) async fn publish<T>(ctx: Context, arg: T::Argument)
+where
+    T: Event,
+{
+    publish_with::<T>(ctx, || arg).await
 }

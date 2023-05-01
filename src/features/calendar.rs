@@ -253,9 +253,15 @@ pub async fn initialize(dm: &mut DaemonManager) {
         async move { react_change(c, a.channel_id, a.message_id).await }.boxed()
     })
     .await;
-    pubsub::subscribe::<ReactionRemoveAll, _>(|c, (ch_id, msg_id)| {
-        async move { react_change(c, *ch_id, *msg_id).await }.boxed()
-    })
+    pubsub::subscribe::<ReactionRemoveAll, _>(
+        |c,
+         ReactionRemoveAll {
+             channel_id,
+             removed_from_message_id,
+         }| {
+            async move { react_change(c, *channel_id, *removed_from_message_id).await }.boxed()
+        },
+    )
     .await;
     pubsub::subscribe::<CacheReady, _>(|c, _| {
         async move {

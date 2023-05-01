@@ -65,7 +65,7 @@ async fn init_voice_leave() {
     static INIT_VOICE_LEAVE: OnceCell<()> = OnceCell::const_new();
     INIT_VOICE_LEAVE
         .get_or_init(|| async {
-            pubsub::subscribe::<VoiceStateUpdate, _>(|ctx, (guild_id, old, _)| {
+            pubsub::subscribe::<VoiceStateUpdate, _>(|ctx, VoiceStateUpdate { old, new }| {
                 async move {
                     #[derive(PartialEq, Eq)]
                     enum Alone {
@@ -92,7 +92,7 @@ async fn init_voice_leave() {
                     }
                     if let Some(id) = old.as_ref().and_then(|vs| vs.channel_id) {
                         if alone(id, ctx).await == Some(Alone::OnlyBots) {
-                            if let Some(guild_id) = *guild_id {
+                            if let Some(guild_id) = new.guild_id {
                                 let sb =
                                     songbird::get(ctx).await.expect("Songbird not initialized");
                                 log::debug!("Leaving voice channel: {}", guild_id);

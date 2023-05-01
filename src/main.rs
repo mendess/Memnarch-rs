@@ -1,6 +1,7 @@
 use ::daemons::ControlFlow;
 use anyhow::Context as _;
 use bot_api as api;
+use futures::{stream, FutureExt, StreamExt};
 use memnarch_rs::commands::custom::CustomCommands;
 use memnarch_rs::commands::interrail::InterrailConfig;
 use memnarch_rs::features::{
@@ -253,6 +254,53 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             ControlFlow::BREAK
+        }
+        .boxed()
+    })
+    .await;
+    pubsub::subscribe::<events::VoiceStateUpdate, _>(
+        |ctx, events::VoiceStateUpdate { new, .. }| {
+            async move {
+                // Disconnect channel of mirrodin
+                if let (
+                    Some(gid @ GuildId(352399774818762759)),
+                    Some(id @ ChannelId(707561909846802462)),
+                ) = (new.guild_id, new.channel_id)
+                {
+                    async fn f(id: ChannelId, gid: GuildId, ctx: &Context) -> anyhow::Result<()> {
+                        let c = id.to_channel(ctx).await.and_then(|c| {
+                            c.guild()
+                                .ok_or(serenity::Error::Other("Not a guild channel"))
+                        })?;
+                        let members = c.members(ctx).await?;
+                        stream::iter(members)
+                            .for_each(|mut m| async move {
+                                let name = std::mem::take(&mut m.user.name);
+                                if let Err(e) = gid.disconnect_member(ctx, m).await {
+                                    log::error!(
+                                    "Failed to disconnect member {} from disconnect channel: {}",
+                                    name,
+                                    e
+                                );
+                                }
+                            })
+                            .await;
+                        Ok(())
+                    }
+                    if let Err(e) = f(id, gid, ctx).await {
+                        log::error!("Failed to disconnect user: {}", e);
+                    }
+                }
+                ControlFlow::CONTINUE
+            }
+            .boxed()
+        },
+    )
+    .await;
+    pubsub::subscribe::<events::GuildCreate, _>(|_, events::GuildCreate { guild, .. }| {
+        async move {
+            log::info!("found guild {}::{}", guild.name, guild.id);
+            ControlFlow::CONTINUE
         }
         .boxed()
     })
