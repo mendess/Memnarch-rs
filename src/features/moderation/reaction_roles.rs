@@ -29,7 +29,7 @@ impl<'s> PartialEq<BorrowedKey<'s>> for MapKey {
     }
 }
 
-type GuildReactionMap = JsonHashMap<(ReactionType, MessageId), RoleId>;
+type GuildReactionMap = JsonHashMap<MapKey, RoleId>;
 
 lazy_static! {
     static ref REACTION_ROLES: Mutex<HashMap<GuildId, Database<GuildReactionMap>>> =

@@ -57,39 +57,39 @@ impl EventHandler for Handler {
                 log::error!("Failed to disconnect user: {}", e);
             }
         }
-        publish::<events::VoiceStateUpdate>(ctx, (new.guild_id, old, new)).await;
+        publish::<events::VoiceStateUpdate>(ctx, (new.guild_id, old, new));
     }
 
     async fn reaction_add(&self, ctx: Context, add_reaction: Reaction) {
         if add_reaction.user_id != self.0 {
-            publish::<events::ReactionAdd>(ctx, add_reaction).await;
+            publish::<events::ReactionAdd>(ctx, add_reaction);
         }
     }
 
     async fn reaction_remove(&self, ctx: Context, remove_reaction: Reaction) {
         if remove_reaction.user_id != self.0 {
-            publish::<events::ReactionRemove>(ctx, remove_reaction).await;
+            publish::<events::ReactionRemove>(ctx, remove_reaction);
         }
     }
 
     async fn reaction_remove_all(&self, ctx: Context, channel_id: ChannelId, msg: MessageId) {
-        publish::<events::ReactionRemoveAll>(ctx, (channel_id, msg)).await;
+        publish::<events::ReactionRemoveAll>(ctx, (channel_id, msg));
     }
 
     async fn cache_ready(&self, ctx: Context, guilds: Vec<GuildId>) {
-        publish::<events::CacheReady>(ctx, guilds).await;
+        publish::<events::CacheReady>(ctx, guilds);
     }
 
     async fn ready(&self, ctx: Context, ready: Ready) {
-        publish::<events::Ready>(ctx, ready).await;
+        publish::<events::Ready>(ctx, ready);
     }
 
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: bool) {
         log::info!("found guild {}::{}", guild.name, guild.id);
-        publish::<events::GuildCreate>(ctx, (guild, is_new)).await;
+        publish::<events::GuildCreate>(ctx, (guild, is_new));
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        publish::<events::InteractionCreate>(ctx, interaction).await;
+        publish::<events::InteractionCreate>(ctx, interaction);
     }
 }

@@ -56,7 +56,7 @@ where
     };
 }
 
-pub(crate) async fn publish<T>(ctx: Context, arg: T::Argument)
+pub(crate) fn publish<T>(ctx: Context, arg: T::Argument)
 where
     T: Event,
 {
@@ -70,8 +70,8 @@ where
                     to_remove.push(i);
                 }
             }
-            for i in to_remove {
-                let _ = subscribers.remove(i);
+            for i in to_remove.iter().rev() {
+                let _ = subscribers.remove(*i);
                 log::trace!("Removed a callback for {}, index: {}", type_name::<T>(), i);
             }
         }
