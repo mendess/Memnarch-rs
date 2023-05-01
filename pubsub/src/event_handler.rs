@@ -6,7 +6,7 @@ use serenity::{
         gateway::Ready,
         guild::Guild,
         id::{ChannelId, GuildId, MessageId},
-        prelude::UserId,
+        prelude::{interaction::Interaction, UserId},
         voice::VoiceState,
     },
     prelude::*,
@@ -87,5 +87,9 @@ impl EventHandler for Handler {
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: bool) {
         log::info!("found guild {}::{}", guild.name, guild.id);
         publish::<events::GuildCreate>(ctx, (guild, is_new)).await;
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        publish::<events::InteractionCreate>(ctx, interaction).await;
     }
 }

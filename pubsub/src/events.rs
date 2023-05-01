@@ -8,7 +8,7 @@ use serenity::model::{
     channel::Reaction,
     guild::Guild,
     id::{ChannelId, GuildId, MessageId},
-    prelude::{Role, RoleId},
+    prelude::{Role, RoleId, interaction::Interaction},
     voice::VoiceState,
 };
 
@@ -32,4 +32,5 @@ events! {
     Ready => serenity::model::gateway::Ready,
     CacheReady => Vec<GuildId>,
     GuildCreate => (Guild, bool),
+    InteractionCreate => Interaction,
 }
