@@ -13,4 +13,4 @@ tempfile.workspace = true
 
 [dependencies.tokio]
 workspace = true
-features = ["sync"]
+features = ["sync", "parking_lot"]
