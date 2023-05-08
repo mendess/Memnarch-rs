@@ -32,7 +32,7 @@ const SFX_STATS_FILE: &str = "sfx_stats.json";
 
 #[group]
 #[prefix("sfx")]
-#[commands(list, add, play, delete, retreive, stats, stop)]
+#[commands(list, add, play, delete, get, stats, stop)]
 struct SFX;
 
 #[group]
@@ -292,12 +292,12 @@ async fn delete(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 }
 
 #[command]
-#[aliases("get")]
+#[aliases("retreive", "retrieve")]
 #[min_args(1)]
 #[description("Upload an sfx file to discord")]
 #[usage("part of name")]
 #[example("wow")]
-async fn retreive(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+async fn get(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let file = find_file(&args).await?;
     msg.channel_id
         .send_message(&ctx, |m| m.add_file(&file))
