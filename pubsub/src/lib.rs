@@ -1,7 +1,7 @@
 pub mod event_handler;
 pub mod events;
 
-use daemons::ControlFlow;
+pub use daemons::ControlFlow;
 use futures::future::BoxFuture;
 use lazy_static::lazy_static;
 use serenity::{
