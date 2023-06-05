@@ -13,14 +13,14 @@ daemons.workspace = true
 futures.workspace = true
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
 itertools = "0.10"
-json-db = { path = "./json-db" }
+json-db = { git = "https://github.com/mendess/discord-bot-utils" }
 lazy_static.workspace = true
 log.workspace = true
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 nom = "7"
 nom-regex = "0.2"
 num-traits = "0.2.14"
-pubsub = { path = "./pubsub" }
+pubsub = { git = "https://github.com/mendess/discord-bot-utils", features = ["serenity_cache"] }
 rand = "0.8"
 regex = "1"
 reqwest.workspace = true
@@ -40,11 +40,11 @@ paste = "1"
 proptest = "1"
 
 [workspace]
-members = ["py-eval", "bot-api", "bot-api-types", "json-db", "pubsub"]
+members = ["py-eval", "bot-api", "bot-api-types"]
 
 [workspace.dependencies]
 anyhow = "1"
-daemons = { git = "https://github.com/mendess/daemons", features = ["cron"] }
+daemons = { git = "https://github.com/mendess/discord-bot-utils", features = ["cron"] }
 futures = "0.3"
 lazy_static = "1"
 log = "0.4"
