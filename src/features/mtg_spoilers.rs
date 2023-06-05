@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Write,
     io,
     sync::Arc,
     time::Duration,
@@ -8,11 +9,7 @@ use std::{
 use daemons::{async_trait, Daemon};
 use lazy_static::lazy_static;
 use mtg_spoilers::{Spoiler, SpoilerSource};
-use serenity::{
-    http::CacheHttp,
-    model::prelude::{ChannelId, MessageId},
-    prelude::Mutex,
-};
+use serenity::{http::CacheHttp, model::prelude::ChannelId, prelude::Mutex};
 
 use crate::util::daemons::DaemonManager;
 use json_db::{Database, GlobalDatabase};
@@ -71,8 +68,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
 static SPOILER_CHANNEL_DB: GlobalDatabase<HashSet<ChannelId>> = Database::const_new(paths::DB);
 
 lazy_static! {
-    static ref RETRY_CACHE: Mutex<HashMap<ChannelId, Vec<(Spoiler, CardSendState)>>> =
-        Mutex::default();
+    static ref RETRY_CACHE: Mutex<HashMap<ChannelId, Vec<Spoiler>>> = Mutex::default();
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -91,32 +87,21 @@ pub async fn toggle_channel(ch: ChannelId) -> io::Result<ToggleAction> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum CardSendState {
-    SourceMsgMissing(ChannelId),
-    ThreadMissing(MessageId),
-    NotSent,
-}
-
 async fn send_new_cards(
     ctx: &serenity::CacheAndHttp,
     new_cards: Vec<Spoiler>,
 ) -> serenity::Result<()> {
     for ch in SPOILER_CHANNEL_DB.load().await?.iter() {
         let retries = RETRY_CACHE.lock().await.remove(ch).unwrap_or_default();
-        for c in retries
-            .iter()
-            .map(|(s, c)| (s, *c))
-            .chain(new_cards.iter().map(|c| (c, CardSendState::NotSent)))
-        {
-            if let Err((state, e)) = send_card(ctx, *ch, c).await {
-                log::error!("failed to publish spoiler {c:?} to {ch}: {e:?}");
+        for c in retries.iter().chain(new_cards.iter()) {
+            if let Err(e) = send_card(ctx, *ch, c).await {
+                log::error!("failed to publish spoiler {c:#?} to {ch}: {e:?}");
                 RETRY_CACHE
                     .lock()
                     .await
                     .entry(*ch)
                     .or_default()
-                    .push((c.0.clone(), state));
+                    .push(c.clone());
             }
         }
     }
@@ -126,54 +111,26 @@ async fn send_new_cards(
 async fn send_card(
     ctx: &serenity::CacheAndHttp,
     ch: ChannelId,
-    (card, state): (&Spoiler, CardSendState),
-) -> Result<(), (CardSendState, serenity::Error)> {
-    let msg_id = match state {
-        CardSendState::ThreadMissing(msg_id) => msg_id,
-        _ => {
-            ch.send_message(ctx.http(), |builder| {
-                builder.embed(|builder| {
-                    if let Some(name) = &card.name {
-                        builder.title(name);
-                    }
-                    builder.image(&card.image).url(&card.source_site_url)
-                })
-            })
-            .await
-            .map_err(|e| (CardSendState::NotSent, e))?
-            .id
-        }
-    };
-    let thread_id = match state {
-        CardSendState::SourceMsgMissing(tid) => tid,
-        _ => {
-            ch.create_public_thread(ctx.http(), msg_id, |ct| {
-                ct.name(
-                    card.name
-                        .as_deref()
-                        .unwrap_or_else(|| name_from_image(&card.image)),
-                )
-            })
-            .await
-            .map_err(|e| (CardSendState::ThreadMissing(msg_id), e))?
-            .id
-        }
-    };
-    thread_id
-        .send_message(ctx.http(), |m| {
+    card: &Spoiler,
+) -> Result<(), serenity::Error> {
+    ch.send_message(ctx.http(), |builder| {
+        builder.embed(|builder| {
+            builder.image(&card.image).url(&card.source_site_url).title(
+                card.name
+                    .as_deref()
+                    .unwrap_or_else(|| name_from_image(&card.image)),
+            );
             if let Some(SpoilerSource { name, url }) = &card.source {
-                m.embed(|e| {
-                    if let Some(url) = url {
-                        e.url(url);
-                    }
-                    e.title("Source").description(name)
-                })
-            } else {
-                m.content("Unkown source")
+                let mut description = format!("Source: {name}");
+                if let Some(url) = url {
+                    write!(description, "\n{url}").expect("pushing to a string should never fail");
+                }
+                builder.description(description);
             }
+            builder
         })
-        .await
-        .map_err(|e| (CardSendState::SourceMsgMissing(thread_id), e))?;
+    })
+    .await?;
 
     Ok(())
 }
