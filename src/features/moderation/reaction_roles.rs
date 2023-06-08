@@ -1,6 +1,5 @@
 use ::daemons::ControlFlow;
 use futures::FutureExt;
-use lazy_static::lazy_static;
 use serenity::{
     http::CacheHttp,
     model::prelude::{ChannelId, GuildId, MessageId, Reaction, ReactionType, RoleId},
@@ -12,6 +11,7 @@ use std::{
     os::unix::prelude::OsStrExt,
     path::{Path, PathBuf},
     str::from_utf8,
+    sync::OnceLock,
 };
 use tokio::{fs, sync::Mutex};
 
@@ -31,10 +31,8 @@ impl<'s> PartialEq<BorrowedKey<'s>> for MapKey {
 
 type GuildReactionMap = JsonHashMap<MapKey, RoleId>;
 
-lazy_static! {
-    static ref REACTION_ROLES: Mutex<HashMap<GuildId, Database<GuildReactionMap>>> =
-        Default::default();
-}
+static REACTION_ROLES: OnceLock<Mutex<HashMap<GuildId, Database<GuildReactionMap>>>> =
+    OnceLock::new();
 
 async fn migrate_schema(path: &Path) -> io::Result<()> {
     let new_format = serde_json::from_reader::<_, Vec<(ReactionType, MessageId, RoleId)>>(
@@ -53,7 +51,7 @@ async fn migrate_schema(path: &Path) -> io::Result<()> {
 pub async fn initialize() -> io::Result<()> {
     match fs::read_dir(BASE).await {
         Ok(mut read_dir) => {
-            let mut db = REACTION_ROLES.lock().await;
+            let mut db = HashMap::new();
             while let Some(d) = read_dir.next_entry().await? {
                 let path = d.path();
                 let gid = match path.file_stem().and_then(|n| {
@@ -66,6 +64,10 @@ pub async fn initialize() -> io::Result<()> {
                 let _ = migrate_schema(&path).await;
                 db.insert(gid, Database::new(path).await?);
             }
+            REACTION_ROLES
+                .set(db.into())
+                .map_err(|_| ())
+                .expect("reaction_roles::initialize was called twice");
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(e),
@@ -77,7 +79,11 @@ pub async fn initialize() -> io::Result<()> {
             return
         };
         let (mut member, role) = {
-            let db = REACTION_ROLES.lock().await;
+            let db = REACTION_ROLES
+                .get()
+                .expect("reaction_roles::initialize was not called")
+                .lock()
+                .await;
             let Some(db) = db.get(&gid) else {
                 return;
             };
@@ -148,7 +154,11 @@ pub(crate) async fn reaction_role_add(
     let path = [BASE, &guild_id.to_string()]
         .into_iter()
         .collect::<PathBuf>();
-    let mut db = REACTION_ROLES.lock().await;
+    let mut db = REACTION_ROLES
+        .get()
+        .expect("reaction_roles::initialize was not called")
+        .lock()
+        .await;
     let database = match db.entry(guild_id) {
         Entry::Occupied(o) => o.into_mut(),
         Entry::Vacant(v) => v.insert(Database::new(path).await?),

@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
 use reqwest::Client;
 use serenity::{
@@ -13,9 +13,7 @@ use tokio::time::timeout;
 
 use crate::{util::permissions::IS_FRIEND_CHECK, Config};
 
-lazy_static::lazy_static! {
-    static ref HTTP: Client = Client::new();
-}
+static HTTP: OnceLock<Client> = OnceLock::new();
 
 #[group]
 #[commands(py)]
@@ -52,7 +50,8 @@ pub async fn eval_(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         .clone();
     let r = timeout(
         Duration::from_secs(10),
-        HTTP.post(format!("http://{}/{}", py_eval_address, path))
+        HTTP.get_or_init(Default::default)
+            .post(format!("http://{}/{}", py_eval_address, path))
             .json(&serde_json::json! {{ "t": code }})
             .send(),
     )

@@ -1,11 +1,10 @@
 use chrono::DateTime;
-use lazy_static::lazy_static;
 use reqwest::{header, Client};
 use serde::Deserialize;
 use serenity::{
     framework::standard::{
         macros::{command, group},
-        Args, CommandResult,
+        Args, CommandError, CommandResult,
     },
     model::channel::Message,
     prelude::*,
@@ -15,12 +14,13 @@ use std::{
     os::unix::{fs::PermissionsExt, process::CommandExt},
     process::Command as StdFork,
     str,
+    sync::OnceLock,
 };
 use tokio::{
     fs::{self, File},
     io::AsyncWriteExt,
     process::Command as Fork,
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
 };
 
 const EXE_NAME: &str = "memnarch-rs";
@@ -58,17 +58,18 @@ async fn restart(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     Err(error.into())
 }
 
-lazy_static! {
-    static ref UPDATING: Mutex<()> = Mutex::new(());
+fn ensure_not_already_updating() -> Result<MutexGuard<'static, ()>, CommandError> {
+    static UPDATING: OnceLock<Mutex<()>> = OnceLock::new();
+    match UPDATING.get_or_init(|| Mutex::new(())).try_lock() {
+        Err(_) => Err("Alreading updating".into()),
+        Ok(guard) => Ok(guard),
+    }
 }
 
 #[command]
 #[description("Update the bot")]
 async fn pull_update(ctx: &Context, msg: &Message) -> CommandResult {
-    let _ = match UPDATING.try_lock() {
-        Err(_) => return Err("Alreading updating".into()),
-        Ok(guard) => guard,
-    };
+    let _guard = ensure_not_already_updating()?;
     async fn check_msg(mut m: Message, ctx: &Context) -> serenity::Result<()> {
         let new_msg = format!("{} :white_check_mark:", m.content);
         m.edit(ctx, |m| m.content(new_msg)).await
@@ -142,10 +143,7 @@ mod messages {
 #[command]
 #[description("Update the bot")]
 async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
-    let _ = match UPDATING.try_lock() {
-        Err(_) => return Err("Alreading updating".into()),
-        Ok(guard) => guard,
-    };
+    let _guard = ensure_not_already_updating()?;
 
     #[derive(Deserialize)]
     struct Release {

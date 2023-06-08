@@ -1,4 +1,5 @@
-use axum::{handler::post, http::StatusCode, Json, Router};
+use actix_web::{http::StatusCode, web, App, HttpResponse, HttpServer, ResponseError};
+use core::fmt;
 use pyo3::{
     types::{PyDict, PyFloat, PyFunction, PyInt, PyList, PyString, PyTuple},
     PyAny, Python,
@@ -18,10 +19,6 @@ async fn main() {
     }
     tracing_subscriber::fmt::init();
 
-    let app = Router::new()
-        .route("/", post(eval))
-        .route("/expr", post(expr));
-
     let addr = SocketAddr::from((
         std::env::args()
             .nth(1)
@@ -30,10 +27,16 @@ async fn main() {
         31415,
     ));
     info!("Listening on {}", addr);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    HttpServer::new(|| {
+        App::new()
+            .route("/", web::post().to(eval))
+            .route("/expr", web::post().to(expr))
+    })
+    .bind(addr)
+    .unwrap()
+    .run()
+    .await
+    .unwrap()
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -41,14 +44,42 @@ struct Program {
     t: String,
 }
 
-type Response<T> = (StatusCode, T);
-type HttpResponse = Result<Response<Json<serde_json::Value>>, Response<String>>;
+#[derive(Debug)]
+enum Error {
+    FailedToSerializeReponse(anyhow::Error),
+    Unexpected(&'static str),
+    FailedToRun(pyo3::PyErr),
+    Timeout(Duration),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::FailedToSerializeReponse(e) => write!(f, "failed to serialize response: {e}"),
+            Error::Unexpected(msg) => write!(f, "{msg}"),
+            Error::FailedToRun(e) => write!(f, "python execution failed: {e}"),
+            Error::Timeout(dur) => write!(f, "runtime timeout exceded: {dur:?}"),
+        }
+    }
+}
+
+impl ResponseError for Error {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Error::FailedToSerializeReponse(_) => StatusCode::BAD_REQUEST,
+            Error::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Error::FailedToRun(_) => StatusCode::BAD_REQUEST,
+            Error::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
+        }
+    }
+}
 
 #[tracing::instrument]
-async fn eval(json_program: Json<Program>) -> HttpResponse {
-    let Json(Program { t }) = json_program;
+async fn eval(json_program: web::Json<Program>) -> Result<HttpResponse, Error> {
+    let web::Json(Program { t }) = json_program;
+    const TIMEOUT: Duration = Duration::from_secs(2);
     let timeout = timeout(
-        Duration::from_secs(10),
+        TIMEOUT,
         spawn_blocking(move || {
             let py = Python::acquire_gil();
             let py = py.python();
@@ -57,7 +88,7 @@ async fn eval(json_program: Json<Program>) -> HttpResponse {
                 Ok(_) => serialize_into_response(locals),
                 Err(e) => {
                     error!("Failed to run: {:?}", e);
-                    Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
+                    Err(Error::FailedToRun(e))
                 }
             }
         }),
@@ -65,27 +96,26 @@ async fn eval(json_program: Json<Program>) -> HttpResponse {
     .await;
 
     match timeout {
-        Ok(Ok(r)) => r,
+        Ok(Ok(r)) => Ok(match r? {
+            Some(json) => HttpResponse::Ok().json(json),
+            None => HttpResponse::NoContent().json(serde_json::Value::Null),
+        }),
         Ok(Err(e)) => {
             error!("Error joining: {:?}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                String::from("Someone did a fucky wuky"),
-            ))
+            Err(Error::Unexpected("Someone did a fucky wuky"))
         }
-        Err(_) => Err((
-            StatusCode::REQUEST_TIMEOUT,
-            String::from("Can't take more than 10 seconds"),
-        )),
+        Err(_) => Err(Error::Timeout(TIMEOUT)),
     }
 }
 
 #[tracing::instrument]
-async fn expr(json_program: Json<Program>) -> HttpResponse {
-    let Json(Program { t }) = json_program;
+async fn expr(json_program: web::Json<Program>) -> Result<HttpResponse, Error> {
+    let web::Json(Program { t }) = json_program;
+
+    const TIMEOUT: Duration = Duration::from_secs(2);
 
     let timeout = timeout(
-        Duration::from_secs(2),
+        TIMEOUT,
         spawn_blocking(move || {
             let py = Python::acquire_gil();
             let py = py.python();
@@ -94,7 +124,7 @@ async fn expr(json_program: Json<Program>) -> HttpResponse {
                 Ok(obj) => serialize_into_response(obj),
                 Err(e) => {
                     error!("Failed to eval: {:?}", e);
-                    Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
+                    Err(Error::FailedToRun(e))
                 }
             }
         }),
@@ -102,28 +132,25 @@ async fn expr(json_program: Json<Program>) -> HttpResponse {
     .await;
 
     match timeout {
-        Ok(Ok(r)) => r,
+        Ok(Ok(r)) => Ok(match r? {
+            Some(json) => HttpResponse::Ok().json(json),
+            None => HttpResponse::NoContent().json(serde_json::Value::Null),
+        }),
         Ok(Err(e)) => {
             error!("Error joining: {:?}", e);
-            Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                String::from("Someone did a fucky wuky"),
-            ))
+            Err(Error::Unexpected("Someone did a fucky wuky"))
         }
-        Err(_) => Err((
-            StatusCode::REQUEST_TIMEOUT,
-            String::from("Can't take more than 2 seconds"),
-        )),
+        Err(_) => Err(Error::Timeout(TIMEOUT)),
     }
 }
 
-fn serialize_into_response(obj: &PyAny) -> HttpResponse {
+fn serialize_into_response(obj: &PyAny) -> Result<Option<serde_json::Value>, Error> {
     match serialize(obj) {
-        Ok(Some(json)) => Ok((StatusCode::OK, Json(json))),
-        Ok(None) => Ok((StatusCode::NO_CONTENT, Json(serde_json::Value::Null))),
+        Ok(Some(json)) => Ok(Some(json)),
+        Ok(None) => Ok(None),
         Err(e) => {
             error!("Failed to serialize: {:?}", e);
-            Err((StatusCode::BAD_REQUEST, format!("{:?}", e)))
+            Err(Error::FailedToSerializeReponse(e))
         }
     }
 }

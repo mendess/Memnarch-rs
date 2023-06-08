@@ -1,6 +1,5 @@
 use crate::util::tuple_map::TupleMap;
 use chrono::{Duration, NaiveTime};
-use lazy_static::lazy_static;
 use nom::{
     branch::alt,
     bytes::complete::{self as bytes, tag},
@@ -12,7 +11,7 @@ use nom::{
 };
 use nom_regex::str::re_find;
 use regex::Regex;
-use std::ops::RangeBounds;
+use std::{ops::RangeBounds, sync::OnceLock};
 
 fn day_tag(s: &str) -> IResult<&str, &str> {
     alt((tag("day"), tag("dia")))(s)
@@ -74,26 +73,41 @@ fn time(input: &str) -> IResult<&str, NaiveTime> {
 }
 
 fn duration(input: &str) -> IResult<&str, Duration> {
-    lazy_static! {
-        static ref SECONDS: Regex = Regex::new("^(s|sec|secs|seconds?|segundos?) ").unwrap();
-        static ref MINUTES: Regex = Regex::new("^(m|min|mins|minutes?|minutos?) ").unwrap();
-        static ref HOURS: Regex = Regex::new("^(h|hours?|horas?) ").unwrap();
-        static ref DAYS: Regex = Regex::new("^(d|days?|dias?) ").unwrap();
-        static ref WEEKS: Regex = Regex::new("^(w|weeks?|semanas?) ").unwrap();
-        static ref MONTHS: Regex = Regex::new("^(months?|mes(es)?) ").unwrap();
-        static ref YEARS: Regex = Regex::new("^(y|years?|anos?) ").unwrap();
-    };
+    static PATTERNS: [OnceLock<Regex>; 7] = [
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+    ];
+    const SECONDS: fn() -> &'static Regex =
+        || PATTERNS[0].get_or_init(|| Regex::new("^(s|sec|secs|seconds?|segundos?) ").unwrap());
+    const MINUTES: fn() -> &'static Regex =
+        || PATTERNS[1].get_or_init(|| Regex::new("^(m|min|mins|minutes?|minutos?) ").unwrap());
+    const HOURS: fn() -> &'static Regex =
+        || PATTERNS[2].get_or_init(|| Regex::new("^(h|hours?|horas?) ").unwrap());
+    const DAYS: fn() -> &'static Regex =
+        || PATTERNS[3].get_or_init(|| Regex::new("^(d|days?|dias?) ").unwrap());
+    const WEEKS: fn() -> &'static Regex =
+        || PATTERNS[4].get_or_init(|| Regex::new("^(w|weeks?|semanas?) ").unwrap());
+    const MONTHS: fn() -> &'static Regex =
+        || PATTERNS[5].get_or_init(|| Regex::new("^(months?|mes(es)?) ").unwrap());
+    const YEARS: fn() -> &'static Regex =
+        || PATTERNS[6].get_or_init(|| Regex::new("^(y|years?|anos?) ").unwrap());
+
     let re = |r: &Regex| re_find(r.clone());
 
     let (input, amt) = terminated(parse_number(..), spc)(input)?.map_snd(i64::from);
     let (input, dur) = alt((
-        map(re(&SECONDS), |_| Duration::seconds(amt)),
-        map(re(&MINUTES), |_| Duration::minutes(amt)),
-        map(re(&HOURS), |_| Duration::hours(amt)),
-        map(re(&DAYS), |_| Duration::days(amt)),
-        map(re(&WEEKS), |_| Duration::weeks(amt)),
-        map(re(&MONTHS), |_| Duration::days(30 * amt)),
-        map(re(&YEARS), |_| Duration::days(365 * amt)),
+        map(re(SECONDS()), |_| Duration::seconds(amt)),
+        map(re(MINUTES()), |_| Duration::minutes(amt)),
+        map(re(HOURS()), |_| Duration::hours(amt)),
+        map(re(DAYS()), |_| Duration::days(amt)),
+        map(re(WEEKS()), |_| Duration::weeks(amt)),
+        map(re(MONTHS()), |_| Duration::days(30 * amt)),
+        map(re(YEARS()), |_| Duration::days(365 * amt)),
     ))(input)?;
     Ok((input, dur))
 }

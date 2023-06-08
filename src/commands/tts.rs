@@ -1,5 +1,4 @@
 use crate::commands::sfx::STOP_COMMAND;
-use lazy_static::lazy_static;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -10,7 +9,7 @@ use serenity::{
     model::channel::Message,
     prelude::*,
 };
-use std::error::Error;
+use std::{error::Error, sync::OnceLock};
 use tokio::sync::RwLock;
 
 #[group]
@@ -27,8 +26,8 @@ struct Tts;
 pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     super::sfx::play_sfx(ctx, msg, || async {
         let text = args.rest();
-        let service = CURRENT_SERVICE.read().await;
-        let voice = CURRENT_VOICE.read().await;
+        let service = current_service().read().await;
+        let voice = current_voice().read().await;
         let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
         match songbird::ytdl(&tts_link).await {
             Ok(source) => Ok(source),
@@ -38,9 +37,14 @@ pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     .await
 }
 
-lazy_static! {
-    static ref CURRENT_SERVICE: RwLock<String> = RwLock::new(String::from("Polly"));
-    static ref CURRENT_VOICE: RwLock<String> = RwLock::new(String::from("Brian"));
+fn current_service() -> &'static RwLock<String> {
+    static CURRENT_SERVICE: OnceLock<RwLock<String>> = OnceLock::new();
+    CURRENT_SERVICE.get_or_init(|| RwLock::new(String::from("Polly")))
+}
+
+fn current_voice() -> &'static RwLock<String> {
+    static CURRENT_VOICE: OnceLock<RwLock<String>> = OnceLock::new();
+    CURRENT_VOICE.get_or_init(|| RwLock::new(String::from("Brian")))
 }
 
 #[command]
@@ -59,8 +63,8 @@ pub async fn config(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
             ),
         )
         .await?;
-    *CURRENT_SERVICE.write().await = service;
-    *CURRENT_VOICE.write().await = voice;
+    *current_service().write().await = service;
+    *current_voice().write().await = voice;
     Ok(())
 }
 
@@ -69,13 +73,13 @@ async fn generate_tts(
     voice: Option<&str>,
     text: &str,
 ) -> Result<String, Box<dyn Error + Send + Sync + 'static>> {
-    lazy_static! {
-        static ref CLIENT: Client = Client::new();
-    }
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    let client = CLIENT.get_or_init(Client::new);
+
     let service = service.unwrap_or("Polly");
     let voice = voice.unwrap_or("Brian");
     log::info!("Fetching {}:{}:{:?}", service, voice, text);
-    let response = CLIENT
+    let response = client
         .post("https://lazypy.ro/tts/proxy.php")
         .header("content-type", "application/x-www-form-urlencoded")
         .body(format!("service={}&voice={}&text={}", service, voice, text))
@@ -99,8 +103,8 @@ async fn generate_tts(
 #[example("pogchamp")]
 pub async fn save(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let text = args.rest();
-    let service = CURRENT_SERVICE.read().await;
-    let voice = CURRENT_VOICE.read().await;
+    let service = current_service().read().await;
+    let voice = current_voice().read().await;
     let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
     msg.channel_id.say(&ctx, tts_link).await?;
     Ok(())

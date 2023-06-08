@@ -2,12 +2,11 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
     io,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
 use daemons::{async_trait, Daemon};
-use lazy_static::lazy_static;
 use mtg_spoilers::{Spoiler, SpoilerSource};
 use serenity::{http::CacheHttp, model::prelude::ChannelId, prelude::Mutex};
 
@@ -67,9 +66,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
 
 static SPOILER_CHANNEL_DB: GlobalDatabase<HashSet<ChannelId>> = Database::const_new(paths::DB);
 
-lazy_static! {
-    static ref RETRY_CACHE: Mutex<HashMap<ChannelId, Vec<Spoiler>>> = Mutex::default();
-}
+static RETRY_CACHE: OnceLock<Mutex<HashMap<ChannelId, Vec<Spoiler>>>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToggleAction {
@@ -92,11 +89,17 @@ async fn send_new_cards(
     new_cards: Vec<Spoiler>,
 ) -> serenity::Result<()> {
     for ch in SPOILER_CHANNEL_DB.load().await?.iter() {
-        let retries = RETRY_CACHE.lock().await.remove(ch).unwrap_or_default();
+        let retries = RETRY_CACHE
+            .get_or_init(Default::default)
+            .lock()
+            .await
+            .remove(ch)
+            .unwrap_or_default();
         for c in retries.iter().chain(new_cards.iter()) {
             if let Err(e) = send_card(ctx, *ch, c).await {
                 log::error!("failed to publish spoiler {c:#?} to {ch}: {e:?}");
                 RETRY_CACHE
+                    .get_or_init(Default::default)
                     .lock()
                     .await
                     .entry(*ch)

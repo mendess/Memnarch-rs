@@ -1,9 +1,12 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
 
 use daemons::{ControlFlow, Daemon};
 use futures::{stream::StreamExt, FutureExt};
 use json_db::{Database, GlobalDatabase};
-use lazy_static::lazy_static;
 use pubsub::{self, events};
 use rand::seq::SliceRandom;
 use regex::Regex;
@@ -19,8 +22,9 @@ use tokio::sync::Mutex;
 
 static DATABASE: GlobalDatabase<HashMap<GuildId, Curse>> = Database::const_new("files/curses.json");
 
-lazy_static! {
-    static ref CURSE_REGEX: Regex = Regex::new("Curse\\(([0-9]+)\\)").unwrap();
+fn curse_regex() -> &'static Regex {
+    static CURSE_REGEX: OnceLock<Regex> = OnceLock::new();
+    CURSE_REGEX.get_or_init(|| Regex::new("Curse\\(([0-9]+)\\)").unwrap())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -100,7 +104,7 @@ async fn curse(guild: GuildId, d: Arc<Mutex<DaemonManager>>) -> ControlFlow {
         let mut mng = d.lock().await;
         let is_registered = mng
             .daemon_names()
-            .filter_map(|(_, h)| CURSE_REGEX.captures(h.name()))
+            .filter_map(|(_, h)| curse_regex().captures(h.name()))
             .filter_map(|c| c.get(1))
             .filter_map(|c| c.as_str().parse::<u64>().ok().map(GuildId))
             .inspect(|c| log::trace!("{:?}", c))

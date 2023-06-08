@@ -71,6 +71,7 @@ async fn send_dm(
 
 pub async fn start(c: Arc<CacheAndHttp>) -> std::io::Result<()> {
     let cache_http = Data::from(c);
+
     let server = HttpServer::new(move || {
         App::new()
             .app_data(cache_http.clone())

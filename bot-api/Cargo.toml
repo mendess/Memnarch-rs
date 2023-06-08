@@ -10,6 +10,5 @@ reqwest.workspace = true
 bot-api-types = { path = "../bot-api-types" }
 
 [dependencies.actix-web]
-version = "4.1.0"
+workspace = true
 features = ["rustls", "compress-brotli", "compress-gzip", "compress-zstd"]
-default-features = false

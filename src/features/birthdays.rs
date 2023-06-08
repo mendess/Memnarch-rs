@@ -13,13 +13,15 @@ use chrono::{Datelike, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use futures::TryFutureExt;
 use json_db::Database;
-use lazy_static::lazy_static;
 use serenity::{
     http::Http,
     model::id::{GuildId, UserId},
     prelude::Mentionable,
 };
-use tokio::{fs, io, sync::Mutex};
+use tokio::{
+    fs, io,
+    sync::{Mutex, OnceCell},
+};
 
 use crate::{
     prefs::guild as guild_prefs,
@@ -88,14 +90,12 @@ impl std::error::Error for Error {}
 
 type BdayMap = Mutex<HashMap<GuildId, Database<BTreeMap<BDay, Vec<BDayBoy>>, Error>>>;
 
-lazy_static! {
-    static ref BDAY_MAP: BdayMap = Default::default();
-}
+static BDAY_MAP: OnceCell<BdayMap> = OnceCell::const_new();
 
 pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     match fs::read_dir(BASE).await {
         Ok(mut read_dir) => {
-            let mut db = BDAY_MAP.lock().await;
+            let mut db = HashMap::new();
             while let Some(d) = read_dir.next_entry().await? {
                 let path = d.path();
                 let gid = match path.file_stem().and_then(|n| {
@@ -107,6 +107,10 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
                 };
                 db.insert(gid, Database::with_ser_and_deser(path, ser, deser).await?);
             }
+            BDAY_MAP
+                .set(db.into())
+                .map_err(|_| ())
+                .expect("birthdays::initialize was called twice");
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => return Err(e),
@@ -123,7 +127,13 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
 
 pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)>> {
     let tree = {
-        match BDAY_MAP.lock().await.get(&g) {
+        match BDAY_MAP
+            .get()
+            .expect("birthdays::initialize was not called")
+            .lock()
+            .await
+            .get(&g)
+        {
             None => return Ok(None),
             Some(b) => b.load().await?.take(),
         }
@@ -142,7 +152,13 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
 }
 
 pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<(u32, BDayBoy)>>> {
-    let database = match BDAY_MAP.lock().await.get(&g) {
+    let database = match BDAY_MAP
+        .get()
+        .expect("birthdays::initialize was not called")
+        .lock()
+        .await
+        .get(&g)
+    {
         None => return Ok(Default::default()),
         Some(b) => b.load().await?.take(),
     };
@@ -157,7 +173,13 @@ pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<(u32, BDayBoy)>
 }
 
 pub async fn of(g: GuildId, user_id: UserId) -> anyhow::Result<Option<BDay>> {
-    let database = match BDAY_MAP.lock().await.get(&g) {
+    let database = match BDAY_MAP
+        .get()
+        .expect("birthdays::initialize was not called")
+        .lock()
+        .await
+        .get(&g)
+    {
         None => return Ok(None),
         Some(b) => b.load().await?.take(),
     };
@@ -171,7 +193,13 @@ pub async fn of_month(
     g: GuildId,
     month: Month,
 ) -> anyhow::Result<Option<impl Iterator<Item = (BDay, BDayBoy)>>> {
-    let database = match BDAY_MAP.lock().await.get(&g) {
+    let database = match BDAY_MAP
+        .get()
+        .expect("birthdays::initialize was not called")
+        .lock()
+        .await
+        .get(&g)
+    {
         None => return Ok(None),
         Some(b) => b.load().await?.take(),
     };
@@ -188,7 +216,11 @@ pub async fn add_bday(
     who: UserId,
     when: NaiveDate,
 ) -> anyhow::Result<Option<NaiveDate>> {
-    let mut map = BDAY_MAP.lock().await;
+    let mut map = BDAY_MAP
+        .get()
+        .expect("birthdays::initialize was not called")
+        .lock()
+        .await;
     let calendar = match map.entry(g) {
         Entry::Occupied(o) => o.into_mut(),
         Entry::Vacant(o) => {
@@ -210,7 +242,13 @@ pub async fn add_bday(
 }
 
 pub async fn remove_bday(g: GuildId, who: UserId) -> anyhow::Result<Option<NaiveDate>> {
-    match BDAY_MAP.lock().await.get(&g) {
+    match BDAY_MAP
+        .get()
+        .expect("birthdays::initialize was not called")
+        .lock()
+        .await
+        .get(&g)
+    {
         Some(calendar) => {
             let mut calendar = calendar.load().await?;
             Ok(remove_user(&mut calendar, who))
@@ -310,7 +348,13 @@ type BDayChecker<F, Fut> = Cron<F, Fut, 0, 0, 30>;
 
 async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFlow {
     let today = BDay::from(Utc::now().naive_utc().date());
-    for (gid, guild) in BDAY_MAP.lock().await.iter() {
+    for (gid, guild) in BDAY_MAP
+        .get()
+        .expect("birthdays::initialize was not called")
+        .lock()
+        .await
+        .iter()
+    {
         log::trace!("processing birthdays for guild {}", gid);
         let (channel, role) = match guild_prefs::get(*gid)
             .await

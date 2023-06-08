@@ -9,13 +9,12 @@ anyhow.workspace = true
 bot-api = { path = "./bot-api" }
 chrono = "0.4"
 console-subscriber = "0.1.8"
-daemons.workspace = true
+daemons = { git = "https://github.com/mendess/discord-bot-utils", features = ["cron"] }
 futures.workspace = true
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
 itertools = "0.10"
 json-db = { git = "https://github.com/mendess/discord-bot-utils" }
-lazy_static.workspace = true
-log.workspace = true
+log = "0.4"
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 nom = "7"
 nom-regex = "0.2"
@@ -30,10 +29,13 @@ serenity.workspace = true
 simplelog = "0.12"
 simsearch = "0.1.4"
 songbird = "0.3"
-tempfile.workspace = true
-tokio.workspace = true
+tempfile = "3"
 toml = "0.7"
 unicase = "2"
+
+[dependencies.tokio]
+workspace = true
+features = ["rt", "rt-multi-thread", "io-util", "macros", "sync", "tracing"]
 
 [dev-dependencies]
 paste = "1"
@@ -44,17 +46,15 @@ members = ["py-eval", "bot-api", "bot-api-types"]
 
 [workspace.dependencies]
 anyhow = "1"
-daemons = { git = "https://github.com/mendess/discord-bot-utils", features = ["cron"] }
 futures = "0.3"
-lazy_static = "1"
-log = "0.4"
 reqwest = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serenity = { version = "0.11", features = ["collector"] }
-tempfile = "3"
 
 [workspace.dependencies.tokio]
 version = "1"
-features = ["rt", "rt-multi-thread", "io-util", "macros", "sync", "tracing"]
 
+[workspace.dependencies.actix-web]
+version = "4.1.0"
+default-features = false
