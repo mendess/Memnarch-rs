@@ -32,7 +32,6 @@ use serenity::{
 use songbird::SerenityInit;
 use std::{
     collections::HashSet,
-    env,
     fs::{DirBuilder, OpenOptions},
     io::{self, Read, Write},
     path::PathBuf,
@@ -40,6 +39,9 @@ use std::{
     time::Duration,
 };
 use tokio::time::timeout;
+use tracing::Metadata;
+use tracing_subscriber::filter::filter_fn;
+use tracing_subscriber::{layer::SubscriberExt, Layer};
 
 use memnarch_rs::util::daemons::{DaemonManager, DaemonManagerKey};
 
@@ -54,7 +56,7 @@ fn load_config() -> std::io::Result<memnarch_rs::Config> {
         .open(config_file_path)?;
     file.read_to_string(&mut config_str)?;
     Ok(toml::from_str(&config_str).unwrap_or_else(|e| {
-        log::debug!("failed to parse config: {e}");
+        tracing::debug!("failed to parse config: {e}");
         file.set_len(0).expect("Couldn't truncate config file");
         let mut token = String::new();
         print!("Token: ");
@@ -69,7 +71,7 @@ fn load_config() -> std::io::Result<memnarch_rs::Config> {
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
             .and_then(|config_str| file.write_all(config_str.as_bytes()))
         {
-            log::error!("Failed to store token: {}", e);
+            tracing::error!("Failed to store token: {}", e);
         }
         config
     }))
@@ -82,60 +84,66 @@ impl TypeMapKey for UpdateNotify {
 }
 
 fn config_logger() {
-    use simplelog::*;
-    let config = ConfigBuilder::new()
-        .add_filter_allow_str(module_path!())
-        .add_filter_allow_str(stringify!(daemons))
-        .set_thread_level(LevelFilter::Off)
-        .set_location_level(LevelFilter::Error)
-        .set_level_padding(LevelPadding::Right)
-        .set_target_level(LevelFilter::Off)
-        .build();
+    if std::env::var_os("RUST_LOG").is_none() {
+        std::env::set_var("RUST_LOG", "debug");
+    }
 
-    let term = TermLogger::new(
-        LevelFilter::Trace,
-        config.clone(),
-        TerminalMode::Stdout,
-        ColorChoice::AlwaysAnsi,
-    );
-    let file = WriteLogger::new(
-        LevelFilter::Info,
-        config.clone(),
-        OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open("memnarch.log")
-            .expect("can't create log file"),
-    );
-    let critical_log = WriteLogger::new(LevelFilter::Error, config, {
-        let home = env::var("HOME")
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-            .expect("Can't find home directory");
-        let file_path = PathBuf::from_iter([home, "memnarch_critical_error.log".into()]);
-        OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(file_path)
-            .expect("can't create critical log file")
-    });
-    CombinedLogger::init(vec![term, file, critical_log]).unwrap();
+    let moldule_filter = |meta: &Metadata| {
+        meta.target().starts_with("memnarch_rs") || meta.target().starts_with("daemons")
+    };
+
+    let console = tracing_subscriber::fmt::layer()
+        .pretty()
+        .with_writer(io::stderr)
+        .with_filter(filter_fn(moldule_filter));
+
+    let file = tracing_subscriber::fmt::layer()
+        .with_writer(|| {
+            OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open("memnarch.log")
+                .expect("can't create log file")
+        })
+        .with_filter(filter_fn(moldule_filter));
+
+    let critical_file = tracing_subscriber::fmt::layer()
+        .with_writer(|| {
+            let home = std::env::var("HOME")
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+                .expect("Can't find home directory");
+            let file_path = PathBuf::from_iter([home, "memnarch_critical_error.log".into()]);
+            OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open(file_path)
+                .expect("can't create critical log file")
+        })
+        .with_filter(filter_fn(moldule_filter));
+
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::registry()
+            .with(console)
+            .with(file)
+            .with(critical_file),
+    )
+    .unwrap();
 }
 
 macro_rules! try_init {
     ($d:expr, $m:ident) => {
         if let std::result::Result::Err(e) = $m::initialize(&mut $d).await {
-            log::error!("Failed to initialize {}: {:?}", stringify!($m), e);
+            tracing::error!("Failed to initialize {}: {:?}", stringify!($m), e);
         } else {
-            log::info!("{} initialized!", stringify!($m));
+            tracing::info!("{} initialized!", stringify!($m));
         }
     };
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    console_subscriber::init();
     println!(
         "
 ========================================
@@ -159,13 +167,13 @@ async fn main() -> anyhow::Result<()> {
             match http.get_current_user().await {
                 Ok(bot_id) => (owners, bot_id.id),
                 Err(why) => {
-                    log::error!("Could not access current user: {why}");
+                    tracing::error!("Could not access current user: {why}");
                     (owners, UserId(352881326044741644))
                 }
             }
         }
         Err(why) => {
-            log::error!("Could not access application info: {why}");
+            tracing::error!("Could not access application info: {why}");
             (
                 [UserId(98500250540478464)].into_iter().collect(),
                 UserId(352881326044741644),
@@ -242,7 +250,7 @@ async fn main() -> anyhow::Result<()> {
                 "
             );
             println!(
-                "Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot",
+                "Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot\n",
                 ready.user.id
             );
             if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>() {
@@ -250,7 +258,7 @@ async fn main() -> anyhow::Result<()> {
                     .send_message(&ctx, |m| m.content("Updated successfully!"))
                     .await
                 {
-                    log::error!("Couldn't send update notification: {}", e);
+                    tracing::error!("Couldn't send update notification: {}", e);
                 }
             }
             ControlFlow::BREAK
@@ -277,7 +285,7 @@ async fn main() -> anyhow::Result<()> {
                             .for_each(|mut m| async move {
                                 let name = std::mem::take(&mut m.user.name);
                                 if let Err(e) = gid.disconnect_member(ctx, m).await {
-                                    log::error!(
+                                    tracing::error!(
                                     "Failed to disconnect member {} from disconnect channel: {}",
                                     name,
                                     e
@@ -288,7 +296,7 @@ async fn main() -> anyhow::Result<()> {
                         Ok(())
                     }
                     if let Err(e) = f(id, gid, ctx).await {
-                        log::error!("Failed to disconnect user: {}", e);
+                        tracing::error!("Failed to disconnect user: {}", e);
                     }
                 }
                 ControlFlow::CONTINUE
@@ -299,7 +307,7 @@ async fn main() -> anyhow::Result<()> {
     .await;
     pubsub::subscribe::<events::GuildCreate, _>(|_, events::GuildCreate { guild, .. }| {
         async move {
-            log::info!("found guild {}::{}", guild.name, guild.id);
+            tracing::info!("found guild {}::{}", guild.name, guild.id);
             ControlFlow::CONTINUE
         }
         .boxed()
@@ -311,14 +319,14 @@ async fn main() -> anyhow::Result<()> {
         .expect("to be able to launch bot api task");
     tokio::select! {
         r = client.start() => if let Err(why) = r {
-            log::error!("Sad face :(  {:?}", why);
+            tracing::error!("Sad face :(  {:?}", why);
         },
         _ = tokio::signal::ctrl_c() => {}
     }
     task.abort();
-    log::info!("waiting for server to shutdown");
+    tracing::info!("waiting for server to shutdown");
     if timeout(Duration::from_secs(10), task).await.is_err() {
-        log::error!("Server didn't shutdown, forcing it");
+        tracing::error!("Server didn't shutdown, forcing it");
         std::process::exit(1);
     }
     Ok(())
@@ -359,7 +367,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
             Some(s) if !s.is_empty() => &s[1..],
             _ => return Ok(()),
         };
-        log::trace!("looking for command: {}", cmd);
+        tracing::trace!("looking for command: {}", cmd);
         if let Some(o) = memnarch_rs::get!(mut ctx, CustomCommands, write).execute(g, cmd)? {
             msg.channel_id.say(&ctx, o).await?;
         }
@@ -367,7 +375,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
     }
     if let Some(g) = msg.guild_id {
         if let Err(e) = f(ctx, msg, g).await {
-            log::error!("Custom command failed: {:?}", e);
+            tracing::error!("Custom command failed: {:?}", e);
         }
     }
 }
@@ -376,11 +384,11 @@ async fn normal_message(ctx: &Context, msg: &Message) {
 async fn after(ctx: &Context, msg: &Message, cmd_name: &str, error: Result<(), CommandError>) {
     match error {
         Ok(()) => {
-            log::trace!("Processed command '{}' for user '{}'", cmd_name, msg.author)
+            tracing::info!("Processed command '{}' for user '{}'", cmd_name, msg.author)
         }
         Err(why) => {
             let _ = msg.channel_id.say(ctx, &why).await;
-            log::trace!("Command '{}' failed with {:?}", cmd_name, why)
+            tracing::error!("Command '{}' failed with {:?}", cmd_name, why)
         }
     }
 }

@@ -51,7 +51,7 @@ impl QuoteManager {
         // TODO: don't read to a string
         file.read_to_string(&mut s).await.and_then(|_| {
             serde_json::from_str(&s).map_err(|e| {
-                log::error!("Error parsing quotes");
+                tracing::error!("Error parsing quotes");
                 e.into()
             })
         })
@@ -64,7 +64,7 @@ impl QuoteManager {
     async fn add(&mut self, quote: String) -> std::io::Result<()> {
         self.0.push(quote);
         let path = Self::path().await?;
-        log::trace!("Quote add: {:?}", path);
+        tracing::trace!("Quote add: {:?}", path);
         // TODO: don't write to a string
         let content = serde_json::to_string(self)?;
         File::create(path)

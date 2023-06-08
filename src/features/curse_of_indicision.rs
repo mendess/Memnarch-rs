@@ -62,12 +62,12 @@ impl Daemon<false> for Curse {
                 this.sim = !this.sim;
                 this.last_msg = Some((m.channel_id, m.id))
             } else {
-                log::error!("no messages found in the cursed server: {}", this.guild);
+                tracing::error!("no messages found in the cursed server: {}", this.guild);
             }
             save(*this).await
         }
         if let Err(e) = _r(self, d).await {
-            log::error!("failed to haunt server {}: {:?}", self.guild, e)
+            tracing::error!("failed to haunt server {}: {:?}", self.guild, e)
         }
         ControlFlow::CONTINUE
     }
@@ -86,7 +86,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> anyhow::Result<()>
         let mut d = d.lock().await;
         for (g, c) in DATABASE.load().await?.take() {
             if is_cursed(g).await {
-                log::info!("cursing {}", g);
+                tracing::info!("cursing {}", g);
                 d.add_daemon(c).await;
             }
         }
@@ -107,25 +107,25 @@ async fn curse(guild: GuildId, d: Arc<Mutex<DaemonManager>>) -> ControlFlow {
             .filter_map(|(_, h)| curse_regex().captures(h.name()))
             .filter_map(|c| c.get(1))
             .filter_map(|c| c.as_str().parse::<u64>().ok().map(GuildId))
-            .inspect(|c| log::trace!("{:?}", c))
+            .inspect(|c| tracing::trace!("{:?}", c))
             .any(|id| id == guild);
 
         if is_registered {
-            log::info!("guild {} already registered", guild);
+            tracing::info!("guild {} already registered", guild);
         } else {
             let curse = Curse {
                 guild,
                 last_msg: None,
                 sim: false,
             };
-            log::info!("cursing {}", guild);
+            tracing::info!("cursing {}", guild);
             match DATABASE.load().await {
                 Ok(mut v) => {
                     v.insert(guild, curse);
                     mng.add_daemon(curse).await;
                 }
                 Err(e) => {
-                    log::error!("failed to serialize curse {}: {:?}", guild, e)
+                    tracing::error!("failed to serialize curse {}: {:?}", guild, e)
                 }
             }
         }

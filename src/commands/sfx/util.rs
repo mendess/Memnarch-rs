@@ -95,9 +95,9 @@ async fn init_voice_leave() {
                             if let Some(guild_id) = new.guild_id {
                                 let sb =
                                     songbird::get(ctx).await.expect("Songbird not initialized");
-                                log::debug!("Leaving voice channel: {}", guild_id);
+                                tracing::debug!("Leaving voice channel: {}", guild_id);
                                 if let Err(e) = sb.remove(guild_id).await {
-                                    log::error!("Could not leave voice channel: {}", e);
+                                    tracing::error!("Could not leave voice channel: {}", e);
                                 } else {
                                     let data = ctx.data.read().await;
                                     let mut dm = crate::get!(> data, DaemonManagerKey, lock);

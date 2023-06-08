@@ -90,7 +90,7 @@ pub async fn initialize() -> io::Result<()> {
             let db = match db.load().await {
                 Ok(db) => db,
                 Err(e) => {
-                    log::error!("failed to load db: {e:?}");
+                    tracing::error!("failed to load db: {e:?}");
                     return;
                 }
             };
@@ -100,7 +100,7 @@ pub async fn initialize() -> io::Result<()> {
             let member = match gid.member(ctx, reaction.user_id.unwrap()).await {
                 Ok(m) => m,
                 Err(e) => {
-                    log::error!("failed to get member: {e:?}");
+                    tracing::error!("failed to get member: {e:?}");
                     return;
                 }
             };
@@ -108,10 +108,10 @@ pub async fn initialize() -> io::Result<()> {
         };
         if ADD {
             if let Err(e) = member.add_role(ctx, role).await {
-                log::error!("failed to add role: {e:?}");
+                tracing::error!("failed to add role: {e:?}");
             }
         } else if let Err(e) = member.remove_role(ctx, role).await {
-            log::error!("failed to add role: {e:?}");
+            tracing::error!("failed to add role: {e:?}");
         }
     }
     pubsub::subscribe::<ReactionAdd, _>(|ctx: &Context, args: &Reaction| {

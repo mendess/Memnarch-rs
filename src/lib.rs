@@ -9,9 +9,8 @@ pub mod prefs;
 pub mod util;
 
 use bot_api as _;
-use console_subscriber as _;
-use simplelog as _;
 use toml as _;
+use tracing_subscriber as _;
 
 use commands::custom::CustomCommands;
 use features::{birthdays, calendar, moderation, mtg_spoilers, quiz, reminders};
@@ -93,7 +92,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
             Some(s) if !s.is_empty() => &s[1..],
             _ => return Ok(()),
         };
-        log::trace!("looking for command: {}", cmd);
+        tracing::trace!("looking for command: {}", cmd);
         if let Some(o) = crate::get!(mut ctx, CustomCommands, write).execute(g, cmd)? {
             msg.channel_id.say(&ctx, o).await?;
         }
@@ -101,7 +100,7 @@ async fn normal_message(ctx: &Context, msg: &Message) {
     }
     if let Some(g) = msg.guild_id {
         if let Err(e) = f(ctx, msg, g).await {
-            log::error!("Custom command failed: {:?}", e);
+            tracing::error!("Custom command failed: {:?}", e);
         }
     }
 }
@@ -110,11 +109,11 @@ async fn normal_message(ctx: &Context, msg: &Message) {
 async fn after(ctx: &Context, msg: &Message, cmd_name: &str, error: Result<(), CommandError>) {
     match error {
         Ok(()) => {
-            log::trace!("Processed command '{}' for user '{}'", cmd_name, msg.author)
+            tracing::trace!("Processed command '{}' for user '{}'", cmd_name, msg.author)
         }
         Err(why) => {
             let _ = msg.channel_id.say(ctx, &why).await;
-            log::trace!("Command '{}' failed with {:?}", cmd_name, why)
+            tracing::trace!("Command '{}' failed with {:?}", cmd_name, why)
         }
     }
 }

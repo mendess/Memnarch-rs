@@ -310,50 +310,50 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
     let g = match bday_map().iter_guard().await {
         Ok(g) => g,
         Err(e) => {
-            log::error!("failed to load bdays for checking: {e:?}");
+            tracing::error!("failed to load bdays for checking: {e:?}");
             return ControlFlow::CONTINUE;
         }
     };
     for (gid, guild) in g.iter() {
-        log::trace!("processing birthdays for guild {}", gid);
+        tracing::trace!("processing birthdays for guild {}", gid);
         let (channel, role) = match guild_prefs::get(*gid)
             .await
             .map(|p| p.and_then(|p| p.birthday_channel.map(|ch| (ch, p.birthday_role))))
         {
             Ok(Some(ch)) => ch,
             Ok(None) => {
-                log::error!("birthday channel not set for guild {}", gid);
+                tracing::error!("birthday channel not set for guild {}", gid);
                 continue;
             }
             Err(e) => {
-                log::error!("Error fetching guild prefs: {:?}", e);
+                tracing::error!("Error fetching guild prefs: {:?}", e);
                 continue;
             }
         };
         let guild = match guild.load().await {
             Ok(mut g) => g.take(),
             Err(e) => {
-                log::error!("Error fetching guild birthdays: {:?}", e);
+                tracing::error!("Error fetching guild birthdays: {:?}", e);
                 continue;
             }
         };
         for (date, users) in guild.iter() {
             if *date == today {
-                log::debug!("Date: {:?} / Today {:?}", date, today);
-                log::debug!(
+                tracing::debug!("Date: {:?} / Today {:?}", date, today);
+                tracing::debug!(
                     "There are {} users having their birthday on {:?}",
                     users.len(),
                     date
                 );
                 for user in users {
-                    log::info!("Date: {:?} - User {:?}", date, user);
+                    tracing::info!("Date: {:?} - User {:?}", date, user);
                     let r = channel
                         .send_message(&http, |m| {
                             m.content(format!("Parabens! {}", user.id.mention()))
                         })
                         .await;
                     if let Err(e) = r {
-                        log::error!(
+                        tracing::error!(
                             "Failed to send happy birthday to {:?} in {}: {:?}",
                             user,
                             channel,
@@ -367,7 +367,7 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                             .and_then(|mut m| async move { m.add_role(http, role).await })
                             .await;
                         if let Err(e) = r {
-                            log::error!(
+                            tracing::error!(
                                 "failed to add birthday role({}) to user({}) in guild({}): {:?}",
                                 role,
                                 user.id,
@@ -386,7 +386,7 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                     }
                 }
             } else {
-                log::debug!("Date {:?} is not today {:?}", date, today);
+                tracing::debug!("Date {:?} is not today {:?}", date, today);
             }
         }
     }
@@ -410,7 +410,7 @@ impl Daemon<false> for UnBdayBoy {
             {
                 Some(bday_role) => bday_role,
                 None => {
-                    log::warn!("birthday role unconfigured");
+                    tracing::warn!("birthday role unconfigured");
                     return Ok(());
                 }
             };
@@ -422,7 +422,7 @@ impl Daemon<false> for UnBdayBoy {
             Ok(())
         }
         if let Err(e) = _r(self, data).await {
-            log::error!("failed to remove birthday role: {:?}", e)
+            tracing::error!("failed to remove birthday role: {:?}", e)
         }
         ControlFlow::BREAK
     }

@@ -27,24 +27,24 @@ impl Daemon<true> for SpoilerChecker {
 
     async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
         use mtg_spoilers::{cache::file::File, mythic};
-        log::info!("checking for spoilers");
+        tracing::info!("checking for spoilers");
         let cache = match File::new(paths::CACHE).await {
             Ok(c) => c,
             Err(e) => {
-                log::error!("failed to create cache: {e:?}");
+                tracing::error!("failed to create cache: {e:?}");
                 return daemons::ControlFlow::CONTINUE;
             }
         };
         let new_cards = match mythic::new_cards(cache).await {
             Ok(n) => n,
             Err(e) => {
-                log::error!("failed to fetch new cards: {e:?}");
+                tracing::error!("failed to fetch new cards: {e:?}");
                 return daemons::ControlFlow::CONTINUE;
             }
         };
 
         if let Err(e) = send_new_cards(data, new_cards).await {
-            log::error!("failed to send new cards: {e:?}");
+            tracing::error!("failed to send new cards: {e:?}");
         }
         daemons::ControlFlow::CONTINUE
     }
@@ -97,7 +97,7 @@ async fn send_new_cards(
             .unwrap_or_default();
         for c in retries.iter().chain(new_cards.iter()) {
             if let Err(e) = send_card(ctx, *ch, c).await {
-                log::error!("failed to publish spoiler {c:#?} to {ch}: {e:?}");
+                tracing::error!("failed to publish spoiler {c:#?} to {ch}: {e:?}");
                 RETRY_CACHE
                     .get_or_init(Default::default)
                     .lock()

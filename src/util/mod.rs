@@ -14,7 +14,7 @@ pub async fn bot_id(http: impl AsRef<Http>) -> Option<UserId> {
             match http
                 .as_ref()
                 .get_current_application_info()
-                .inspect_err(|e| log::error!("failed to get app info: {:?}", e))
+                .inspect_err(|e| tracing::error!("failed to get app info: {:?}", e))
                 .map_ok(|x| x.id)
                 .await
                 .ok()

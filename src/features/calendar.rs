@@ -94,7 +94,7 @@ async fn send_message(ctx: &Http, channel: ChannelId, d: NaiveDate) -> anyhow::R
         .await?;
     for (e, fallback) in reacts::all() {
         if let Err(e) = message.react(&ctx, e).await {
-            log::warn!("Failed to react with custom emoji: {}", e);
+            tracing::warn!("Failed to react with custom emoji: {}", e);
             message.react(&ctx, fallback).await?;
         }
     }
@@ -112,7 +112,7 @@ pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<(
         {
             for m in cal.messages {
                 if let Err(e) = channel.delete_message(ctx.http(), m).await {
-                    log::error!("Failed to delete message: {:?}", e)
+                    tracing::error!("Failed to delete message: {:?}", e)
                 }
             }
         }
@@ -127,7 +127,7 @@ async fn tick(ctx: &Http) -> anyhow::Result<()> {
     let mut cals = DATABASE.load().await?;
     let today = Utc::now().date_naive();
     for Calendar { channel, messages } in cals.iter_mut() {
-        log::debug!("Ticking calendar in channel {}", channel);
+        tracing::debug!("Ticking calendar in channel {}", channel);
         loop {
             let m_id = *messages.first().unwrap();
             let mut m = channel.message(ctx.http(), m_id).await?;
@@ -183,7 +183,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
             .and_then(|m| update_reacts(ctx, m))
             .await
         {
-            log::error!("failed to update reacts: {}", e);
+            tracing::error!("failed to update reacts: {}", e);
         }
         async fn update_reacts(ctx: &Context, mut message: Message) -> serenity::Result<()> {
             let bot_id = crate::util::bot_id(ctx).await;
@@ -266,7 +266,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
     pubsub::subscribe::<CacheReady, _>(|c, _| {
         async move {
             if let Err(e) = tick(c.http()).await {
-                log::error!("Failed to tick calenders after ready: {}", e);
+                tracing::error!("Failed to tick calenders after ready: {}", e);
             }
             ControlFlow::BREAK
         }
@@ -279,7 +279,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
             let data = data.http.clone();
             async move {
                 if let Err(e) = tick(&data).await {
-                    log::error!("Failed to tick a calendar forward: {:?}", e);
+                    tracing::error!("Failed to tick a calendar forward: {:?}", e);
                 }
                 ControlFlow::CONTINUE
             }

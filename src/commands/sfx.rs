@@ -68,7 +68,7 @@ impl SfxStats {
                 .ok()
                 .and_then(|f| {
                     serde_json::from_reader(f)
-                        .map_err(|e| log::error!("Error loading sfx stats: '{}'", e))
+                        .map_err(|e| tracing::error!("Error loading sfx stats: '{}'", e))
                         .ok()
                 })
                 .unwrap_or_default(),
@@ -109,9 +109,9 @@ impl Daemon<false> for LeaveVoice {
     type Data = serenity::CacheAndHttp;
 
     async fn run(&mut self, _: &Self::Data) -> ControlFlow {
-        log::debug!("Leaving voice. Scheduled for {}", self.when);
+        tracing::debug!("Leaving voice. Scheduled for {}", self.when);
         if let Err(e) = self.songbird.remove(self.guild_id).await {
-            log::error!("Could not leave voice channel: {}", e);
+            tracing::error!("Could not leave voice channel: {}", e);
         }
         ControlFlow::BREAK
     }
@@ -169,7 +169,7 @@ async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         msg.channel_id
             .say(&ctx, &format!("Playing {}", file.display()))
             .await?;
-        log::info!("Playing sfx: {:?}", file);
+        tracing::info!("Playing sfx: {:?}", file);
         match songbird::ffmpeg(&file).await {
             Ok(source) => Ok(source),
             Err(e) => Err(format!("Failed getting audio source: {:?}", e).into()),
@@ -180,7 +180,7 @@ async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         .update(file.as_os_str().to_str().unwrap())
         .await
     {
-        log::error!("Failed to update sfx stats: {}", e);
+        tracing::error!("Failed to update sfx stats: {}", e);
     }
     Ok(())
 }

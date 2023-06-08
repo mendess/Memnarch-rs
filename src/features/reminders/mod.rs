@@ -38,14 +38,14 @@ impl Daemon<false> for Reminder {
         match self.id.create_dm_channel(data).await {
             Ok(pch) => {
                 if let Err(e) = pch.say(&data.http, &self.message).await {
-                    log::error!("Failed to send reminder: {:?}", e);
+                    tracing::error!("Failed to send reminder: {:?}", e);
                 } else if let Err(e) = remove_reminder(self).await {
-                    log::error!("Failed to remove reminder: {:?}", e);
+                    tracing::error!("Failed to remove reminder: {:?}", e);
                 }
                 ControlFlow::BREAK
             }
             Err(e) => {
-                log::error!("Failed to create dm channel: {:?}", e);
+                tracing::error!("Failed to create dm channel: {:?}", e);
                 ControlFlow::CONTINUE
             }
         }
@@ -106,7 +106,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
         daemons.add_daemon(r).await;
         i += 1;
     }
-    log::info!("Loaded {} reminders", i);
+    tracing::info!("Loaded {} reminders", i);
     async fn intervenients<F, R>(
         ctx: &Context,
         arg: &Reaction,
@@ -130,19 +130,19 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             Err(_) => match ctx.http.get_channel(m.channel_id.0).await? {
                 Channel::Private(ch) => ch.recipient.id,
                 ch => {
-                    log::trace!("Not a private channel {:?}", ch);
+                    tracing::trace!("Not a private channel {:?}", ch);
                     return Ok(None);
                 }
             },
             Ok(ch) => {
-                log::trace!("Not a private channel {:?}", ch);
+                tracing::trace!("Not a private channel {:?}", ch);
                 return Ok(None);
             }
         };
         let blocked = match m.mentions.first() {
             Some(u) => u.id,
             None => {
-                log::trace!("There were no mentions in the message");
+                tracing::trace!("There were no mentions in the message");
                 return Ok(None);
             }
         };
@@ -160,17 +160,17 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             {
                 Ok(Some(u)) => {
                     let blocker = arg.user_id.expect("cache");
-                    log::info!("User {} blocked {}", blocker, u);
+                    tracing::info!("User {} blocked {}", blocker, u);
                     if let Err(e) = arg
                         .channel_id
                         .say(ctx, format!("blocked: {}", u.mention()))
                         .await
                     {
-                        log::error!("failed to inform user: {}", e);
+                        tracing::error!("failed to inform user: {}", e);
                     }
                 }
                 Ok(None) => (),
-                Err(e) => log::error!("{:?}", e),
+                Err(e) => tracing::error!("{:?}", e),
             }
             ControlFlow::CONTINUE
         }
@@ -186,17 +186,17 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             {
                 Ok(Some(u)) => {
                     let blocker = arg.user_id.expect("cache");
-                    log::info!("User {} unblocked {}", blocker, u);
+                    tracing::info!("User {} unblocked {}", blocker, u);
                     if let Err(e) = arg
                         .channel_id
                         .say(ctx, format!("unblocked: {}", u.mention()))
                         .await
                     {
-                        log::error!("failed to inform user: {}", e);
+                        tracing::error!("failed to inform user: {}", e);
                     }
                 }
                 Ok(None) => (),
-                Err(e) => log::error!("{:?}", e),
+                Err(e) => tracing::error!("{:?}", e),
             }
             ControlFlow::CONTINUE
         }

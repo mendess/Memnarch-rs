@@ -303,7 +303,7 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
             })?
     };
     let offset = answer as i64 - now.hour() as i64;
-    log::debug!("timestamp: {} user: {}, offset: {:?}", now, answer, offset);
+    tracing::debug!("timestamp: {} user: {}, offset: {:?}", now, answer, offset);
     user_prefs::update(msg.author.id, |p| p.timezone_offset = Some(offset)).await?;
     Ok(offset)
 }
@@ -473,7 +473,7 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 
             match &users[..] {
                 [] => {
-                    log::error!("Users should never be empty. It was for date {:?}", date);
+                    tracing::error!("Users should never be empty. It was for date {:?}", date);
                     return Err("Bot dev fucked up somehow".into());
                 }
                 [u] => {

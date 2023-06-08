@@ -105,7 +105,7 @@ async fn add_quiz_daemon(quizers: Quizers, daemon: &mut DaemonManager) {
                 async move {
                     if let Err(e) = channel.send_message(&http, |m| m.content(msg)).await
                     {
-                        log::error!(
+                        tracing::error!(
                             "Couldn't send quiz alert to channel {} in guild {}: {}",
                             channel,
                             guild,
@@ -128,7 +128,7 @@ pub async fn initialize(daemon: &mut DaemonManager) -> io::Result<()> {
         let m = match reaction.message(c).await {
             Ok(m) => m,
             Err(e) => {
-                log::error!("Couldn't get message reacted to: {}", e);
+                tracing::error!("Couldn't get message reacted to: {}", e);
                 return;
             }
         };
@@ -147,7 +147,7 @@ pub async fn initialize(daemon: &mut DaemonManager) -> io::Result<()> {
                 _ => return,
             };
             if let Err(e) = r {
-                log::error!(
+                tracing::error!(
                     "Couldn't add user {} as a quizer in guild {} channel {}: {}",
                     user,
                     guild,

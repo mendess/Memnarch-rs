@@ -87,7 +87,7 @@ async fn add_base_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
                 })
                 .await
             {
-                log::error!("failed to edit list of added people: {e:?}");
+                tracing::error!("failed to edit list of added people: {e:?}");
             }
         }
     }

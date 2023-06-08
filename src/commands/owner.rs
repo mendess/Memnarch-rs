@@ -152,7 +152,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     }
     let client = Client::new();
 
-    log::info!("{}", messages::GET_RELEASES);
+    tracing::info!("{}", messages::GET_RELEASES);
     msg.channel_id.say(&ctx, messages::GET_RELEASES).await?;
     let asset_url = client
         .get("https://api.github.com/repos/mendess/Memnarch-rs/releases")
@@ -171,7 +171,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         browser_download_url: String,
         name: String,
     }
-    log::info!("{}", messages::GET_LATTEST);
+    tracing::info!("{}", messages::GET_LATTEST);
     let mut m = msg.channel_id.say(&ctx, messages::GET_LATTEST).await?;
     let executable_url = client
         .get(&asset_url)
@@ -192,7 +192,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .await?;
     }
 
-    log::info!("{}", messages::DOWNLOADING);
+    tracing::info!("{}", messages::DOWNLOADING);
     msg.channel_id.say(ctx, messages::DOWNLOADING).await?;
     let (temp_file, temp_path) = tempfile::NamedTempFile::new_in(".")?.into_parts();
     let bytes = client
@@ -203,14 +203,14 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .bytes()
         .await?;
     File::from_std(temp_file).write_all(&bytes).await?;
-    log::info!("Renaming {} => {}", temp_path.display(), EXE_NAME);
+    tracing::info!("Renaming {} => {}", temp_path.display(), EXE_NAME);
     fs::rename(&temp_path, EXE_NAME).await?;
     let mut perm = fs::metadata(EXE_NAME).await?.permissions();
     let mode = perm.mode() | 0o700;
-    log::info!("Setting mode: {:o} => {:o}", perm.mode(), mode);
+    tracing::info!("Setting mode: {:o} => {:o}", perm.mode(), mode);
     perm.set_mode(mode);
     fs::set_permissions(EXE_NAME, perm).await?;
 
-    log::info!("Restaring");
+    tracing::info!("Restaring");
     restart(ctx, msg, _args).await
 }
