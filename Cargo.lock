@@ -683,7 +683,7 @@ dependencies = [
 [[package]]
 name = "daemons"
 version = "0.9.0"
-source = "git+https://github.com/mendess/discord-bot-utils#283464f535c55c515ad14a2ae3b47f77934379fd"
+source = "git+https://github.com/mendess/discord-bot-utils#45e98fdebd51f4b8ffa3a9103150ae7fc323d6f5"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1350,8 +1350,8 @@ dependencies = [
 
 [[package]]
 name = "json-db"
-version = "0.1.0"
-source = "git+https://github.com/mendess/discord-bot-utils#283464f535c55c515ad14a2ae3b47f77934379fd"
+version = "0.2.0"
+source = "git+https://github.com/mendess/discord-bot-utils#45e98fdebd51f4b8ffa3a9103150ae7fc323d6f5"
 dependencies = [
  "log",
  "serde",
@@ -2103,7 +2103,7 @@ dependencies = [
 [[package]]
 name = "pubsub"
 version = "0.1.1"
-source = "git+https://github.com/mendess/discord-bot-utils#283464f535c55c515ad14a2ae3b47f77934379fd"
+source = "git+https://github.com/mendess/discord-bot-utils#45e98fdebd51f4b8ffa3a9103150ae7fc323d6f5"
 dependencies = [
  "daemons",
  "futures",

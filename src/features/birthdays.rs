@@ -1,10 +1,8 @@
 use std::{
-    collections::{hash_map::Entry, BTreeMap, HashMap},
-    io::Write,
-    os::unix::prelude::OsStrExt,
-    path::PathBuf,
+    collections::BTreeMap,
+    io::{self, Write},
     str::from_utf8,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
@@ -12,16 +10,13 @@ use anyhow::Context;
 use chrono::{Datelike, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use futures::TryFutureExt;
-use json_db::Database;
+use json_db::multifile_db::{FileKeySerializer, MultifileDb};
 use serenity::{
     http::Http,
     model::id::{GuildId, UserId},
     prelude::Mentionable,
 };
-use tokio::{
-    fs, io,
-    sync::{Mutex, OnceCell},
-};
+use tokio::sync::Mutex;
 
 use crate::{
     prefs::guild as guild_prefs,
@@ -60,6 +55,7 @@ struct Error {
 #[derive(Debug)]
 enum ErrorKind {
     Io(io::Error),
+    FileKeyParseError(String),
     Other(anyhow::Error),
 }
 
@@ -72,6 +68,9 @@ impl std::fmt::Display for Error {
         };
         match &self.kind {
             ErrorKind::Io(e) => writeln!(f, "io error while {mode}: {e:?}"),
+            ErrorKind::FileKeyParseError(s) => {
+                writeln!(f, "file name parse error while deserializing: {s}")
+            }
             ErrorKind::Other(e) => writeln!(f, "other error while {mode}: {e:?}"),
         }
     }
@@ -88,33 +87,37 @@ impl From<io::Error> for Error {
 
 impl std::error::Error for Error {}
 
-type BdayMap = Mutex<HashMap<GuildId, Database<BTreeMap<BDay, Vec<BDayBoy>>, Error>>>;
+struct GuildIdSerializer;
+impl FileKeySerializer<GuildId> for GuildIdSerializer {
+    type ParseError = Error;
+    fn from_str(s: &str) -> Result<GuildId, Self::ParseError> {
+        let Some((id, _)) = s.split_once('.') else {
+            return Err(Error {
+                serializing: false,
+                kind: ErrorKind::FileKeyParseError(format!("key {s:?} didn't contain a ."))
+            });
+        };
+        id.parse().map(GuildId).map_err(|e| Error {
+            serializing: false,
+            kind: ErrorKind::FileKeyParseError(format!("id {id:?} wasn't a valid guild id: {e:?}")),
+        })
+    }
 
-static BDAY_MAP: OnceCell<BdayMap> = OnceCell::const_new();
+    fn to_string(pk: GuildId) -> String {
+        format!("{}.csv", pk.0)
+    }
+}
+
+type BdayMap = MultifileDb<GuildId, GuildIdSerializer, BTreeMap<BDay, Vec<BDayBoy>>, Error>;
+
+fn bday_map() -> &'static BdayMap {
+    static BDAY_MAP: OnceLock<BdayMap> = OnceLock::new();
+    BDAY_MAP.get_or_init(|| {
+        MultifileDb::new_with_ser_and_deser(BASE, || Box::new(ser), || Box::new(deser))
+    })
+}
 
 pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
-    match fs::read_dir(BASE).await {
-        Ok(mut read_dir) => {
-            let mut db = HashMap::new();
-            while let Some(d) = read_dir.next_entry().await? {
-                let path = d.path();
-                let gid = match path.file_stem().and_then(|n| {
-                    let s = from_utf8(n.as_bytes()).ok()?;
-                    Some(GuildId(str::parse(s).ok()?))
-                }) {
-                    None => continue,
-                    Some(gid) => gid,
-                };
-                db.insert(gid, Database::with_ser_and_deser(path, ser, deser).await?);
-            }
-            BDAY_MAP
-                .set(db.into())
-                .map_err(|_| ())
-                .expect("birthdays::initialize was called twice");
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e),
-    }
     let dm = d.clone();
     d.lock()
         .await
@@ -127,13 +130,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
 
 pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)>> {
     let tree = {
-        match BDAY_MAP
-            .get()
-            .expect("birthdays::initialize was not called")
-            .lock()
-            .await
-            .get(&g)
-        {
+        match bday_map().get(&g).await? {
             None => return Ok(None),
             Some(b) => b.load().await?.take(),
         }
@@ -152,13 +149,7 @@ pub async fn next_bday(g: GuildId) -> anyhow::Result<Option<(BDay, Vec<BDayBoy>)
 }
 
 pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<(u32, BDayBoy)>>> {
-    let database = match BDAY_MAP
-        .get()
-        .expect("birthdays::initialize was not called")
-        .lock()
-        .await
-        .get(&g)
-    {
+    let database = match bday_map().get(&g).await? {
         None => return Ok(Default::default()),
         Some(b) => b.load().await?.take(),
     };
@@ -173,13 +164,7 @@ pub async fn all(g: GuildId) -> anyhow::Result<BTreeMap<u32, Vec<(u32, BDayBoy)>
 }
 
 pub async fn of(g: GuildId, user_id: UserId) -> anyhow::Result<Option<BDay>> {
-    let database = match BDAY_MAP
-        .get()
-        .expect("birthdays::initialize was not called")
-        .lock()
-        .await
-        .get(&g)
-    {
+    let database = match bday_map().get(&g).await? {
         None => return Ok(None),
         Some(b) => b.load().await?.take(),
     };
@@ -193,13 +178,7 @@ pub async fn of_month(
     g: GuildId,
     month: Month,
 ) -> anyhow::Result<Option<impl Iterator<Item = (BDay, BDayBoy)>>> {
-    let database = match BDAY_MAP
-        .get()
-        .expect("birthdays::initialize was not called")
-        .lock()
-        .await
-        .get(&g)
-    {
+    let database = match bday_map().get(&g).await? {
         None => return Ok(None),
         Some(b) => b.load().await?.take(),
     };
@@ -216,21 +195,7 @@ pub async fn add_bday(
     who: UserId,
     when: NaiveDate,
 ) -> anyhow::Result<Option<NaiveDate>> {
-    let mut map = BDAY_MAP
-        .get()
-        .expect("birthdays::initialize was not called")
-        .lock()
-        .await;
-    let calendar = match map.entry(g) {
-        Entry::Occupied(o) => o.into_mut(),
-        Entry::Vacant(o) => {
-            let path = [BASE, &format!("{}.csv", g)]
-                .into_iter()
-                .collect::<PathBuf>();
-            let db = Database::with_ser_and_deser(path, ser, deser).await?;
-            o.insert(db)
-        }
-    };
+    let calendar = bday_map().get_or_default(g).await?;
     let mut calendar = calendar.load().await?;
     let bday = BDay::from(when);
     let removed = remove_user(&mut calendar, who);
@@ -242,13 +207,7 @@ pub async fn add_bday(
 }
 
 pub async fn remove_bday(g: GuildId, who: UserId) -> anyhow::Result<Option<NaiveDate>> {
-    match BDAY_MAP
-        .get()
-        .expect("birthdays::initialize was not called")
-        .lock()
-        .await
-        .get(&g)
-    {
+    match bday_map().get(&g).await? {
         Some(calendar) => {
             let mut calendar = calendar.load().await?;
             Ok(remove_user(&mut calendar, who))
@@ -348,13 +307,14 @@ type BDayChecker<F, Fut> = Cron<F, Fut, 0, 0, 30>;
 
 async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFlow {
     let today = BDay::from(Utc::now().naive_utc().date());
-    for (gid, guild) in BDAY_MAP
-        .get()
-        .expect("birthdays::initialize was not called")
-        .lock()
-        .await
-        .iter()
-    {
+    let g = match bday_map().iter_guard().await {
+        Ok(g) => g,
+        Err(e) => {
+            log::error!("failed to load bdays for checking: {e:?}");
+            return ControlFlow::CONTINUE;
+        }
+    };
+    for (gid, guild) in g.iter() {
         log::trace!("processing birthdays for guild {}", gid);
         let (channel, role) = match guild_prefs::get(*gid)
             .await
@@ -403,7 +363,7 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                     if let Some(role) = role {
                         let http = &http;
                         let r = gid
-                            .member(http, user.id)
+                            .member(&http, user.id)
                             .and_then(|mut m| async move { m.add_role(http, role).await })
                             .await;
                         if let Err(e) = r {
