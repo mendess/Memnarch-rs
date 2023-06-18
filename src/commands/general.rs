@@ -210,17 +210,21 @@ async fn remind(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         }
         reminders::remind(
             &mut dm,
-            format!(
-                r"{} asked me to remind you:
+            if user_id == msg.author.id {
+                text.into()
+            } else {
+                format!(
+                    r"{} asked me to remind you:
 \~\~\~\~
 {}
 \~\~\~\~
 
 *React with {} to block this person from reminding you. Unreact to unblock*",
-                msg.author.mention(),
-                text,
-                reminders::BLOCK_EMOJI,
-            ),
+                    msg.author.mention(),
+                    text,
+                    reminders::BLOCK_EMOJI,
+                )
+            },
             when,
             user_id,
         )
