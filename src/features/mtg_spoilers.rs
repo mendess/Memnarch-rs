@@ -2,18 +2,28 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
     io,
-    sync::{Arc, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, OnceLock,
+    },
     time::Duration,
 };
 
-use daemons::{async_trait, Daemon};
+use daemons::{async_trait, ControlFlow, Daemon};
+use futures::FutureExt;
 use mtg_spoilers::{Spoiler, SpoilerSource};
-use serenity::{http::CacheHttp, model::prelude::ChannelId, prelude::Mutex};
+use pubsub::{events, subscribe};
+use serenity::{
+    http::CacheHttp,
+    model::prelude::{component::ActionRowComponent, interaction::InteractionType, ChannelId},
+    prelude::Mutex,
+};
 
 use crate::util::daemons::DaemonManager;
 use json_db::{Database, GlobalDatabase};
 
-struct SpoilerChecker;
+#[derive(Default)]
+struct SpoilerChecker(AtomicBool);
 
 mod paths {
     pub static BASE: &str = "files/mtg-spoilers";
@@ -46,11 +56,18 @@ impl Daemon<true> for SpoilerChecker {
         if let Err(e) = send_new_cards(data, new_cards).await {
             tracing::error!("failed to send new cards: {e:?}");
         }
+        tracing::info!("finished checking for spoilers");
         daemons::ControlFlow::CONTINUE
     }
 
     async fn interval(&self) -> Duration {
-        Duration::from_secs(60 * 20)
+        match self
+            .0
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        {
+            Ok(_) => Duration::ZERO,
+            Err(_) => Duration::from_secs(60 * 20),
+        }
     }
 
     async fn name(&self) -> String {
@@ -58,9 +75,84 @@ impl Daemon<true> for SpoilerChecker {
     }
 }
 
+const DISCUSSION_BUTTON: &str = "mtg-spoilers-discuss-button";
+
 pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     tokio::fs::create_dir_all(paths::BASE).await?;
-    d.lock().await.add_daemon(SpoilerChecker).await;
+    d.lock().await.add_daemon(SpoilerChecker::default()).await;
+    subscribe::<events::InteractionCreate, _>(|ctx, i| {
+        async move {
+            match i.kind() {
+                InteractionType::MessageComponent => {
+                    let msg = i.clone().message_component().unwrap();
+                    let title = msg.message.embeds.get(0).and_then(|e| {
+                        e.title
+                            .as_deref()
+                            .or_else(|| e.url.as_ref().and_then(|u| u.split('/').last()))
+                    });
+                    if let Err(e) = msg
+                        .channel_id
+                        .create_public_thread(ctx, msg.message.id, |thread| {
+                            thread.name(title.unwrap_or("discussion"))
+                        })
+                        .await
+                    {
+                        tracing::error!(?e);
+                    } else if let Err(e) = msg.create_interaction_response(ctx, |resp| {
+                        resp
+                            .kind(serenity::model::prelude::interaction::InteractionResponseType::UpdateMessage)
+                            .interaction_response_data(|edit| {
+                                edit.components(|c| c)
+                            })
+                    }).await
+                    {
+                        tracing::error!(?e)
+                    }
+                }
+                _ => {
+                    tracing::debug!("interaction ignored");
+                }
+            }
+            ControlFlow::CONTINUE
+        }
+        .boxed()
+    })
+    .await;
+    subscribe::<events::ThreadCreate, _>(|ctx, t| {
+        async move {
+            let msgs = match t.messages(ctx, |msgs| msgs).await {
+                Err(e) => {
+                    tracing::error!(?e, "failed to get messages from a thread");
+                    return ControlFlow::CONTINUE;
+                }
+                Ok(msgs) => msgs,
+            };
+
+            let button_message = msgs.into_iter().find_map(|m| {
+                m.referenced_message.filter(|m| {
+                    m.components.iter().any(|c| {
+                        c.components.iter().any(|c| match c {
+                            ActionRowComponent::Button(b) => {
+                                b.custom_id.as_deref() == Some(DISCUSSION_BUTTON)
+                            }
+                            _ => false,
+                        })
+                    })
+                })
+            });
+            if let Some(mut button_message) = button_message {
+                if let Err(e) = button_message
+                    .edit(ctx, |edit| edit.components(|c| c))
+                    .await
+                {
+                    tracing::error!(?e, "failed to remove {DISCUSSION_BUTTON} button");
+                }
+            }
+            ControlFlow::CONTINUE
+        }
+        .boxed()
+    })
+    .await;
     Ok(())
 }
 
@@ -117,21 +209,28 @@ async fn send_card(
     card: &Spoiler,
 ) -> Result<(), serenity::Error> {
     ch.send_message(ctx.http(), |builder| {
-        builder.embed(|builder| {
-            builder.image(&card.image).url(&card.source_site_url).title(
-                card.name
-                    .as_deref()
-                    .unwrap_or_else(|| name_from_image(&card.image)),
-            );
-            if let Some(SpoilerSource { name, url }) = &card.source {
-                let mut description = format!("Source: {name}");
-                if let Some(url) = url {
-                    write!(description, "\n{url}").expect("pushing to a string should never fail");
+        builder
+            .embed(|builder| {
+                builder.image(&card.image).url(&card.source_site_url).title(
+                    card.name
+                        .as_deref()
+                        .unwrap_or_else(|| name_from_image(&card.image)),
+                );
+                if let Some(SpoilerSource { name, url }) = &card.source {
+                    let mut description = format!("Source: {name}");
+                    if let Some(url) = url {
+                        write!(description, "\n{url}")
+                            .expect("pushing to a string should never fail");
+                    }
+                    builder.description(description);
                 }
-                builder.description(description);
-            }
-            builder
-        })
+                builder
+            })
+            .components(|c| {
+                c.create_action_row(|row| {
+                    row.create_button(|b| b.custom_id(DISCUSSION_BUTTON).label("Discuss"))
+                })
+            })
     })
     .await?;
 
