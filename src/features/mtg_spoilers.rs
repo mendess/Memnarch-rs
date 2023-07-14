@@ -3,7 +3,7 @@ use std::{
     fmt::Write,
     io,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc, OnceLock,
     },
     time::Duration,
@@ -15,20 +15,28 @@ use mtg_spoilers::{Spoiler, SpoilerSource};
 use pubsub::{events, subscribe};
 use serenity::{
     http::CacheHttp,
-    model::prelude::{component::ActionRowComponent, interaction::InteractionType, ChannelId},
-    prelude::Mutex,
+    model::prelude::{
+        component::ActionRowComponent, interaction::Interaction, ChannelId, GuildChannel,
+    },
+    prelude::{Context, Mutex},
 };
 
 use crate::util::daemons::DaemonManager;
 use json_db::{Database, GlobalDatabase};
 
-#[derive(Default)]
-struct SpoilerChecker(AtomicBool);
-
 mod paths {
     pub static BASE: &str = "files/mtg-spoilers";
     pub static CACHE: &str = "files/mtg-spoilers/cache";
     pub static DB: &str = "files/mtg-spoilers/db.json";
+}
+
+#[derive(Default)]
+struct SpoilerChecker {
+    delay: AtomicU64,
+}
+
+impl SpoilerChecker {
+    const MAX_MINUTE_INTERVAL: u64 = 1 << 5;
 }
 
 #[async_trait]
@@ -37,7 +45,10 @@ impl Daemon<true> for SpoilerChecker {
 
     async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
         use mtg_spoilers::{cache::file::File, mythic};
-        tracing::info!("checking for spoilers");
+        tracing::info!(
+            delay_was = self.delay.load(Ordering::Acquire),
+            "checking for spoilers"
+        );
         let cache = match File::new(paths::CACHE).await {
             Ok(c) => c,
             Err(e) => {
@@ -53,6 +64,22 @@ impl Daemon<true> for SpoilerChecker {
             }
         };
 
+        if new_cards.is_empty() {
+            let _ = self
+                .delay
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |d| {
+                    if d == 0 {
+                        Some(1)
+                    } else if d < Self::MAX_MINUTE_INTERVAL {
+                        Some(d << 1)
+                    } else {
+                        None
+                    }
+                });
+        } else {
+            self.delay.store(1, Ordering::Release);
+        }
+
         if let Err(e) = send_new_cards(data, new_cards).await {
             tracing::error!("failed to send new cards: {e:?}");
         }
@@ -61,13 +88,8 @@ impl Daemon<true> for SpoilerChecker {
     }
 
     async fn interval(&self) -> Duration {
-        match self
-            .0
-            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
-        {
-            Ok(_) => Duration::ZERO,
-            Err(_) => Duration::from_secs(60 * 20),
-        }
+        let minutes = self.delay.load(Ordering::Acquire);
+        Duration::from_secs(60 * minutes)
     }
 
     async fn name(&self) -> String {
@@ -77,42 +99,62 @@ impl Daemon<true> for SpoilerChecker {
 
 const DISCUSSION_BUTTON: &str = "mtg-spoilers-discuss-button";
 
+async fn create_thread(ctx: &Context, i: &Interaction) {
+    if let Some(msg) = i.clone().message_component() {
+        let title = msg.message.embeds.get(0).and_then(|e| {
+            e.title
+                .as_deref()
+                .or_else(|| e.url.as_ref().and_then(|u| u.split('/').last()))
+        });
+        if let Err(e) = msg
+            .channel_id
+            .create_public_thread(ctx, msg.message.id, |thread| {
+                thread.name(title.unwrap_or("discussion"))
+            })
+            .await
+        {
+            tracing::error!(?e);
+        }
+    }
+}
+
+async fn delete_discuss_button(ctx: &Context, t: &GuildChannel) {
+    let msgs = match t.messages(ctx, |msgs| msgs).await {
+        Err(e) => {
+            tracing::error!(?e, "failed to get messages from a thread");
+            return;
+        }
+        Ok(msgs) => msgs,
+    };
+
+    let button_message = msgs.into_iter().find_map(|m| {
+        m.referenced_message.filter(|m| {
+            m.components.iter().any(|c| {
+                c.components.iter().any(|c| match c {
+                    ActionRowComponent::Button(b) => {
+                        b.custom_id.as_deref() == Some(DISCUSSION_BUTTON)
+                    }
+                    _ => false,
+                })
+            })
+        })
+    });
+    if let Some(mut button_message) = button_message {
+        if let Err(e) = button_message
+            .edit(ctx, |edit| edit.components(|c| c))
+            .await
+        {
+            tracing::error!(?e, "failed to remove {DISCUSSION_BUTTON} button");
+        }
+    }
+}
+
 pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     tokio::fs::create_dir_all(paths::BASE).await?;
     d.lock().await.add_daemon(SpoilerChecker::default()).await;
     subscribe::<events::InteractionCreate, _>(|ctx, i| {
         async move {
-            match i.kind() {
-                InteractionType::MessageComponent => {
-                    let msg = i.clone().message_component().unwrap();
-                    let title = msg.message.embeds.get(0).and_then(|e| {
-                        e.title
-                            .as_deref()
-                            .or_else(|| e.url.as_ref().and_then(|u| u.split('/').last()))
-                    });
-                    if let Err(e) = msg
-                        .channel_id
-                        .create_public_thread(ctx, msg.message.id, |thread| {
-                            thread.name(title.unwrap_or("discussion"))
-                        })
-                        .await
-                    {
-                        tracing::error!(?e);
-                    } else if let Err(e) = msg.create_interaction_response(ctx, |resp| {
-                        resp
-                            .kind(serenity::model::prelude::interaction::InteractionResponseType::UpdateMessage)
-                            .interaction_response_data(|edit| {
-                                edit.components(|c| c)
-                            })
-                    }).await
-                    {
-                        tracing::error!(?e)
-                    }
-                }
-                _ => {
-                    tracing::debug!("interaction ignored");
-                }
-            }
+            create_thread(ctx, i).await;
             ControlFlow::CONTINUE
         }
         .boxed()
@@ -120,34 +162,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     .await;
     subscribe::<events::ThreadCreate, _>(|ctx, t| {
         async move {
-            let msgs = match t.messages(ctx, |msgs| msgs).await {
-                Err(e) => {
-                    tracing::error!(?e, "failed to get messages from a thread");
-                    return ControlFlow::CONTINUE;
-                }
-                Ok(msgs) => msgs,
-            };
-
-            let button_message = msgs.into_iter().find_map(|m| {
-                m.referenced_message.filter(|m| {
-                    m.components.iter().any(|c| {
-                        c.components.iter().any(|c| match c {
-                            ActionRowComponent::Button(b) => {
-                                b.custom_id.as_deref() == Some(DISCUSSION_BUTTON)
-                            }
-                            _ => false,
-                        })
-                    })
-                })
-            });
-            if let Some(mut button_message) = button_message {
-                if let Err(e) = button_message
-                    .edit(ctx, |edit| edit.components(|c| c))
-                    .await
-                {
-                    tracing::error!(?e, "failed to remove {DISCUSSION_BUTTON} button");
-                }
-            }
+            delete_discuss_button(ctx, t).await;
             ControlFlow::CONTINUE
         }
         .boxed()
