@@ -10,7 +10,10 @@ use std::{
 };
 
 use daemons::{async_trait, ControlFlow, Daemon};
-use futures::FutureExt;
+use futures::{
+    future::{join, OptionFuture},
+    FutureExt,
+};
 use mtg_spoilers::{Spoiler, SpoilerSource};
 use pubsub::{events, subscribe};
 use serenity::{
@@ -106,14 +109,50 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
                 .as_deref()
                 .or_else(|| e.url.as_ref().and_then(|u| u.split('/').last()))
         });
-        if let Err(e) = msg
+        let fetch_card = OptionFuture::from(title.map(scryfall::Card::named_fuzzy));
+        let thread = msg
             .channel_id
             .create_public_thread(ctx, msg.message.id, |thread| {
                 thread.name(title.unwrap_or("discussion"))
-            })
-            .await
-        {
-            tracing::error!(?e);
+            });
+
+        let (card, thread) = join(fetch_card, thread).await;
+        let thread = match thread {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::error!(?e);
+                return;
+            }
+        };
+        match card {
+            Some(Ok(card)) => {
+                if let Err(e) = thread
+                    .send_message(ctx, |msg| {
+                        msg.embed(|embed| {
+                            if let Some(image) = card.image_uris.into_values().next() {
+                                embed.thumbnail(image);
+                            }
+                            embed
+                                .title(card.name)
+                                .url(card.scryfall_uri)
+                                .description(format!(
+                                    "{}\n{}",
+                                    card.type_line.unwrap_or_default(),
+                                    card.oracle_text.unwrap_or_default(),
+                                ))
+                        })
+                    })
+                    .await
+                {
+                    tracing::error!(?e, "failed to send oracle text to discussion thread");
+                }
+            }
+            Some(Err(e)) => {
+                if !matches!(&e, scryfall::Error::ScryfallError(e) if e.status == 404) {
+                    tracing::error!(?e, "failed to fetch oracle text for {title:?}");
+                }
+            }
+            None => { /* there was no title so there was no way to fetch the oracle text */ }
         }
     }
 }
