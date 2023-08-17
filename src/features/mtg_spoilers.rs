@@ -104,11 +104,21 @@ const DISCUSSION_BUTTON: &str = "mtg-spoilers-discuss-button";
 
 async fn create_thread(ctx: &Context, i: &Interaction) {
     if let Some(msg) = i.clone().message_component() {
+        let Some(gid) = msg.guild_id else {
+            return;
+        };
+        let nick = msg.user.nick_in(ctx, gid).await.unwrap_or_default();
+        let guild_name = gid.name(ctx).unwrap_or_default();
         let title = msg.message.embeds.get(0).and_then(|e| {
             e.title
                 .as_deref()
                 .or_else(|| e.url.as_ref().and_then(|u| u.split('/').last()))
         });
+        tracing::info!(
+            "{} ({nick}) requested a spoilers thread in {guild_name} to discuss {}",
+            msg.user.name,
+            title.unwrap_or_default(),
+        );
         let fetch_card = OptionFuture::from(title.map(scryfall::Card::named_fuzzy));
         let thread = msg
             .channel_id
