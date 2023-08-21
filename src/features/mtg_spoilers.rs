@@ -14,7 +14,8 @@ use futures::{
     future::{join, OptionFuture},
     FutureExt,
 };
-use mtg_spoilers::{Spoiler, SpoilerSource};
+use itertools::Itertools;
+use mtg_spoilers::{mythic::CardText, Spoiler, SpoilerSource};
 use pubsub::{events, subscribe};
 use serenity::{
     http::CacheHttp,
@@ -114,12 +115,67 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
                 .as_deref()
                 .or_else(|| e.url.as_ref().and_then(|u| u.split('/').last()))
         });
+
+        #[derive(Default)]
+        struct Card {
+            thumbnail: Option<reqwest::Url>,
+            scryfall_uri: Option<reqwest::Url>,
+            rest: Vec<CardText>,
+        }
+
         tracing::info!(
             "{} ({nick}) requested a spoilers thread in {guild_name} to discuss {}",
             msg.user.name,
             title.unwrap_or_default(),
         );
-        let fetch_card = OptionFuture::from(title.map(scryfall::Card::named_fuzzy));
+        let mythic_spoiler_url = msg
+            .message
+            .embeds
+            .get(0)
+            .and_then(|e| e.url.as_deref())
+            .and_then(|url| url.parse().ok());
+        let fetch_card = OptionFuture::from(title.map(|title| async move {
+            match scryfall::Card::named_fuzzy(title).await {
+                Ok(card) => Some(Card {
+                    thumbnail: card.image_uris.into_values().next(),
+                    scryfall_uri: Some(card.scryfall_uri),
+                    rest: match card.card_faces {
+                        Some(faces) if !faces.is_empty() => todo!(),
+                        _ => {
+                            vec![CardText {
+                                name: Some(card.name),
+                                type_line: card.type_line,
+                                text: card.oracle_text,
+                            }]
+                        }
+                    },
+                }),
+                Err(e) => {
+                    if !matches!(&e, scryfall::Error::ScryfallError(e) if e.status == 404) {
+                        tracing::error!(?e, "failed to fetch oracle text for {title:?}");
+                    }
+                    let scraped_card = OptionFuture::from(
+                        mythic_spoiler_url.map(mtg_spoilers::mythic::get_card_text),
+                    )
+                    .await
+                    .map(|card| {
+                        card.map(|card| Card {
+                            rest: card,
+                            ..Default::default()
+                        })
+                    })
+                    .transpose();
+
+                    match scraped_card {
+                        Ok(scraped_card) => scraped_card.filter(|card| !card.rest.is_empty()),
+                        Err(e) => {
+                            tracing::error!(?e, "failed to scrape oracle text for {title:?}");
+                            None
+                        }
+                    }
+                }
+            }
+        }));
         let thread = msg
             .channel_id
             .create_public_thread(ctx, msg.message.id, |thread| {
@@ -134,35 +190,55 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
                 return;
             }
         };
-        match card {
-            Some(Ok(card)) => {
-                if let Err(e) = thread
-                    .send_message(ctx, |msg| {
-                        msg.embed(|embed| {
-                            if let Some(image) = card.image_uris.into_values().next() {
-                                embed.thumbnail(image);
-                            }
-                            embed
-                                .title(card.name)
-                                .url(card.scryfall_uri)
-                                .description(format!(
+        if let Some(Card {
+            thumbnail,
+            scryfall_uri,
+            rest,
+        }) = card.flatten()
+        {
+            let thread = thread
+                .send_message(ctx, |msg| {
+                    msg.embed(|embed| {
+                        if let Some(image) = thumbnail {
+                            embed.thumbnail(image);
+                        }
+                        if let Some(url) = scryfall_uri {
+                            embed.url(url);
+                        }
+                        let title = rest.iter().filter_map(|c| c.name.as_deref()).format(" // ");
+                        let desc = match rest.as_slice() {
+                            [face] => {
+                                format!(
                                     "{}\n{}",
-                                    card.type_line.unwrap_or_default(),
-                                    card.oracle_text.unwrap_or_default(),
-                                ))
-                        })
+                                    face.type_line.as_deref().unwrap_or_default(),
+                                    face.text.as_deref().unwrap_or_default(),
+                                )
+                            }
+                            multi_face => multi_face
+                                .iter()
+                                .map(|face| {
+                                    format!(
+                                        "{}\n{}\n{}",
+                                        face.name.as_deref().unwrap_or_default(),
+                                        face.type_line.as_deref().unwrap_or_default(),
+                                        face.text.as_deref().unwrap_or_default(),
+                                    )
+                                })
+                                .format("\n")
+                                .to_string(),
+                        };
+
+                        embed.title(title).description(desc)
                     })
-                    .await
-                {
-                    tracing::error!(?e, "failed to send oracle text to discussion thread");
-                }
+                })
+                .await;
+            if let Err(e) = thread {
+                tracing::error!(
+                    %e,
+                    card = ?title,
+                    "failed to send oracle text to discussion thread"
+                );
             }
-            Some(Err(e)) => {
-                if !matches!(&e, scryfall::Error::ScryfallError(e) if e.status == 404) {
-                    tracing::error!(?e, "failed to fetch oracle text for {title:?}");
-                }
-            }
-            None => { /* there was no title so there was no way to fetch the oracle text */ }
         }
     }
 }
