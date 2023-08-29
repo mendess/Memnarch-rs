@@ -1,6 +1,6 @@
 # inspiration: https://dev.to/rogertorres/first-steps-with-docker-rust-30oi
 
-FROM rust:1.70.0 as build
+FROM rust:1.72-bookworm as build
 
 RUN apt update -y && apt install cmake libpython3-dev -y
 
@@ -42,7 +42,7 @@ RUN rm ./target/release/memnarch-rs* && \
     cargo build --release --workspace
 
 # executing image
-FROM debian:stable-slim
+FROM debian:bookworm-slim
 
 RUN apt update -y && apt install libopus-dev ffmpeg youtube-dl libpython3-dev -y
 
