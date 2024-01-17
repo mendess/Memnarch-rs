@@ -18,7 +18,7 @@ tracing-subscriber = "0.3"
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 nom = "7"
 nom-regex = "0.2"
-num-traits = "0.2.14"
+num-traits = "0.2.17"
 pubsub = { git = "https://github.com/mendess/discord-bot-utils", features = ["serenity_cache"] }
 rand = "0.8"
 regex = "1"
@@ -31,7 +31,7 @@ songbird = "0.3"
 tempfile = "3"
 toml = "0.7"
 unicase = "2"
-scryfall = "0.14.0"
+scryfall = "0.14.2"
 
 [dependencies.tokio]
 workspace = true
@@ -57,5 +57,5 @@ tracing = "0.1"
 version = "1"
 
 [workspace.dependencies.actix-web]
-version = "4.1.0"
+version = "4.4.1"
 default-features = false
