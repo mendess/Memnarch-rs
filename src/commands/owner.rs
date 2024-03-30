@@ -204,7 +204,7 @@ async fn update(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         .await?;
     File::from_std(temp_file).write_all(&bytes).await?;
     tracing::info!("Renaming {} => {}", temp_path.display(), EXE_NAME);
-    fs::rename(&temp_path, EXE_NAME).await?;
+    temp_path.persist(EXE_NAME).map_err(|e| e.error)?;
     let mut perm = fs::metadata(EXE_NAME).await?.permissions();
     let mode = perm.mode() | 0o700;
     tracing::info!("Setting mode: {:o} => {:o}", perm.mode(), mode);

@@ -42,9 +42,9 @@ async fn migrate_schema(path: &Path) -> io::Result<()> {
     .map(|(r, m, rid)| ((r, m), rid))
     .collect::<Vec<_>>();
 
-    let (file, tmp_file) = tempfile::NamedTempFile::new_in(path.parent().unwrap())?.into_parts();
+    let (file, tmp_path) = tempfile::NamedTempFile::new_in(path.parent().unwrap())?.into_parts();
     serde_json::to_writer(&file, &new_format)?;
-    tokio::fs::rename(tmp_file, path).await?;
+    tmp_path.persist(path).map_err(|e| e.error)?;
     Ok(())
 }
 
@@ -75,9 +75,7 @@ pub async fn initialize() -> io::Result<()> {
 
     use pubsub::events::{ReactionAdd, ReactionRemove};
     async fn handler<const ADD: bool>(ctx: &Context, reaction: &Reaction) {
-        let Some(gid) = reaction.guild_id else {
-            return
-        };
+        let Some(gid) = reaction.guild_id else { return };
         let (mut member, role) = {
             let db = REACTION_ROLES
                 .get()
