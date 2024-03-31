@@ -8,7 +8,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::Context,
-    model::{channel::Message, id::ChannelId, mention::Mentionable},
+    model::{channel::Message, id::ChannelId},
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -42,11 +42,7 @@ pub async fn initialize() {
                 if let Err(error) = ch
                     .say(
                         ctx,
-                        format!(
-                            "new banger from {}: {}",
-                            message.channel_id.mention(),
-                            url.as_str()
-                        ),
+                        format!("new banger from {}: {}", message.link(), url.as_str()),
                     )
                     .await
                 {
