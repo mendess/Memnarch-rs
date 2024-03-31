@@ -8,7 +8,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::Context,
-    model::{channel::Message, id::ChannelId},
+    model::{channel::Message, id::ChannelId, mention::Mentionable},
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -34,8 +34,22 @@ pub async fn initialize() {
         static IS_URL: OnceLock<Regex> = OnceLock::new();
         let is_url = IS_URL.get_or_init(|| Regex::new("https?://[^ ]+").unwrap());
         for url in is_url.find_iter(&message.content) {
-            for ch in channels.destinations.iter().filter(|ch| **ch != message.channel_id) {
-                if let Err(error) = ch.say(ctx, url.as_str()).await {
+            for ch in channels
+                .destinations
+                .iter()
+                .filter(|ch| **ch != message.channel_id)
+            {
+                if let Err(error) = ch
+                    .say(
+                        ctx,
+                        format!(
+                            "new banger from {}: {}",
+                            message.channel_id.mention(),
+                            url.as_str()
+                        ),
+                    )
+                    .await
+                {
                     tracing::error!(?error, channel = %ch, "failed to send message")
                 }
             }
