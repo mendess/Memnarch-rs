@@ -5,7 +5,7 @@ use futures::{stream, FutureExt, StreamExt};
 use memnarch_rs::commands::custom::CustomCommands;
 use memnarch_rs::commands::interrail::InterrailConfig;
 use memnarch_rs::features::{
-    birthdays, calendar, curse_of_indicision, moderation, mtg_spoilers, quiz, reminders,
+    birthdays, calendar, curse_of_indicision, moderation, mtg_spoilers, music_channel_broadcast, quiz, reminders
 };
 use memnarch_rs::{
     commands::{
@@ -53,6 +53,7 @@ fn load_config() -> std::io::Result<memnarch_rs::Config> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(config_file_path)?;
     file.read_to_string(&mut config_str)?;
     Ok(toml::from_str(&config_str).unwrap_or_else(|e| {
@@ -100,7 +101,6 @@ fn config_logger() {
     let file = tracing_subscriber::fmt::layer()
         .with_writer(|| {
             OpenOptions::new()
-                .write(true)
                 .append(true)
                 .create(true)
                 .open("memnarch.log")
@@ -115,7 +115,6 @@ fn config_logger() {
                 .expect("Can't find home directory");
             let file_path = PathBuf::from_iter([home, "memnarch_critical_error.log".into()]);
             OpenOptions::new()
-                .write(true)
                 .append(true)
                 .create(true)
                 .open(file_path)
@@ -222,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
     moderation::reaction_roles::initialize().await?;
+    music_channel_broadcast::initialize().await;
     try_init!(daemon_manager, quiz);
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
     try_init!(daemon_manager, birthdays);

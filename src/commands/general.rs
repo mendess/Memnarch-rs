@@ -256,12 +256,12 @@ async fn calculate_when(
             .expect("date is valid because it was formed from valid a date");
             let date = NaiveDateTime::new(date, time);
             let offset = get_user_timezone(ctx, msg).await?;
-            DateTime::from_utc(date - Duration::hours(offset), Utc)
+            DateTime::from_naive_utc_and_offset(date - Duration::hours(offset), Utc)
         }
         TimeSpec::Time(time) => {
             let offset = get_user_timezone(ctx, msg).await?;
-            let when =
-                DateTime::from_utc(now.date_naive().and_time(time), Utc) - Duration::hours(offset);
+            let when = DateTime::from_naive_utc_and_offset(now.date_naive().and_time(time), Utc)
+                - Duration::hours(offset);
             if when < now {
                 when + Duration::days(1)
             } else {

@@ -110,7 +110,7 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
         };
         let nick = msg.user.nick_in(ctx, gid).await.unwrap_or_default();
         let guild_name = gid.name(ctx).unwrap_or_default();
-        let title = msg.message.embeds.get(0).and_then(|e| {
+        let title = msg.message.embeds.first().and_then(|e| {
             e.title
                 .as_deref()
                 .or_else(|| e.url.as_ref().and_then(|u| u.split('/').last()))
@@ -131,7 +131,7 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
         let mythic_spoiler_url = msg
             .message
             .embeds
-            .get(0)
+            .first()
             .and_then(|e| e.url.as_deref())
             .and_then(|url| url.parse().ok());
         let fetch_card = OptionFuture::from(title.map(|title| async move {

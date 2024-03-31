@@ -288,13 +288,13 @@ fn deser(v: &[u8]) -> Result<BTreeMap<BDay, Vec<BDayBoy>>, Error> {
                 ))
             }
         })
-        .try_fold(BTreeMap::default(), |mut acc, e| {
+        .try_fold(BTreeMap::default(), |mut acc: BTreeMap<_, Vec<_>>, e| {
             let e = e.map_err(|e| Error {
                 serializing: false,
                 kind: ErrorKind::Other(e),
             })?;
             acc.entry(BDay::from(e.0))
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(BDayBoy {
                     id: e.1,
                     year: e.0.year(),
