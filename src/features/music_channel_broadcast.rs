@@ -4,11 +4,11 @@ use anyhow::Context as _;
 use futures::FutureExt;
 use json_db::GlobalDatabase;
 use pubsub::ControlFlow;
-use regex::Regex;
+use regex::{Match, Regex};
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::Context,
-    model::{channel::Message, id::ChannelId},
+    model::{channel::Message, id::ChannelId, mention::Mentionable},
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -33,7 +33,12 @@ pub async fn initialize() {
         }
         static IS_URL: OnceLock<Regex> = OnceLock::new();
         let is_url = IS_URL.get_or_init(|| Regex::new("https?://[^ ]+").unwrap());
-        for url in is_url.find_iter(&message.content) {
+        fn is_valid(s: &Match<'_>) -> bool {
+            static INVALID_URLS: OnceLock<[Regex; 1]> = OnceLock::new();
+            let invalid_urls = INVALID_URLS.get_or_init(|| [Regex::new(r"tenor\.com").unwrap()]);
+            invalid_urls.iter().all(|m| !m.is_match(s.as_str()))
+        }
+        for url in is_url.find_iter(&message.content).filter(is_valid) {
             for ch in channels
                 .destinations
                 .iter()
@@ -42,7 +47,11 @@ pub async fn initialize() {
                 if let Err(error) = ch
                     .say(
                         ctx,
-                        format!("new banger from {}: {}", message.link(), url.as_str()),
+                        format!(
+                            "new banger from {}: {}",
+                            message.channel_id.mention(),
+                            url.as_str()
+                        ),
                     )
                     .await
                 {
