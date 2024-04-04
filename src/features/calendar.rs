@@ -69,11 +69,11 @@ pub async fn new(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<()> 
         })
         .await;
     let mut messages = [MessageId(0); 7];
-    for (i, d) in successors(Some(Utc::now().date_naive()), |d| d.succ_opt())
+    for (d, message) in successors(Some(Utc::now().date_naive()), |d| d.succ_opt())
         .take(7)
-        .enumerate()
+        .zip(&mut messages)
     {
-        messages[i] = send_message(ctx_ref.http(), channel, d).await?;
+        *message = send_message(ctx_ref.http(), channel, d).await?;
     }
     DATABASE.load().await?.push(Calendar { channel, messages });
     Ok(())

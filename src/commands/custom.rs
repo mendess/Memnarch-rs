@@ -129,10 +129,13 @@ impl CustomCommands {
             Some(g) => {
                 serde_json::to_writer(File::create(Self::save_path(g)?)?, &self.cmds[&g])?;
             }
-            None => self.cmds.keys().try_for_each(|k| -> Result<(), IoError> {
-                serde_json::to_writer(File::create(Self::save_path(*k)?)?, &self.cmds[k])
-                    .map_err(|e| e.into())
-            })?,
+            None => self
+                .cmds
+                .iter()
+                .try_for_each(|(k, v)| -> Result<(), IoError> {
+                    serde_json::to_writer(File::create(Self::save_path(*k)?)?, &v)
+                        .map_err(|e| e.into())
+                })?,
         }
         Ok(())
     }
