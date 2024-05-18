@@ -32,7 +32,7 @@ pub async fn initialize() {
             return Ok(());
         }
         static IS_URL: OnceLock<Regex> = OnceLock::new();
-        let is_url = IS_URL.get_or_init(|| Regex::new("https?://[^ ]+").unwrap());
+        let is_url = IS_URL.get_or_init(|| Regex::new(r"https?://[^\s]+").unwrap());
         fn is_valid(s: &Match<'_>) -> bool {
             static INVALID_URLS: OnceLock<[Regex; 1]> = OnceLock::new();
             let invalid_urls = INVALID_URLS.get_or_init(|| [Regex::new(r"tenor\.com").unwrap()]);
