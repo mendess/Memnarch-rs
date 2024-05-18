@@ -31,7 +31,7 @@ songbird = "0.3"
 tempfile = "3"
 toml = "0.7"
 unicase = "2"
-scryfall = "0.14.2"
+scryfall = "0.16.2"
 
 [dependencies.tokio]
 workspace = true
