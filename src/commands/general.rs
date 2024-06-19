@@ -1,9 +1,8 @@
 use crate::{
     get,
-    prefs::guild as guild_prefs,
-    prefs::user::{self as user_prefs, UserPrefs},
+    prefs::{self, user::UserPrefs},
     reminders::{self, parser::*},
-    util::{consts::NUMBERS, daemons::DaemonManagerKey},
+    util::daemons::DaemonManagerKey,
 };
 use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, Timelike, Utc};
 use futures::{stream, StreamExt, TryStreamExt};
@@ -15,7 +14,7 @@ use serenity::{
         Args, CommandResult,
     },
     model::{
-        channel::{Message, ReactionType},
+        channel::Message,
         guild::Member,
         id::{ChannelId, RoleId, UserId},
     },
@@ -27,7 +26,6 @@ use std::iter::from_fn;
 #[commands(
     ping,
     who_are_you,
-    vote,
     remindme,
     remind,
     version,
@@ -48,22 +46,13 @@ async fn version(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 #[description("Ping me maybe")]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
-    use chrono::Local;
-    let one_trip_time =
-        (Local::now().timestamp_millis() - msg.timestamp.timestamp_millis()) as f32 / 1000_f32;
-    msg.channel_id
-        .say(
-            &ctx.http,
-            format!(
-                "Pong! {} ms{}",
-                one_trip_time * 2.0,
-                if one_trip_time < 0.0 {
-                    "\n*yes it's negative, idk why either*"
-                } else {
-                    ""
-                }
-            ),
-        )
+    let sent_timestamp = msg.timestamp;
+    let mut msg = msg
+        .channel_id
+        .say(&ctx.http, "Pong! calculating ms")
+        .await?;
+    let rtt = msg.timestamp.timestamp_millis() - sent_timestamp.timestamp_millis();
+    msg.edit(&ctx, |e| e.content(format!("Pong! {rtt}ms")))
         .await?;
     Ok(())
 }
@@ -80,43 +69,6 @@ async fn who_are_you(ctx: &Context, msg: &Message) -> CommandResult {
             })
         })
         .await?;
-    Ok(())
-}
-
-#[command]
-#[min_args(2)]
-#[max_args(10)]
-#[description("Create a voting of up to 10 things")]
-#[usage("[OPTION, ...]")]
-#[example("option1 \"option 2\"")]
-async fn vote(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let message = msg
-        .channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("Vote:");
-                let fs = args
-                    .raw_quoted()
-                    .enumerate()
-                    .map(|(i, a)| (a, NUMBERS[i], true));
-                e.fields(fs)
-            });
-            m
-        })
-        .await?;
-    args.restore();
-    for number in NUMBERS
-        .iter()
-        .take(args.iter::<String>().filter_map(Result::ok).count())
-    {
-        while message
-            .react(&ctx, number.parse::<ReactionType>().unwrap())
-            .await
-            .is_err()
-        {
-            continue;
-        }
-    }
     Ok(())
 }
 
@@ -275,7 +227,7 @@ async fn calculate_when(
 async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> {
     if let Some(UserPrefs {
         timezone_offset: Some(off),
-    }) = user_prefs::get(msg.author.id).await?
+    }) = prefs::user::get(msg.author.id).await?
     {
         return Ok(off);
     }
@@ -308,7 +260,7 @@ async fn get_user_timezone(ctx: &Context, msg: &Message) -> anyhow::Result<i64> 
     };
     let offset = answer as i64 - now.hour() as i64;
     tracing::debug!("timestamp: {} user: {}, offset: {:?}", now, answer, offset);
-    user_prefs::update(msg.author.id, |p| p.timezone_offset = Some(offset)).await?;
+    prefs::user::update(msg.author.id, |p| p.timezone_offset = Some(offset)).await?;
     Ok(offset)
 }
 
@@ -587,7 +539,7 @@ async fn remove_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandRes
 #[usage("@role")]
 async fn set_bday_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let role_id = args.single::<RoleId>()?;
-    guild_prefs::update(msg.guild_id.ok_or("not in a guild")?, |prefs| {
+    prefs::guild::update(msg.guild_id.ok_or("not in a guild")?, |prefs| {
         prefs.birthday_role = Some(role_id)
     })
     .await?;
