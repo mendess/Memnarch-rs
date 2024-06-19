@@ -137,7 +137,9 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
         let fetch_card = OptionFuture::from(title.map(|title| async move {
             match scryfall::Card::named_fuzzy(title).await {
                 Ok(card) => Some(Card {
-                    thumbnail: card.image_uris.and_then(|i| into_values().next()),
+                    thumbnail: card
+                        .image_uris
+                        .and_then(|i| i.png.or(i.large).or(i.normal).or(i.small).or(i.border_crop)),
                     scryfall_uri: Some(card.scryfall_uri),
                     rest: match card.card_faces {
                         Some(faces) if !faces.is_empty() => todo!(),

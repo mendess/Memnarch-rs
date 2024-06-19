@@ -207,7 +207,7 @@ mod test {
         fn valid_times(s in "(at|às|as|@) -?[0-9]+:-?[0-9]+:-?[0-9] cenas") {
             match parse(&s) {
                 Err(_) => (),
-                Ok(Reminder { text, when: TimeSpec::Time(_), }) if text == "cenas" => (),
+                Ok(Reminder { text: "cenas", when: TimeSpec::Time(_), }) => (),
                 Ok(o) => panic!("Invalid output {:?} for input {:?}", o, s),
             }
         }
