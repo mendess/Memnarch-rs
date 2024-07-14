@@ -5,7 +5,8 @@ use futures::{stream, FutureExt, StreamExt};
 use memnarch_rs::commands::custom::CustomCommands;
 use memnarch_rs::commands::interrail::InterrailConfig;
 use memnarch_rs::features::{
-    birthdays, calendar, curse_of_indicision, moderation, mtg_spoilers, music_channel_broadcast, quiz, reminders
+    birthdays, calendar, curse_of_indicision, moderation, mtg_spoilers, music_channel_broadcast,
+    quiz, reminders,
 };
 use memnarch_rs::{
     commands::{
@@ -221,7 +222,7 @@ async fn main() -> anyhow::Result<()> {
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
     moderation::reaction_roles::initialize().await?;
-    music_channel_broadcast::initialize().await;
+    music_channel_broadcast::initialize(client.cache_and_http.clone()).await;
     try_init!(daemon_manager, quiz);
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
     try_init!(daemon_manager, birthdays);

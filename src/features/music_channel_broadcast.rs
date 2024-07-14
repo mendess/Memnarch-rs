@@ -1,14 +1,24 @@
-use std::{collections::HashSet, sync::OnceLock};
+use std::{
+    collections::HashSet,
+    pin::pin,
+    sync::{Arc, OnceLock},
+};
 
 use anyhow::Context as _;
-use futures::FutureExt;
+use futures::{FutureExt, StreamExt};
 use json_db::GlobalDatabase;
 use pubsub::ControlFlow;
 use regex::{Match, Regex};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::Context,
-    model::{channel::Message, id::ChannelId, mention::Mentionable},
+    model::{
+        channel::Message,
+        id::{ChannelId, UserId},
+        mention::Mentionable,
+    },
+    CacheAndHttp,
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -17,10 +27,18 @@ struct Channels {
     destinations: HashSet<ChannelId>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct SentBanger {
+    sender: UserId,
+    url: Url,
+}
+
 static CHANNELS: GlobalDatabase<Channels> =
     GlobalDatabase::new("files/music_channel_broadcast.json");
 
-pub async fn initialize() {
+static BANGERS: GlobalDatabase<Vec<SentBanger>> = GlobalDatabase::new("files/sent-bangers.json");
+
+pub async fn initialize(cache_and_http: Arc<CacheAndHttp>) {
     use pubsub::events;
 
     async fn handler(ctx: &Context, message: &Message) -> anyhow::Result<()> {
@@ -31,14 +49,7 @@ pub async fn initialize() {
         if !channels.sources.contains(&message.channel_id) {
             return Ok(());
         }
-        static IS_URL: OnceLock<Regex> = OnceLock::new();
-        let is_url = IS_URL.get_or_init(|| Regex::new(r"https?://[^\s]+").unwrap());
-        fn is_valid(s: &Match<'_>) -> bool {
-            static INVALID_URLS: OnceLock<[Regex; 1]> = OnceLock::new();
-            let invalid_urls = INVALID_URLS.get_or_init(|| [Regex::new(r"tenor\.com").unwrap()]);
-            invalid_urls.iter().all(|m| !m.is_match(s.as_str()))
-        }
-        for url in is_url.find_iter(&message.content).filter(is_valid) {
+        for url in parse_urls_from_message(&message.content) {
             for ch in channels
                 .destinations
                 .iter()
@@ -58,6 +69,11 @@ pub async fn initialize() {
                     tracing::error!(?error, channel = %ch, "failed to send message")
                 }
             }
+            if let Ok(url) = url.as_str().parse() {
+                if let Err(error) = store_banger(message.author.id, url).await {
+                    tracing::error!(?error, "failed to store banger")
+                }
+            }
         }
         Ok(())
     }
@@ -75,6 +91,57 @@ pub async fn initialize() {
         .boxed()
     })
     .await;
+
+    tokio::spawn(async move {
+        let mut bangers = BANGERS.load().await.unwrap();
+        if !bangers.is_empty() {
+            return;
+        }
+        tracing::info!("populating bangers");
+        let mut messages = pin!(ChannelId(1223937402368688230).messages_iter(&cache_and_http.http));
+        while let Some(message) = messages.next().await {
+            let message = match message {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::error!(error = ?e, "failed to load message to prefil bangers");
+                    continue;
+                }
+            };
+            for url in parse_urls_from_message(&message.content) {
+                tracing::info!(?url, "adding banger");
+                if url.as_str().contains("app.suno.ai") {
+                    continue;
+                }
+                if let Ok(url) = url.as_str().parse() {
+                    bangers.push(SentBanger {
+                        sender: message.author.id,
+                        url,
+                    })
+                }
+            }
+        }
+        bangers.reverse()
+    });
+}
+
+fn parse_urls_from_message(content: &str) -> impl Iterator<Item = Match<'_>> {
+    static IS_URL: OnceLock<Regex> = OnceLock::new();
+    let is_url = IS_URL.get_or_init(|| Regex::new(r"https?://[^\s]+").unwrap());
+    fn is_valid(s: &Match<'_>) -> bool {
+        static INVALID_URLS: OnceLock<[Regex; 1]> = OnceLock::new();
+        let invalid_urls = INVALID_URLS.get_or_init(|| [Regex::new(r"tenor\.com").unwrap()]);
+        invalid_urls.iter().all(|m| !m.is_match(s.as_str()))
+    }
+    is_url.find_iter(content).filter(is_valid)
+}
+
+async fn store_banger(author: UserId, url: Url) -> anyhow::Result<()> {
+    BANGERS.load().await?.push(SentBanger {
+        sender: author,
+        url,
+    });
+
+    Ok(())
 }
 
 pub async fn add_source(ch: ChannelId) -> anyhow::Result<bool> {
