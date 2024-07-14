@@ -1,11 +1,7 @@
-use std::{
-    collections::HashSet,
-    pin::pin,
-    sync::{Arc, OnceLock},
-};
+use std::{collections::HashSet, sync::OnceLock};
 
 use anyhow::Context as _;
-use futures::{FutureExt, StreamExt};
+use futures::FutureExt;
 use json_db::GlobalDatabase;
 use pubsub::ControlFlow;
 use regex::{Match, Regex};
@@ -18,7 +14,6 @@ use serenity::{
         id::{ChannelId, UserId},
         mention::Mentionable,
     },
-    CacheAndHttp,
 };
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -38,7 +33,7 @@ static CHANNELS: GlobalDatabase<Channels> =
 
 static BANGERS: GlobalDatabase<Vec<SentBanger>> = GlobalDatabase::new("files/sent-bangers.json");
 
-pub async fn initialize(cache_and_http: Arc<CacheAndHttp>) {
+pub async fn initialize() {
     use pubsub::events;
 
     async fn handler(ctx: &Context, message: &Message) -> anyhow::Result<()> {
@@ -91,37 +86,6 @@ pub async fn initialize(cache_and_http: Arc<CacheAndHttp>) {
         .boxed()
     })
     .await;
-
-    tokio::spawn(async move {
-        let mut bangers = BANGERS.load().await.unwrap();
-        if !bangers.is_empty() {
-            return;
-        }
-        tracing::info!("populating bangers");
-        let mut messages = pin!(ChannelId(1223937402368688230).messages_iter(&cache_and_http.http));
-        while let Some(message) = messages.next().await {
-            let message = match message {
-                Ok(m) => m,
-                Err(e) => {
-                    tracing::error!(error = ?e, "failed to load message to prefil bangers");
-                    continue;
-                }
-            };
-            for url in parse_urls_from_message(&message.content) {
-                tracing::info!(?url, "adding banger");
-                if url.as_str().contains("app.suno.ai") {
-                    continue;
-                }
-                if let Ok(url) = url.as_str().parse() {
-                    bangers.push(SentBanger {
-                        sender: message.author.id,
-                        url,
-                    })
-                }
-            }
-        }
-        bangers.reverse()
-    });
 }
 
 fn parse_urls_from_message(content: &str) -> impl Iterator<Item = Match<'_>> {

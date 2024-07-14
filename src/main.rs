@@ -222,7 +222,7 @@ async fn main() -> anyhow::Result<()> {
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
     moderation::reaction_roles::initialize().await?;
-    music_channel_broadcast::initialize(client.cache_and_http.clone()).await;
+    music_channel_broadcast::initialize().await;
     try_init!(daemon_manager, quiz);
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
     try_init!(daemon_manager, birthdays);
