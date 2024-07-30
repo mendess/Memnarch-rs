@@ -7,7 +7,7 @@ use chrono::{Datelike, NaiveDate, Utc, Weekday};
 use daemons::ControlFlow;
 use futures::*;
 use itertools::Itertools;
-use json_db::{Database, GlobalDatabase};
+use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
 use serenity::{
     http::{CacheHttp, Http},
@@ -46,7 +46,7 @@ mod reacts {
     }
 }
 
-static DATABASE: GlobalDatabase<Vec<Calendar>> = Database::const_new("files/calendars.json");
+static DATABASE: GlobalDatabase<Vec<Calendar>> = GlobalDatabase::new("files/calendars.json");
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Calendar {

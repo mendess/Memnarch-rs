@@ -1,10 +1,10 @@
-use json_db::{Database, GlobalDatabase};
+use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
 use serenity::model::id::UserId;
 use std::{collections::HashMap, io};
 
 static USER_PREFS: GlobalDatabase<HashMap<UserId, UserPrefs>> =
-    Database::const_new("files/user_prefs.json");
+    GlobalDatabase::new("files/user_prefs.json");
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct UserPrefs {

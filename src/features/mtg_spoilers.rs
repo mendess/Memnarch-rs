@@ -15,7 +15,7 @@ use futures::{
     FutureExt,
 };
 use itertools::Itertools;
-use mtg_spoilers::{mythic::CardText, Spoiler, SpoilerSource};
+use mtg_spoilers::{CardText, Spoiler, SpoilerSource};
 use pubsub::{events, subscribe};
 use serenity::{
     http::CacheHttp,
@@ -26,7 +26,7 @@ use serenity::{
 };
 
 use crate::util::daemons::DaemonManager;
-use json_db::{Database, GlobalDatabase};
+use json_db::GlobalDatabase;
 
 mod paths {
     pub static BASE: &str = "files/mtg-spoilers";
@@ -298,7 +298,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     Ok(())
 }
 
-static SPOILER_CHANNEL_DB: GlobalDatabase<HashSet<ChannelId>> = Database::const_new(paths::DB);
+static SPOILER_CHANNEL_DB: GlobalDatabase<HashSet<ChannelId>> = GlobalDatabase::new(paths::DB);
 
 static RETRY_CACHE: OnceLock<Mutex<HashMap<ChannelId, Vec<Spoiler>>>> = OnceLock::new();
 

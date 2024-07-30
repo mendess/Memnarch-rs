@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::OnceLock};
+use std::{collections::HashSet, fs::Permissions, os::unix::fs::PermissionsExt, sync::OnceLock};
 
 use anyhow::Context as _;
 use futures::FutureExt;
@@ -31,7 +31,10 @@ struct SentBanger {
 static CHANNELS: GlobalDatabase<Channels> =
     GlobalDatabase::new("files/music_channel_broadcast.json");
 
-static BANGERS: GlobalDatabase<Vec<SentBanger>> = GlobalDatabase::new("files/sent-bangers.json");
+static BANGERS: GlobalDatabase<Vec<SentBanger>> =
+    GlobalDatabase::new_with_perms("files/sent-bangers.json", || {
+        Permissions::from_mode(0b110_100_100)
+    });
 
 pub async fn initialize() {
     use pubsub::events;

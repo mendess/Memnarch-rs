@@ -8,18 +8,18 @@ edition = "2021"
 anyhow.workspace = true
 bot-api = { path = "./bot-api" }
 chrono = "0.4"
-daemons = { git = "https://github.com/mendess/discord-bot-utils", features = ["cron"] }
+daemons = { git = "https://github.com/mendess/discord-bot-utils", features = ["cron"], rev = "6e591f80013d253e67799f9df26dcb67ebfa5113" }
 futures.workspace = true
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
 itertools = "0.10"
-json-db = { git = "https://github.com/mendess/discord-bot-utils" }
+json-db = { git = "https://github.com/mendess/discord-bot-utils", rev = "6e591f80013d253e67799f9df26dcb67ebfa5113" }
 tracing.workspace = true
 tracing-subscriber = "0.3"
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 nom = "7"
 nom-regex = "0.2"
 num-traits = "0.2.17"
-pubsub = { git = "https://github.com/mendess/discord-bot-utils", features = ["serenity_cache"] }
+pubsub = { git = "https://github.com/mendess/discord-bot-utils", features = ["serenity_cache"], rev = "6e591f80013d253e67799f9df26dcb67ebfa5113" }
 rand = "0.8"
 regex = "1"
 reqwest.workspace = true

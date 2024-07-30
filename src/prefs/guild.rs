@@ -1,10 +1,10 @@
-use json_db::{Database, GlobalDatabase};
+use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
 use serenity::model::id::{ChannelId, GuildId, RoleId};
 use std::{collections::HashMap, io};
 
 static GUILD_PREFS: GlobalDatabase<HashMap<GuildId, GuildPrefs>> =
-    Database::const_new("files/guild_prefs.json");
+    GlobalDatabase::new("files/guild_prefs.json");
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct GuildPrefs {

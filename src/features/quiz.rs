@@ -1,7 +1,7 @@
 use crate::util::daemons::{Cron, DaemonManager, DaemonManagerKey};
 use daemons::ControlFlow;
 use futures::FutureExt;
-use json_db::{Database, GlobalDatabase};
+use json_db::GlobalDatabase;
 use pubsub::{self, events::ReactionAdd};
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -25,7 +25,7 @@ struct Quizers {
 }
 
 static DATABASE: GlobalDatabase<HashMap<GuildId, Quizers>> =
-    Database::const_new("files/quizers.json");
+    GlobalDatabase::new("files/quizers.json");
 
 type QuizDaemon<F, Fut> = Cron<F, Fut, 21, 50, 00>;
 

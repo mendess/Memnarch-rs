@@ -4,7 +4,7 @@ use crate::{util::bot_id, util::daemons::DaemonManager};
 use chrono::{DateTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use futures::FutureExt;
-use json_db::{Database, GlobalDatabase};
+use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
 use serenity::{
     client::Context,
@@ -19,9 +19,9 @@ use std::{
 
 pub const BLOCK_EMOJI: &str = "🛡️";
 
-static DATABASE: GlobalDatabase<Vec<Reminder>> = Database::const_new("files/cron/reminders.json");
+static DATABASE: GlobalDatabase<Vec<Reminder>> = GlobalDatabase::new("files/cron/reminders.json");
 static BLOCKED_USERS: GlobalDatabase<HashMap<UserId, HashSet<UserId>>> =
-    Database::const_new("files/blocked_user.json");
+    GlobalDatabase::new("files/blocked_user.json");
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Serialize, Deserialize)]
 pub struct Reminder {

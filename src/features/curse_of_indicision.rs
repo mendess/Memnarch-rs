@@ -6,7 +6,7 @@ use std::{
 
 use daemons::{ControlFlow, Daemon};
 use futures::{stream::StreamExt, FutureExt};
-use json_db::{Database, GlobalDatabase};
+use json_db::GlobalDatabase;
 use pubsub::{self, events};
 use rand::seq::SliceRandom;
 use regex::Regex;
@@ -20,7 +20,7 @@ use crate::util::daemons::DaemonManager;
 
 use tokio::sync::Mutex;
 
-static DATABASE: GlobalDatabase<HashMap<GuildId, Curse>> = Database::const_new("files/curses.json");
+static DATABASE: GlobalDatabase<HashMap<GuildId, Curse>> = GlobalDatabase::new("files/curses.json");
 
 fn curse_regex() -> &'static Regex {
     static CURSE_REGEX: OnceLock<Regex> = OnceLock::new();
