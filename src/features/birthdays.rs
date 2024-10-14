@@ -110,7 +110,7 @@ impl FileKeySerializer<GuildId> for GuildIdSerializer {
     }
 }
 
-type BdayMap = MultifileDb<GuildId, GuildIdSerializer, BTreeMap<BDay, Vec<BDayBoy>>, Error>;
+type BdayMap = MultifileDb<GuildId, BTreeMap<BDay, Vec<BDayBoy>>, GuildIdSerializer, Error>;
 
 fn bday_map() -> &'static BdayMap {
     static BDAY_MAP: OnceLock<BdayMap> = OnceLock::new();
