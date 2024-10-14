@@ -1,6 +1,6 @@
 # inspiration: https://dev.to/rogertorres/first-steps-with-docker-rust-30oi
 
-FROM rust:1.79-bookworm as build
+FROM rust:1.81-bookworm as build
 
 RUN apt update -y && apt install cmake libpython3-dev -y
 
@@ -13,32 +13,24 @@ COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./.cargo ./.cargo
 RUN echo "THE FOLLOWING WARNINGS ARE OKAY!!!!" && \
-    cargo new --bin py-eval && \
-    cargo new --lib bot-api && \
-    cargo new --lib bot-api-types
+    cargo new --bin py-eval
 
-COPY ./bot-api/Cargo.toml ./bot-api/Cargo.toml
-COPY ./bot-api-types/Cargo.toml ./bot-api-types/Cargo.toml
 COPY ./py-eval/Cargo.toml ./py-eval/Cargo.toml
 
 # cache dependencies
 RUN cargo build --release --workspace
-RUN rm -r ./src && \
-    rm -r ./bot-api/src && \
-    rm -r ./bot-api-types/src
+RUN rm -r ./src
 
 # copy real source
 COPY ./src ./src
 # needed for git describe
 COPY ./.git ./.git
-COPY ./bot-api/src ./bot-api/src
-COPY ./bot-api-types/src ./bot-api-types/src
 COPY ./py-eval/src ./py-eval/src
 
 # build for release
 RUN rm ./target/release/memnarch-rs* && \
     rm ./target/release/py-eval* && \
-    find ./src ./bot-api-types/src ./bot-api/src ./py-eval/src -name '*.rs' -exec touch '{}' ';' && \
+    find ./src ./py-eval/src -name '*.rs' -exec touch '{}' ';' && \
     cargo build --release --workspace
 
 # executing image
