@@ -1,11 +1,13 @@
 pub mod util;
 
-use crate::get;
 use crate::util::daemons::DaemonManagerKey;
-use crate::util::{consts::FILES_DIR, permissions::*};
+use crate::util::permissions::*;
+use crate::{get, in_files};
 use chrono::{DateTime, Duration, Utc};
 use daemons::{ControlFlow, Daemon};
 use itertools::Itertools;
+use json_db::GlobalDatabase;
+use serde::{Deserialize, Serialize};
 use serenity::all::{CreateAttachment, CreateEmbed, CreateMessage, Http};
 use serenity::{
     framework::standard::{
@@ -29,75 +31,22 @@ use std::{
 };
 use tokio::fs::File;
 
-const SFX_FILES_DIR: &str = "sfx";
-const SFX_STATS_FILE: &str = "sfx_stats.json";
+const SFX_FILES_DIR: &str = in_files!("sfx");
 
-#[group]
-#[prefix("sfx")]
-#[commands(list, add, play, delete, get, stats, stop)]
-struct SFX;
-
-#[group]
-#[commands(s)]
-struct SFXAliases;
-
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct SfxStats(HashMap<String, usize>);
 
-impl Default for SfxStats {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl TypeMapKey for SfxStats {
-    type Value = Arc<Mutex<SfxStats>>;
-}
-
 impl SfxStats {
-    fn path() -> io::Result<PathBuf> {
-        let p = [FILES_DIR, SFX_STATS_FILE].iter().collect::<PathBuf>();
-        DirBuilder::new()
-            .recursive(true)
-            .create(p.parent().expect("This path always has enough components"))?;
-        Ok(p)
-    }
-
-    pub fn new() -> Self {
-        SfxStats(
-            Self::path()
-                .and_then(std::fs::File::open)
-                .ok()
-                .and_then(|f| {
-                    serde_json::from_reader(f)
-                        .map_err(|e| tracing::error!("Error loading sfx stats: '{}'", e))
-                        .ok()
-                })
-                .unwrap_or_default(),
-        )
-    }
-
-    async fn update(&mut self, sfx: &str) -> Result<(), String> {
+    fn update(&mut self, sfx: &str) {
         self.0
             .entry(sfx.to_string())
             .and_modify(|c| *c += 1)
             .or_insert(1);
-        fn map_err<E: std::fmt::Debug>(sfx: &str, e: E) -> String {
-            format!(
-                "[SFX|{}] Failed to update {}, Error {:?}",
-                Utc::now().naive_utc(),
-                sfx,
-                e
-            )
-        }
-        let mf = |e| map_err(sfx, e);
-        let mj = |e| map_err(sfx, e);
-        Self::path()
-            .and_then(std::fs::File::create)
-            .map_err(mf)
-            .and_then(|f| serde_json::to_writer(f, &self.0).map_err(mj))
     }
 }
+
+static SFX_STATS: GlobalDatabase<SfxStats> = GlobalDatabase::new(in_files!("sfx_stats.json"));
 
 #[derive(Debug)]
 pub struct LeaveVoice {
@@ -126,6 +75,15 @@ impl Daemon<false> for LeaveVoice {
         format!("LeaveVoice(id: {}, when: {})", self.guild_id, self.when)
     }
 }
+
+#[group]
+#[prefix("sfx")]
+#[commands(list, add, play, delete, get, stats, stop)]
+struct SFX;
+
+#[group]
+#[commands(s)]
+struct SFXAliases;
 
 #[command]
 #[description("Stops everything")]
@@ -175,9 +133,10 @@ async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         Ok(songbird::input::File::new(file.clone()).into())
     })
     .await?;
-    if let Err(e) = get!(ctx, SfxStats, lock)
-        .update(file.as_os_str().to_str().unwrap())
+    if let Err(e) = SFX_STATS
+        .load()
         .await
+        .map(|mut s| s.update(file.as_os_str().to_str().unwrap()))
     {
         tracing::error!("Failed to update sfx stats: {}", e);
     }
@@ -322,7 +281,9 @@ async fn get(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 #[description("Show the stats of the most played sfx")]
 #[usage("")]
 async fn stats(ctx: &Context, msg: &Message) -> CommandResult {
-    let mut stats = get!(ctx, SfxStats, lock)
+    let mut stats = SFX_STATS
+        .load()
+        .await?
         .0
         .iter()
         .map(|(k, v)| (k.clone(), *v))
@@ -382,8 +343,8 @@ async fn find_file(search_string: &Args) -> io::Result<PathBuf> {
 
 async fn sfx_path<S: AsRef<str>, F: Into<Option<S>>>(file: F) -> io::Result<PathBuf> {
     let p: PathBuf = match file.into() {
-        Some(f) => [FILES_DIR, SFX_FILES_DIR, f.as_ref()].iter().collect(),
-        None => [FILES_DIR, SFX_FILES_DIR].iter().collect(),
+        Some(f) => [SFX_FILES_DIR, f.as_ref()].iter().collect(),
+        None => [SFX_FILES_DIR].iter().collect(),
     };
     DirBuilder::new()
         .recursive(true)

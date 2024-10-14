@@ -4,13 +4,10 @@ use ::daemons::ControlFlow;
 use anyhow::Context as _;
 use futures::{stream, FutureExt, StreamExt};
 use memnarch_rs::features::{
-    self, birthdays, custom_commands, moderation, mtg_spoilers, music_channel_broadcast, reminders
+    self, birthdays, custom_commands, moderation, mtg_spoilers, music_channel_broadcast, reminders,
 };
 use memnarch_rs::{
-    commands::{
-        command_groups::*,
-        sfx::{util::LeaveVoiceDaemons, SfxStats},
-    },
+    commands::{command_groups::*, sfx::util::LeaveVoiceDaemons},
     util::consts::FILES_DIR,
 };
 use pubsub::events;
@@ -207,7 +204,6 @@ async fn main() -> anyhow::Result<()> {
         })
         .register_songbird()
         .type_map_insert::<LeaveVoiceDaemons>(Default::default())
-        .type_map_insert::<SfxStats>(Arc::new(Mutex::new(SfxStats::new())))
         .event_handler(pubsub::event_handler::Handler::new(bot_id))
         .await
         .expect("Err creating client");
