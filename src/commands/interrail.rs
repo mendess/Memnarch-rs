@@ -1,4 +1,4 @@
-use crate::{get, util::MentionExt};
+use crate::{get, in_files, util::MentionExt};
 use serde::{Deserialize, Serialize};
 use serenity::{
     all::{EditMessage, Mention},
@@ -18,7 +18,7 @@ pub struct InterrailConfig {
 }
 
 impl InterrailConfig {
-    const CONFIG: &'static str = "files/interrail_conf.json";
+    const CONFIG: &'static str = in_files!("interrail_conf.json");
     pub fn new() -> Self {
         File::open(InterrailConfig::CONFIG)
             .and_then(|f| serde_json::from_reader(f).map_err(|e| e.into()))

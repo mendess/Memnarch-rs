@@ -20,6 +20,7 @@ use serenity::{
 use tokio::sync::Mutex;
 
 use crate::{
+    in_files,
     prefs::guild as guild_prefs,
     util::daemons::{Cron, DaemonManager},
 };
@@ -45,7 +46,7 @@ impl From<NaiveDate> for BDay {
     }
 }
 
-const BASE: &str = "files/birthdays";
+const BASE: &str = in_files!("birthdays");
 
 #[derive(Debug)]
 struct Error {

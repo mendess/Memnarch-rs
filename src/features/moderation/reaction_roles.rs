@@ -17,7 +17,9 @@ use tokio::{fs, sync::Mutex};
 
 use json_db::{json_hash_map::JsonHashMap, Database};
 
-const BASE: &str = "files/moderation/reaction_roles";
+use crate::in_files;
+
+const BASE: &str = in_files!("moderation/reaction_roles");
 
 type MapKey = (ReactionType, MessageId);
 

@@ -1,8 +1,11 @@
 pub mod parser;
 
-use crate::util::{
-    bot_id,
-    daemons::{cache_and_http, DaemonManager},
+use crate::{
+    in_files,
+    util::{
+        bot_id,
+        daemons::{cache_and_http, DaemonManager},
+    },
 };
 use chrono::{DateTime, Utc};
 use daemons::{ControlFlow, Daemon};
@@ -24,9 +27,10 @@ use std::{
 
 pub const BLOCK_EMOJI: &str = "🛡️";
 
-static DATABASE: GlobalDatabase<Vec<Reminder>> = GlobalDatabase::new("files/cron/reminders.json");
+static DATABASE: GlobalDatabase<Vec<Reminder>> =
+    GlobalDatabase::new(in_files!("cron/reminders.json"));
 static BLOCKED_USERS: GlobalDatabase<HashMap<UserId, HashSet<UserId>>> =
-    GlobalDatabase::new("files/blocked_user.json");
+    GlobalDatabase::new(in_files!("blocked_user.json"));
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, Serialize, Deserialize)]
 pub struct Reminder {

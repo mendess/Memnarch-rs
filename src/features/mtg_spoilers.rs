@@ -30,9 +30,13 @@ use crate::util::daemons::{cache_and_http, DaemonManager};
 use json_db::GlobalDatabase;
 
 mod paths {
-    pub static BASE: &str = "files/mtg-spoilers";
-    pub static CACHE: &str = "files/mtg-spoilers/cache";
-    pub static DB: &str = "files/mtg-spoilers/db.json";
+    use constcat::concat;
+
+    use crate::in_files;
+
+    pub const BASE: &str = in_files!("mtg-spoilers");
+    pub const CACHE: &str = concat!(BASE, "/cache");
+    pub const DB: &str = concat!(BASE, "/db.json");
 }
 
 #[derive(Default)]

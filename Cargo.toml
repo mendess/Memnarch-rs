@@ -6,6 +6,7 @@ edition = "2021"
 
 [dependencies]
 anyhow.workspace = true
+constcat = "0.5"
 chrono = "0.4"
 futures.workspace = true
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }

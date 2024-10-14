@@ -16,6 +16,8 @@ use serenity::{
     },
 };
 
+use crate::in_files;
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Channels {
     sources: HashSet<ChannelId>,
@@ -29,10 +31,10 @@ struct SentBanger {
 }
 
 static CHANNELS: GlobalDatabase<Channels> =
-    GlobalDatabase::new("files/music_channel_broadcast.json");
+    GlobalDatabase::new(in_files!("music_channel_broadcast.json"));
 
 static BANGERS: GlobalDatabase<Vec<SentBanger>> =
-    GlobalDatabase::new_with_perms("files/sent-bangers.json", || {
+    GlobalDatabase::new_with_perms(in_files!("sent-bangers.json"), || {
         Permissions::from_mode(0b110_100_100)
     });
 

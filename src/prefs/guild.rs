@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 use serenity::model::id::{ChannelId, GuildId, RoleId};
 use std::{collections::HashMap, io};
 
+use crate::in_files;
+
 static GUILD_PREFS: GlobalDatabase<HashMap<GuildId, GuildPrefs>> =
-    GlobalDatabase::new("files/guild_prefs.json");
+    GlobalDatabase::new(in_files!("guild_prefs.json"));
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct GuildPrefs {

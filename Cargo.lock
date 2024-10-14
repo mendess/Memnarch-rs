@@ -550,6 +550,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "constcat"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4938185353434999ef52c81753c8cca8955ed38042fc29913db3751916f3b7ab"
+
+[[package]]
 name = "convert_case"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1627,6 +1633,7 @@ dependencies = [
  "anyhow",
  "bot-api-types",
  "chrono",
+ "constcat",
  "daemons",
  "futures",
  "git-describe",
