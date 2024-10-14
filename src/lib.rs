@@ -2,18 +2,18 @@
 #![warn(unused_features)]
 #![deny(unused_must_use)]
 #![warn(rust_2018_idioms)]
+#![expect(deprecated)]
 
 pub mod commands;
 pub mod features;
 pub mod prefs;
 pub mod util;
 
-use bot_api as _;
 use toml as _;
 use tracing_subscriber as _;
 
 use commands::custom::CustomCommands;
-use features::{birthdays, calendar, moderation, mtg_spoilers, quiz, reminders};
+use features::{birthdays, calendar, moderation, mtg_spoilers, reminders};
 
 use serde::{Deserialize, Serialize};
 use serenity::{
@@ -81,7 +81,7 @@ async fn my_help(
 
 #[hook]
 async fn normal_message(ctx: &Context, msg: &Message) {
-    if ctx.cache.current_user_id() == msg.author.id {
+    if ctx.cache.current_user().id == msg.author.id {
         return;
     }
     if !msg.content.starts_with('|') {
@@ -112,7 +112,7 @@ async fn after(ctx: &Context, msg: &Message, cmd_name: &str, error: Result<(), C
             tracing::trace!("Processed command '{}' for user '{}'", cmd_name, msg.author)
         }
         Err(why) => {
-            let _ = msg.channel_id.say(ctx, &why).await;
+            let _ = msg.channel_id.say(ctx, why.to_string()).await;
             tracing::trace!("Command '{}' failed with {:?}", cmd_name, why)
         }
     }

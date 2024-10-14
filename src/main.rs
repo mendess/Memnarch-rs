@@ -1,12 +1,12 @@
+#![expect(deprecated)]
+
 use ::daemons::ControlFlow;
 use anyhow::Context as _;
-use bot_api as api;
 use futures::{stream, FutureExt, StreamExt};
 use memnarch_rs::commands::custom::CustomCommands;
 use memnarch_rs::commands::interrail::InterrailConfig;
 use memnarch_rs::features::{
-    birthdays, calendar, curse_of_indicision, moderation, mtg_spoilers, music_channel_broadcast,
-    quiz, reminders,
+    self, birthdays, calendar, moderation, mtg_spoilers, music_channel_broadcast, reminders,
 };
 use memnarch_rs::{
     commands::{
@@ -16,6 +16,8 @@ use memnarch_rs::{
     util::consts::FILES_DIR,
 };
 use pubsub::events;
+use serenity::all::standard::Configuration;
+use serenity::all::{CreateMessage, Http};
 use serenity::{
     framework::standard::{
         help_commands,
@@ -23,7 +25,6 @@ use serenity::{
         Args, CommandError, CommandGroup, CommandResult, DispatchError, HelpOptions,
         StandardFramework,
     },
-    http::client::Http,
     model::{
         channel::Message,
         id::{ChannelId, GuildId, UserId},
@@ -162,34 +163,36 @@ async fn main() -> anyhow::Result<()> {
             if let Some(team) = info.team {
                 owners.insert(team.owner_user_id);
             } else {
-                owners.insert(info.owner.id);
+                owners.insert(info.owner.expect("cache should be enabled").id);
             }
             match http.get_current_user().await {
                 Ok(bot_id) => (owners, bot_id.id),
                 Err(why) => {
                     tracing::error!("Could not access current user: {why}");
-                    (owners, UserId(352881326044741644))
+                    (owners, UserId::new(352881326044741644))
                 }
             }
         }
         Err(why) => {
             tracing::error!("Could not access application info: {why}");
             (
-                [UserId(98500250540478464)].into_iter().collect(),
-                UserId(352881326044741644),
+                [UserId::new(98500250540478464)].into_iter().collect(),
+                UserId::new(352881326044741644),
             )
         }
     };
 
     let mut client = Client::builder(&config.token, GatewayIntents::all())
-        .framework(
-            StandardFramework::new()
-                .configure(|c| {
-                    c.prefix("|")
-                        .no_dm_prefix(true)
-                        .on_mention(Some(bot_id))
-                        .owners(owners)
-                })
+        .framework({
+            let framework = StandardFramework::new();
+            framework.configure(
+                Configuration::new()
+                    .prefix("|")
+                    .no_dm_prefix(true)
+                    .on_mention(Some(bot_id))
+                    .owners(owners),
+            );
+            framework
                 .normal_message(normal_message)
                 .after(after)
                 .on_dispatch_error(on_dispatch_error)
@@ -203,11 +206,10 @@ async fn main() -> anyhow::Result<()> {
                 .group(&SFXALIASES_GROUP)
                 .group(&TTS_GROUP)
                 .group(&CALENDAR_GROUP)
-                .group(&QUIZ_GROUP)
                 .group(&PY_GROUP)
                 .group(&MODERATION_GROUP)
-                .help(&MY_HELP),
-        )
+                .help(&MY_HELP)
+        })
         .register_songbird()
         .type_map_insert::<CustomCommands>(Arc::new(RwLock::new(CustomCommands::default())))
         .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
@@ -216,17 +218,16 @@ async fn main() -> anyhow::Result<()> {
         .event_handler(pubsub::event_handler::Handler::new(bot_id))
         .await
         .expect("Err creating client");
-    let mut daemon_manager = DaemonManager::spawn(client.cache_and_http.clone());
+    let mut daemon_manager =
+        DaemonManager::spawn(Arc::new((client.cache.clone(), client.http.clone())));
     reminders::load_reminders(&mut daemon_manager)
         .await
         .context("loading reminders")?;
     calendar::initialize(&mut daemon_manager).await;
     moderation::reaction_roles::initialize().await?;
     music_channel_broadcast::initialize().await;
-    try_init!(daemon_manager, quiz);
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
     try_init!(daemon_manager, birthdays);
-    try_init!(daemon_manager, curse_of_indicision);
     try_init!(daemon_manager, mtg_spoilers);
     {
         let mut data = client.data.write().await;
@@ -256,7 +257,7 @@ async fn main() -> anyhow::Result<()> {
             );
             if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>() {
                 if let Err(e) = id
-                    .send_message(&ctx, |m| m.content("Updated successfully!"))
+                    .send_message(&ctx, CreateMessage::new().content("Updated successfully!"))
                     .await
                 {
                     tracing::error!("Couldn't send update notification: {}", e);
@@ -271,18 +272,16 @@ async fn main() -> anyhow::Result<()> {
         |ctx, events::VoiceStateUpdate { new, .. }| {
             async move {
                 // Disconnect channel of mirrodin
-                if let (
-                    Some(gid @ GuildId(352399774818762759)),
-                    Some(id @ ChannelId(707561909846802462)),
-                ) = (new.guild_id, new.channel_id)
-                {
+                if let (Some(gid @ 352399774818762759), Some(id @ 707561909846802462)) = (
+                    new.guild_id.map(|i| i.get()),
+                    new.channel_id.map(|i| i.get()),
+                ) {
                     async fn f(id: ChannelId, gid: GuildId, ctx: &Context) -> anyhow::Result<()> {
                         let c = id.to_channel(ctx).await.and_then(|c| {
                             c.guild()
                                 .ok_or(serenity::Error::Other("Not a guild channel"))
                         })?;
-                        let members = c.members(ctx).await?;
-                        stream::iter(members)
+                        stream::iter(c.members(ctx)?)
                             .for_each(|mut m| async move {
                                 let name = std::mem::take(&mut m.user.name);
                                 if let Err(e) = gid.disconnect_member(ctx, m).await {
@@ -296,7 +295,7 @@ async fn main() -> anyhow::Result<()> {
                             .await;
                         Ok(())
                     }
-                    if let Err(e) = f(id, gid, ctx).await {
+                    if let Err(e) = f(id.into(), gid.into(), ctx).await {
                         tracing::error!("Failed to disconnect user: {}", e);
                     }
                 }
@@ -316,7 +315,10 @@ async fn main() -> anyhow::Result<()> {
     .await;
     let task = tokio::task::Builder::new()
         .name("bot-api")
-        .spawn(api::start(client.cache_and_http.clone()))
+        .spawn(features::api::start((
+            client.cache.clone(),
+            client.http.clone(),
+        )))
         .expect("to be able to launch bot api task");
     tokio::select! {
         r = client.start() => if let Err(why) = r {
@@ -357,7 +359,7 @@ async fn my_help(
 
 #[hook]
 async fn normal_message(ctx: &Context, msg: &Message) {
-    if ctx.cache.current_user_id() == msg.author.id {
+    if ctx.cache.current_user().id == msg.author.id {
         return;
     }
     if !msg.content.starts_with('|') {
@@ -388,7 +390,7 @@ async fn after(ctx: &Context, msg: &Message, cmd_name: &str, error: Result<(), C
             tracing::info!("Processed command '{}' for user '{}'", cmd_name, msg.author)
         }
         Err(why) => {
-            let _ = msg.channel_id.say(ctx, &why).await;
+            let _ = msg.channel_id.say(ctx, why.to_string()).await;
             tracing::error!("Command '{}' failed with {:?}", cmd_name, why)
         }
     }

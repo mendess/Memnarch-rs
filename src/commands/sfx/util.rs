@@ -3,7 +3,7 @@ use daemons::ControlFlow;
 use futures::prelude::*;
 use pubsub::{self, events::VoiceStateUpdate};
 use serenity::{
-    client::Context,
+    all::Context,
     model::id::{ChannelId, GuildId, UserId},
     prelude::TypeMapKey,
 };
@@ -22,17 +22,17 @@ pub async fn join_or_get_call(
     let call = match sb.get(gid) {
         Some(call) => call,
         None => {
-            let guild = ctx.cache.guild(gid).ok_or("Invalid guild")?;
-            let voice_channel = guild
-                .voice_states
-                .get(&author)
-                .and_then(|vs| vs.channel_id)
-                .ok_or("Not in a voice channel")?;
+            let (gid, voice_channel) = {
+                let guild = ctx.cache.guild(gid).ok_or("Invalid guild")?;
+                let voice_channel = guild
+                    .voice_states
+                    .get(&author)
+                    .and_then(|vs| vs.channel_id)
+                    .ok_or("Not in a voice channel")?;
+                (guild.id, voice_channel)
+            };
 
-            let (call, result) = sb.join(guild.id, voice_channel).await;
-
-            result?;
-            call
+            sb.join(gid, voice_channel).await?
         }
     };
 
@@ -74,14 +74,7 @@ async fn init_voice_leave() {
                         NotEmpty,
                     }
                     async fn alone(id: ChannelId, ctx: &Context) -> Option<Alone> {
-                        let members = id
-                            .to_channel(ctx)
-                            .await
-                            .ok()?
-                            .guild()?
-                            .members(ctx)
-                            .await
-                            .ok()?;
+                        let members = id.to_channel(ctx).await.ok()?.guild()?.members(ctx).ok()?;
                         Some(if members.is_empty() {
                             Alone::Empty
                         } else if members.iter().all(|m| m.user.bot) {

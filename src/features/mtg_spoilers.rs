@@ -18,14 +18,15 @@ use itertools::Itertools;
 use mtg_spoilers::{CardText, Spoiler, SpoilerSource};
 use pubsub::{events, subscribe};
 use serenity::{
-    http::CacheHttp,
-    model::prelude::{
-        component::ActionRowComponent, interaction::Interaction, ChannelId, GuildChannel,
+    all::{
+        ActionRowComponent, Button, ButtonKind, CacheHttp, ChannelId, CreateActionRow,
+        CreateButton, CreateEmbed, CreateMessage, CreateThread, EditMessage, GuildChannel, Http,
+        Interaction,
     },
     prelude::{Context, Mutex},
 };
 
-use crate::util::daemons::DaemonManager;
+use crate::util::daemons::{cache_and_http, DaemonManager};
 use json_db::GlobalDatabase;
 
 mod paths {
@@ -45,7 +46,7 @@ impl SpoilerChecker {
 
 #[async_trait]
 impl Daemon<true> for SpoilerChecker {
-    type Data = serenity::CacheAndHttp;
+    type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
     async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
         use mtg_spoilers::{cache::file::File, mythic};
@@ -84,7 +85,7 @@ impl Daemon<true> for SpoilerChecker {
             self.delay.store(1, Ordering::Release);
         }
 
-        if let Err(e) = send_new_cards(data, new_cards).await {
+        if let Err(e) = send_new_cards(cache_and_http(data), new_cards).await {
             tracing::error!("failed to send new cards: {e:?}");
         }
         tracing::info!("finished checking for spoilers");
@@ -178,11 +179,11 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
                 }
             }
         }));
-        let thread = msg
-            .channel_id
-            .create_public_thread(ctx, msg.message.id, |thread| {
-                thread.name(title.unwrap_or("discussion"))
-            });
+        let thread = msg.channel_id.create_thread_from_message(
+            ctx,
+            msg.message.id,
+            CreateThread::new(title.unwrap_or("discussion")),
+        );
 
         let (card, thread) = join(fetch_card, thread).await;
         let thread = match thread {
@@ -199,13 +200,15 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
         }) = card.flatten()
         {
             let thread = thread
-                .send_message(ctx, |msg| {
-                    msg.embed(|embed| {
+                .send_message(
+                    ctx,
+                    CreateMessage::new().embed({
+                        let mut embed = CreateEmbed::new();
                         if let Some(image) = thumbnail {
-                            embed.thumbnail(image);
+                            embed = embed.thumbnail(image);
                         }
                         if let Some(url) = scryfall_uri {
-                            embed.url(url);
+                            embed = embed.url(url);
                         }
                         let title = rest.iter().filter_map(|c| c.name.as_deref()).format(" // ");
                         let desc = match rest.as_slice() {
@@ -230,9 +233,9 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
                                 .to_string(),
                         };
 
-                        embed.title(title).description(desc)
-                    })
-                })
+                        embed.title(title.to_string()).description(desc)
+                    }),
+                )
                 .await;
             if let Err(e) = thread {
                 tracing::error!(
@@ -246,7 +249,7 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
 }
 
 async fn delete_discuss_button(ctx: &Context, t: &GuildChannel) {
-    let msgs = match t.messages(ctx, |msgs| msgs).await {
+    let msgs = match t.messages(ctx, Default::default()).await {
         Err(e) => {
             tracing::error!(?e, "failed to get messages from a thread");
             return;
@@ -258,9 +261,10 @@ async fn delete_discuss_button(ctx: &Context, t: &GuildChannel) {
         m.referenced_message.filter(|m| {
             m.components.iter().any(|c| {
                 c.components.iter().any(|c| match c {
-                    ActionRowComponent::Button(b) => {
-                        b.custom_id.as_deref() == Some(DISCUSSION_BUTTON)
-                    }
+                    ActionRowComponent::Button(Button {
+                        data: ButtonKind::NonLink { custom_id, .. },
+                        ..
+                    }) => custom_id == DISCUSSION_BUTTON,
                     _ => false,
                 })
             })
@@ -268,7 +272,7 @@ async fn delete_discuss_button(ctx: &Context, t: &GuildChannel) {
     });
     if let Some(mut button_message) = button_message {
         if let Err(e) = button_message
-            .edit(ctx, |edit| edit.components(|c| c))
+            .edit(ctx, EditMessage::new().components(Default::default()))
             .await
         {
             tracing::error!(?e, "failed to remove {DISCUSSION_BUTTON} button");
@@ -318,10 +322,7 @@ pub async fn toggle_channel(ch: ChannelId) -> io::Result<ToggleAction> {
     }
 }
 
-async fn send_new_cards(
-    ctx: &serenity::CacheAndHttp,
-    new_cards: Vec<Spoiler>,
-) -> serenity::Result<()> {
+async fn send_new_cards(ctx: impl CacheHttp, new_cards: Vec<Spoiler>) -> serenity::Result<()> {
     for ch in SPOILER_CHANNEL_DB.load().await?.iter() {
         let retries = RETRY_CACHE
             .get_or_init(Default::default)
@@ -330,7 +331,7 @@ async fn send_new_cards(
             .remove(ch)
             .unwrap_or_default();
         for c in retries.iter().chain(new_cards.iter()) {
-            if let Err(e) = send_card(ctx, *ch, c).await {
+            if let Err(e) = send_card(&ctx, *ch, c).await {
                 tracing::error!("failed to publish spoiler {c:#?} to {ch}: {e:?}");
                 RETRY_CACHE
                     .get_or_init(Default::default)
@@ -346,14 +347,16 @@ async fn send_new_cards(
 }
 
 async fn send_card(
-    ctx: &serenity::CacheAndHttp,
+    ctx: impl CacheHttp,
     ch: ChannelId,
     card: &Spoiler,
 ) -> Result<(), serenity::Error> {
-    ch.send_message(ctx.http(), |builder| {
-        builder
-            .embed(|builder| {
-                builder.image(&card.image).url(&card.source_site_url).title(
+    ch.send_message(
+        ctx,
+        CreateMessage::new()
+            .embed({
+                let mut builder = CreateEmbed::new();
+                builder = builder.image(&card.image).url(&card.source_site_url).title(
                     card.name
                         .as_deref()
                         .unwrap_or_else(|| name_from_image(&card.image)),
@@ -364,16 +367,15 @@ async fn send_card(
                         write!(description, "\n{url}")
                             .expect("pushing to a string should never fail");
                     }
-                    builder.description(description);
+                    builder = builder.description(description);
                 }
                 builder
             })
-            .components(|c| {
-                c.create_action_row(|row| {
-                    row.create_button(|b| b.custom_id(DISCUSSION_BUTTON).label("Discuss/Translate"))
-                })
-            })
-    })
+            .components(vec![CreateActionRow::Buttons(vec![CreateButton::new(
+                DISCUSSION_BUTTON,
+            )
+            .label("Discuss/Translate")])]),
+    )
     .await?;
 
     Ok(())

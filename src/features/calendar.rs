@@ -10,27 +10,37 @@ use itertools::Itertools;
 use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
 use serenity::{
-    http::{CacheHttp, Http},
+    all::{CreateEmbed, CreateMessage, EditMessage},
+    http::CacheHttp,
     model::{
         channel::ReactionType,
         id::{ChannelId, MessageId},
     },
     prelude::Mentionable,
 };
-use std::iter::successors;
+use std::{iter::successors, mem::MaybeUninit};
 
 mod reacts {
     use serenity::model::channel::ReactionType;
     use serenity::model::id::EmojiId;
 
     type EmojiFallback = ((bool, EmojiId, &'static str), char);
-    pub(super) const YES: EmojiFallback =
-        ((true, EmojiId(723360851527991366), "perryyessign"), '✅');
-    pub(super) const NO: EmojiFallback = ((true, EmojiId(723360851330859048), "perrynosign"), '❌');
-    pub(super) const MAYBE: EmojiFallback =
-        ((true, EmojiId(723359761382506597), "perryokaysign"), '❓');
-    pub(super) const NAO_QUERO: EmojiFallback =
-        ((true, EmojiId(779017270243491870), "perryguitar"), '⛔');
+    pub(super) const YES: EmojiFallback = (
+        (true, EmojiId::new(723360851527991366), "perryyessign"),
+        '✅',
+    );
+    pub(super) const NO: EmojiFallback = (
+        (true, EmojiId::new(723360851330859048), "perrynosign"),
+        '❌',
+    );
+    pub(super) const MAYBE: EmojiFallback = (
+        (true, EmojiId::new(723359761382506597), "perryokaysign"),
+        '❓',
+    );
+    pub(super) const NAO_QUERO: EmojiFallback = (
+        (true, EmojiId::new(779017270243491870), "perryguitar"),
+        '⛔',
+    );
     pub(super) const ALL: [EmojiFallback; 4] = [YES, NO, MAYBE, NAO_QUERO];
     pub(super) fn all() -> impl Iterator<Item = (ReactionType, char)> {
         ALL.iter().map(|&((animated, id, name), f)| {
@@ -58,7 +68,8 @@ pub async fn new(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<()> 
     let bot_id = ctx
         .cache()
         .expect("Should be using cache feature")
-        .current_user_id();
+        .current_user()
+        .id;
     let ctx_ref = &ctx;
     channel
         .messages_iter(ctx.http())
@@ -68,29 +79,37 @@ pub async fn new(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<()> 
             let _ = m.delete(ctx_ref).await;
         })
         .await;
-    let mut messages = [MessageId(0); 7];
-    for (d, message) in successors(Some(Utc::now().date_naive()), |d| d.succ_opt())
-        .take(7)
-        .zip(&mut messages)
+    let mut messages = [const { MaybeUninit::uninit() }; 7];
+    for (d, m_id) in successors(Some(Utc::now().date_naive()), |d| d.succ_opt()).zip(&mut messages)
     {
-        *message = send_message(ctx_ref.http(), channel, d).await?;
+        // no need to destruct initialized elements as MessageId is just a number.
+        m_id.write(send_message(ctx_ref.http(), channel, d).await?);
     }
-    DATABASE.load().await?.push(Calendar { channel, messages });
+    DATABASE.load().await?.push(Calendar {
+        channel,
+        messages: unsafe {
+            // SAFETY: We have initialized all values of the array
+            std::mem::transmute::<[MaybeUninit<MessageId>; 7], [MessageId; 7]>(messages)
+        },
+    });
     Ok(())
 }
 
-async fn send_message(ctx: &Http, channel: ChannelId, d: NaiveDate) -> anyhow::Result<MessageId> {
+async fn send_message(
+    ctx: impl CacheHttp,
+    channel: ChannelId,
+    d: NaiveDate,
+) -> anyhow::Result<MessageId> {
     let message = channel
-        .send_message(ctx, |m| {
-            m.embed(|e| {
-                e.title(format!(
-                    "{}/{} ({})",
-                    d.day(),
-                    d.month(),
-                    translate_weekday(d.weekday())
-                ))
-            })
-        })
+        .send_message(
+            &ctx,
+            CreateMessage::new().embed(CreateEmbed::new().title(format!(
+                "{}/{} ({})",
+                d.day(),
+                d.month(),
+                translate_weekday(d.weekday())
+            ))),
+        )
         .await?;
     for (e, fallback) in reacts::all() {
         if let Err(e) = message.react(&ctx, e).await {
@@ -123,14 +142,14 @@ pub async fn remove(ctx: impl CacheHttp, channel: ChannelId) -> anyhow::Result<(
     }
 }
 
-async fn tick(ctx: &Http) -> anyhow::Result<()> {
+async fn tick(ctx: impl CacheHttp) -> anyhow::Result<()> {
     let mut cals = DATABASE.load().await?;
     let today = Utc::now().date_naive();
     for Calendar { channel, messages } in cals.iter_mut() {
         tracing::debug!("Ticking calendar in channel {}", channel);
         loop {
             let m_id = *messages.first().unwrap();
-            let mut m = channel.message(ctx.http(), m_id).await?;
+            let mut m = channel.message(&ctx, m_id).await?;
             // let mut m = match  {
             //         Ok(m) => m,
             //         Err(e) => ,
@@ -147,7 +166,7 @@ async fn tick(ctx: &Http) -> anyhow::Result<()> {
                 break;
             }
             let date = old_date + chrono::Duration::days(7);
-            *messages.first_mut().unwrap() = send_message(ctx, *channel, date)
+            *messages.first_mut().unwrap() = send_message(&ctx, *channel, date)
                 .await
                 .context("sending a new message")?;
             channel
@@ -216,7 +235,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
                     ReactionType::Custom { id, .. } => reacts::ALL
                         .iter()
                         .position(|((_, rid, _), _)| rid == id)
-                        .unwrap_or(id.0 as usize),
+                        .unwrap_or(id.get() as usize),
                     ReactionType::Unicode(s) => s.len(),
                     _ => usize::MAX,
                 });
@@ -224,22 +243,24 @@ pub async fn initialize(dm: &mut DaemonManager) {
             };
             message
                 .channel_id
-                .edit_message(ctx, message.id, |e| {
-                    e.embed(|e| {
-                        e.title(title).fields(
+                .edit_message(
+                    ctx,
+                    message.id,
+                    EditMessage::new().embed(
+                        CreateEmbed::new().title(title).fields(
                             reactions
                                 .into_iter()
                                 .filter(|(_, v)| !v.is_empty())
                                 .map(|(k, v)| {
                                     (
                                         format!("{} {}", k, v.len()),
-                                        v.into_iter().map(|u| u.mention()).format("\n"),
+                                        v.into_iter().map(|u| u.mention()).format("\n").to_string(),
                                         true,
                                     )
                                 }),
-                        )
-                    })
-                })
+                        ),
+                    ),
+                )
                 .await?;
             Ok(())
         }
@@ -276,7 +297,7 @@ pub async fn initialize(dm: &mut DaemonManager) {
     dm.add_daemon(CalendarDaemon::new(
         String::from("calendar daemon"),
         |data| {
-            let data = data.http.clone();
+            let data = data.1.clone();
             async move {
                 if let Err(e) = tick(&data).await {
                     tracing::error!("Failed to tick a calendar forward: {:?}", e);

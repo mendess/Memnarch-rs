@@ -12,6 +12,7 @@ use daemons::{ControlFlow, Daemon};
 use futures::TryFutureExt;
 use json_db::multifile_db::{FileKeySerializer, MultifileDb};
 use serenity::{
+    all::CreateMessage,
     http::Http,
     model::id::{GuildId, UserId},
     prelude::Mentionable,
@@ -94,17 +95,17 @@ impl FileKeySerializer<GuildId> for GuildIdSerializer {
         let Some((id, _)) = s.split_once('.') else {
             return Err(Error {
                 serializing: false,
-                kind: ErrorKind::FileKeyParseError(format!("key {s:?} didn't contain a ."))
+                kind: ErrorKind::FileKeyParseError(format!("key {s:?} didn't contain a .")),
             });
         };
-        id.parse().map(GuildId).map_err(|e| Error {
+        id.parse().map(GuildId::new).map_err(|e| Error {
             serializing: false,
             kind: ErrorKind::FileKeyParseError(format!("id {id:?} wasn't a valid guild id: {e:?}")),
         })
     }
 
     fn to_string(pk: GuildId) -> String {
-        format!("{}.csv", pk.0)
+        format!("{}.csv", pk.get())
     }
 }
 
@@ -122,7 +123,7 @@ pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     d.lock()
         .await
         .add_daemon(BDayChecker::new("bday checker", move |c| {
-            check_bday(c.http.clone(), dm.clone())
+            check_bday(c.1.clone(), dm.clone())
         }))
         .await;
     Ok(())
@@ -258,7 +259,7 @@ fn deser(v: &[u8]) -> Result<BTreeMap<BDay, Vec<BDayBoy>>, Error> {
                     let s = from_utf8(b)
                         .with_context(|| format!("failed to deser uid {:?}", from_utf8(b)))?;
                     s.parse::<u64>()
-                        .map(UserId)
+                        .map(UserId::new)
                         .with_context(|| format!("failed to deser {:?}", s))
                 })
                 .transpose()
@@ -293,12 +294,10 @@ fn deser(v: &[u8]) -> Result<BTreeMap<BDay, Vec<BDayBoy>>, Error> {
                 serializing: false,
                 kind: ErrorKind::Other(e),
             })?;
-            acc.entry(BDay::from(e.0))
-                .or_default()
-                .push(BDayBoy {
-                    id: e.1,
-                    year: e.0.year(),
-                });
+            acc.entry(BDay::from(e.0)).or_default().push(BDayBoy {
+                id: e.1,
+                year: e.0.year(),
+            });
             Ok(acc)
         })
 }
@@ -348,9 +347,11 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                 for user in users {
                     tracing::info!("Date: {:?} - User {:?}", date, user);
                     let r = channel
-                        .send_message(&http, |m| {
-                            m.content(format!("Parabens! {}", user.id.mention()))
-                        })
+                        .send_message(
+                            &http,
+                            CreateMessage::new()
+                                .content(format!("Parabens! {}", user.id.mention())),
+                        )
                         .await;
                     if let Err(e) = r {
                         tracing::error!(
@@ -364,7 +365,7 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
                         let http = &http;
                         let r = gid
                             .member(&http, user.id)
-                            .and_then(|mut m| async move { m.add_role(http, role).await })
+                            .and_then(|m| async move { m.add_role(http, role).await })
                             .await;
                         if let Err(e) = r {
                             tracing::error!(
@@ -400,10 +401,13 @@ struct UnBdayBoy {
 
 #[serenity::async_trait]
 impl Daemon<false> for UnBdayBoy {
-    type Data = serenity::CacheAndHttp;
+    type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
     async fn run(&mut self, data: &Self::Data) -> ControlFlow {
-        async fn _r(this: &mut UnBdayBoy, data: &serenity::CacheAndHttp) -> anyhow::Result<()> {
+        async fn _r(
+            this: &mut UnBdayBoy,
+            data: (&Arc<serenity::cache::Cache>, &Http),
+        ) -> anyhow::Result<()> {
             let role = match guild_prefs::get(this.guild)
                 .await?
                 .and_then(|p| p.birthday_role)
@@ -417,11 +421,11 @@ impl Daemon<false> for UnBdayBoy {
             this.guild
                 .member(data, this.user)
                 .await?
-                .remove_role(&data.http, role)
+                .remove_role(&data, role)
                 .await?;
             Ok(())
         }
-        if let Err(e) = _r(self, data).await {
+        if let Err(e) = _r(self, (&data.0, &*data.1)).await {
             tracing::error!("failed to remove birthday role: {:?}", e)
         }
         ControlFlow::BREAK

@@ -1,5 +1,6 @@
 use futures::StreamExt;
 use serenity::{
+    all::EditMessage,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -57,13 +58,14 @@ async fn add_base_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     let mut member_names = vec![];
     tokio::pin!(members);
     while let Some(m) = members.next().await {
-        let mut m = m?;
+        let m = m?;
         if !m.roles.iter().any(|r| *r == role) {
             m.add_role(ctx, role).await?;
-            member_names.push(m.display_name().into_owned());
+            member_names.push(m.display_name().to_owned());
             if let Err(e) = notif
-                .edit(ctx, |m| {
-                    m.content({
+                .edit(
+                    ctx,
+                    EditMessage::new().content({
                         let mut content = String::new();
                         let mut count = 0;
                         let i = member_names
@@ -83,8 +85,8 @@ async fn add_base_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
                         }
                         content.insert_str(0, "added role to:\n");
                         content
-                    })
-                })
+                    }),
+                )
                 .await
             {
                 tracing::error!("failed to edit list of added people: {e:?}");

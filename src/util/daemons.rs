@@ -1,8 +1,12 @@
-use serenity::{prelude::TypeMapKey, CacheAndHttp};
+use serenity::{all::Http, cache::Cache, prelude::TypeMapKey};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-daemons::monomorphise!(CacheAndHttp);
+daemons::monomorphise!((Arc<Cache>, Arc<Http>));
+
+pub fn cache_and_http(pair: &(Arc<Cache>, Arc<Http>)) -> (&Arc<Cache>, &Http) {
+    (&pair.0, &*pair.1)
+}
 
 pub struct DaemonManagerKey;
 

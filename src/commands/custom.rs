@@ -2,6 +2,7 @@ use crate::{get, util::consts::FILES_DIR};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serenity::{
+    all::{CreateEmbed, CreateMessage},
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -65,19 +66,21 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
     let mut cc = get!(> share_map, CustomCommands, write);
     let cmds = cc.list(msg.guild_id.ok_or("guild_id is missing")?)?;
     msg.channel_id
-        .send_message(&ctx, |m| {
-            m.embed(|e| {
+        .send_message(
+            &ctx,
+            CreateMessage::new().embed({
+                let mut e = CreateEmbed::new();
                 if let Some(cmds) = cmds {
                     let size_hint = cmds.size_hint().0;
-                    e.description(
+                    e = e.description(
                         cmds.fold(String::with_capacity(size_hint * 5), |d, (key, value)| {
                             d + &format!("{} - {}\n", key, value)
                         }),
                     );
                 }
                 e.title("List of custom commands")
-            })
-        })
+            }),
+        )
         .await?;
     Ok(())
 }

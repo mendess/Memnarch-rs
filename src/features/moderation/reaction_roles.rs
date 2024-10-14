@@ -54,10 +54,11 @@ pub async fn initialize() -> io::Result<()> {
             let mut db = HashMap::new();
             while let Some(d) = read_dir.next_entry().await? {
                 let path = d.path();
-                let gid = match path
-                    .file_stem()
-                    .and_then(|n| Some(GuildId(str::parse(from_utf8(n.as_bytes()).ok()?).ok()?)))
-                {
+                let gid = match path.file_stem().and_then(|n| {
+                    Some(GuildId::new(
+                        str::parse(from_utf8(n.as_bytes()).ok()?).ok()?,
+                    ))
+                }) {
                     None => continue,
                     Some(gid) => gid,
                 };
@@ -76,7 +77,7 @@ pub async fn initialize() -> io::Result<()> {
     use pubsub::events::{ReactionAdd, ReactionRemove};
     async fn handler<const ADD: bool>(ctx: &Context, reaction: &Reaction) {
         let Some(gid) = reaction.guild_id else { return };
-        let (mut member, role) = {
+        let (member, role) = {
             let db = REACTION_ROLES
                 .get()
                 .expect("reaction_roles::initialize was not called")

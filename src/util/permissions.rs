@@ -16,11 +16,11 @@ pub async fn is_friend(
         .http
         .get_current_application_info()
         .await
-        .map(|info| info.owner.id)
+        .map(|info| info.owner.expect("to have cache").id)
         .ok();
 
     msg.guild_id
-        .and_then(|id| (id.0 == 136_220_994_812_641_280).then_some(Ok(())))
+        .and_then(|id| (id.get() == 136_220_994_812_641_280).then_some(Ok(())))
         .or_else(|| (Some(msg.author.id) == owner).then_some(Ok(())))
         .unwrap_or_else(|| {
             Err(Reason::User(

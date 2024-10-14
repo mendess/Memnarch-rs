@@ -1,12 +1,16 @@
 pub mod parser;
 
-use crate::{util::bot_id, util::daemons::DaemonManager};
+use crate::util::{
+    bot_id,
+    daemons::{cache_and_http, DaemonManager},
+};
 use chrono::{DateTime, Utc};
 use daemons::{ControlFlow, Daemon};
 use futures::FutureExt;
 use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
 use serenity::{
+    all::Http,
     client::Context,
     model::{channel::Channel, id::UserId},
     prelude::Mentionable,
@@ -14,6 +18,7 @@ use serenity::{
 use std::{
     collections::{HashMap, HashSet},
     io,
+    sync::Arc,
     time::Duration as StdDuration,
 };
 
@@ -32,12 +37,13 @@ pub struct Reminder {
 
 #[serenity::async_trait]
 impl Daemon<false> for Reminder {
-    type Data = serenity::CacheAndHttp;
+    type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
     async fn run(&mut self, data: &Self::Data) -> ControlFlow {
+        let data = cache_and_http(data);
         match self.id.create_dm_channel(data).await {
             Ok(pch) => {
-                if let Err(e) = pch.say(&data.http, &self.message).await {
+                if let Err(e) = pch.say(&data, &self.message).await {
                     tracing::error!("Failed to send reminder: {:?}", e);
                 } else if let Err(e) = remove_reminder(self).await {
                     tracing::error!("Failed to remove reminder: {:?}", e);
@@ -127,7 +133,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
         }
         let blocker = match m.channel(ctx).await {
             Ok(Channel::Private(ch)) => ch.recipient.id,
-            Err(_) => match ctx.http.get_channel(m.channel_id.0).await? {
+            Err(_) => match ctx.http.get_channel(m.channel_id).await? {
                 Channel::Private(ch) => ch.recipient.id,
                 ch => {
                     tracing::trace!("Not a private channel {:?}", ch);

@@ -29,10 +29,7 @@ pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
         let service = current_service().read().await;
         let voice = current_voice().read().await;
         let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
-        match songbird::ytdl(&tts_link).await {
-            Ok(source) => Ok(source),
-            Err(e) => Err(format!("Failed getting audio source: {:?}", e).into()),
-        }
+        Ok(songbird::input::YoutubeDl::new(reqwest::Client::new(), tts_link).into())
     })
     .await
 }

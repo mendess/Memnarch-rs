@@ -8,9 +8,9 @@ use regex::{Match, Regex};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serenity::{
-    client::Context,
+    all::{Context, Message},
+    http::CacheHttp,
     model::{
-        channel::Message,
         id::{ChannelId, UserId},
         mention::Mentionable,
     },
@@ -36,6 +36,38 @@ static BANGERS: GlobalDatabase<Vec<SentBanger>> =
         Permissions::from_mode(0b110_100_100)
     });
 
+pub async fn broadcast(
+    ctx: impl CacheHttp,
+    author: UserId,
+    source_channel_id: ChannelId,
+    url: &str,
+) -> anyhow::Result<()> {
+    tracing::info!(?url, "broadcasting banger");
+    let channels = CHANNELS.load().await.context("loading channels database")?;
+    for ch in channels
+        .destinations
+        .iter()
+        .filter(|ch| **ch != source_channel_id)
+    {
+        tracing::info!(?ch, "sending banger to channel");
+        if let Err(error) = ch
+            .say(
+                ctx.http(),
+                format!("new banger from {}: {}", source_channel_id.mention(), url),
+            )
+            .await
+        {
+            tracing::error!(?error, channel = %ch, "failed to send message")
+        }
+    }
+    if let Ok(url) = url.parse() {
+        if let Err(error) = store_banger(author, url).await {
+            tracing::error!(?error, "failed to store banger")
+        }
+    }
+    Ok(())
+}
+
 pub async fn initialize() {
     use pubsub::events;
 
@@ -48,30 +80,13 @@ pub async fn initialize() {
             return Ok(());
         }
         for url in parse_urls_from_message(&message.content) {
-            for ch in channels
-                .destinations
-                .iter()
-                .filter(|ch| **ch != message.channel_id)
-            {
-                if let Err(error) = ch
-                    .say(
-                        ctx,
-                        format!(
-                            "new banger from {}: {}",
-                            message.channel_id.mention(),
-                            url.as_str()
-                        ),
-                    )
-                    .await
-                {
-                    tracing::error!(?error, channel = %ch, "failed to send message")
-                }
-            }
-            if let Ok(url) = url.as_str().parse() {
-                if let Err(error) = store_banger(message.author.id, url).await {
-                    tracing::error!(?error, "failed to store banger")
-                }
-            }
+            broadcast(
+                &ctx.http,
+                message.author.id,
+                message.channel_id,
+                url.as_str(),
+            )
+            .await?;
         }
         Ok(())
     }

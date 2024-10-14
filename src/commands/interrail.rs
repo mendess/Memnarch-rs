@@ -1,6 +1,7 @@
 use crate::get;
 use serde::{Deserialize, Serialize};
 use serenity::{
+    all::EditMessage,
     framework::standard::{
         macros::{check, command, group},
         Args, CommandResult, Reason,
@@ -66,7 +67,9 @@ pub async fn edit(ctx: &Context, _: &Message, mut args: Args) -> CommandResult {
         .stories
         .message(&ctx.http, msg_id)
         .await?;
-    message.edit(&ctx, |c| c.content(args.rest())).await?;
+    message
+        .edit(&ctx, EditMessage::new().content(args.rest()))
+        .await?;
     Ok(())
 }
 

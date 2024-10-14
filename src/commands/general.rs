@@ -9,6 +9,7 @@ use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use num_traits::FromPrimitive;
 use serenity::{
+    all::{CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage},
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
@@ -16,7 +17,7 @@ use serenity::{
     model::{
         channel::Message,
         guild::Member,
-        id::{ChannelId, RoleId, UserId},
+        id::{RoleId, UserId},
     },
     prelude::*,
 };
@@ -52,7 +53,7 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
         .say(&ctx.http, "Pong! calculating ms")
         .await?;
     let rtt = msg.timestamp.timestamp_millis() - sent_timestamp.timestamp_millis();
-    msg.edit(&ctx, |e| e.content(format!("Pong! {rtt}ms")))
+    msg.edit(&ctx, EditMessage::new().content(format!("Pong! {rtt}ms")))
         .await?;
     Ok(())
 }
@@ -61,13 +62,13 @@ async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
 #[description("Find out more about me")]
 async fn who_are_you(ctx: &Context, msg: &Message) -> CommandResult {
     msg.channel_id
-        .send_message(ctx, |m| {
-            m.embed(|e| {
-                e.title("I AM MEMNARCH")
+        .send_message(ctx, CreateMessage::new()
+            .embed(CreateEmbed::new()
+                .title("I AM MEMNARCH")
                     .description("Sauce code: [GitHub](https://github.com/Mendess2526/Memnarch-rs)")
                     .image("https://cards.scryfall.io/art_crop/front/9/2/9203fde4-dbc1-449f-9618-4656f0e25e3c.jpg?1562925842")
-            })
-        })
+            )
+        )
         .await?;
     Ok(())
 }
@@ -314,7 +315,7 @@ async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
         .then(|(m, v)| async move {
             let mut nicks = stream::iter(v)
                 .then(|(d, u)| async move { (d, gid.member(ctx, u.id).await.map_err(|_| u.id)) })
-                .map(|(d, m)| (d, m.map(|m| m.display_name().into_owned())))
+                .map(|(d, m)| (d, m.map(|m| m.display_name().to_owned())))
                 .collect::<Vec<_>>()
                 .await;
             nicks.sort_by_key(|(d, _)| *d);
@@ -323,9 +324,11 @@ async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
         .collect::<Vec<_>>()
         .await;
     msg.channel_id
-        .send_message(ctx, |m| {
-            m.embed(|e| {
-                e.title("all the birthdays 🥳🎉🥳")
+        .send_message(
+            ctx,
+            CreateMessage::new().embed(
+                CreateEmbed::new()
+                    .title("all the birthdays 🥳🎉🥳")
                     .fields(bdays.into_iter().map(|(m, nicks)| {
                         (
                             format!("{} ({})", Month::from_u32(m).unwrap().name(), nicks.len()),
@@ -334,12 +337,13 @@ async fn bday_list(ctx: &Context, msg: &Message) -> CommandResult {
                                 .map(|(_, n)| {
                                     n.unwrap_or_else(|id| format!("user with id {id} not found"))
                                 })
-                                .format("\n"),
+                                .format("\n")
+                                .to_string(),
                             true,
                         )
-                    }))
-            })
-        })
+                    })),
+            ),
+        )
         .await?;
     Ok(())
 }
@@ -356,26 +360,34 @@ async fn bday_month(ctx: &Context, msg: &Message) -> CommandResult {
                     let member = gid
                         .member(ctx, u.id)
                         .await
-                        .map(|m| m.display_name().into_owned());
+                        .map(|m| m.display_name().to_owned());
                     (d.day, member.map_err(|_| u.id))
                 })
                 .collect::<Vec<_>>()
                 .await;
             bdays.sort_by_key(|x| x.0);
             msg.channel_id
-                .send_message(ctx, |m| {
-                    m.embed(|e| {
-                        e.title("Birthdays this month 🥳").description(
-                            bdays.into_iter().format_with("\n", |(d, u), f| {
-                                f(&format_args!(
-                                    "{:2}: {}",
-                                    d,
-                                    u.unwrap_or_else(|id| format!("user with id {id} not found"))
-                                ))
-                            }),
-                        )
-                    })
-                })
+                .send_message(
+                    ctx,
+                    CreateMessage::new().embed(
+                        CreateEmbed::new()
+                            .title("Birthdays this month 🥳")
+                            .description(
+                                bdays
+                                    .into_iter()
+                                    .format_with("\n", |(d, u), f| {
+                                        f(&format_args!(
+                                            "{:2}: {}",
+                                            d,
+                                            u.unwrap_or_else(|id| format!(
+                                                "user with id {id} not found"
+                                            ))
+                                        ))
+                                    })
+                                    .to_string(),
+                            ),
+                    ),
+                )
                 .await?;
         }
     };
@@ -386,7 +398,7 @@ async fn bday_month(ctx: &Context, msg: &Message) -> CommandResult {
 async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     macro_rules! fmt {
         ($name:expr, $nick:expr) => {
-            format_args!(
+            format!(
                 "**Name:**      {}\n**Nickname:** {}",
                 $name,
                 $nick.as_deref().unwrap_or("None")
@@ -402,15 +414,17 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                 .ok_or("No birthdays saved for this user 😭")?;
             let member = gid.member(ctx, user).await?;
             msg.channel_id
-                .send_message(ctx, |m| {
-                    m.embed(|e| {
+                .send_message(
+                    ctx,
+                    CreateMessage::new().embed({
                         let now = Utc::now().naive_utc().date();
                         let mut bday = NaiveDate::from_ymd_opt(now.year(), date.month, date.day)
                             .expect("formed from valid dates");
                         if bday < now {
                             bday = bday.with_year(now.year() + 1).unwrap();
                         }
-                        e.title(format!("{}'s birthday 🎉", member.display_name()))
+                        CreateEmbed::new()
+                            .title(format!("{}'s birthday 🎉", member.display_name()))
                             .description(format!(
                                 "{}/{}.\n{} days left 👀",
                                 date.day,
@@ -418,8 +432,8 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                                 (bday - now).num_days()
                             ))
                             .thumbnail(member.face())
-                    })
-                })
+                    }),
+                )
                 .await?;
         }
         Err(_) => {
@@ -435,16 +449,20 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                 [u] => {
                     let member = gid.member(ctx, u.id).await?;
                     msg.channel_id
-                        .send_message(ctx, |m| {
-                            m.embed(|e| {
-                                e.title("Next birthday :tada:")
-                                    .description(fmt!(member.user.name, member.nick).to_string())
+                        .send_message(
+                            ctx,
+                            CreateMessage::new().embed(
+                                CreateEmbed::new()
+                                    .title("Next birthday :tada:")
+                                    .description(fmt!(member.user.name, member.nick))
                                     .thumbnail(member.face())
-                                    .footer(|f| {
-                                        f.text(format!("{}/{}", date.day, short_month(date.month)))
-                                    })
-                            })
-                        })
+                                    .footer(CreateEmbedFooter::new(format!(
+                                        "{}/{}",
+                                        date.day,
+                                        short_month(date.month)
+                                    ))),
+                            ),
+                        )
                         .await?;
                 }
                 many => {
@@ -453,23 +471,26 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
                         .try_collect()
                         .await?;
                     msg.channel_id
-                        .send_message(ctx, |m| {
-                            m.embed(|e| {
-                                e.title("Woah multiple birthdays! :tada: :tada:")
+                        .send_message(
+                            ctx,
+                            CreateMessage::new().embed(
+                                CreateEmbed::new()
+                                    .title("Woah multiple birthdays! :tada: :tada:")
                                     .description(
-                                        members.into_iter().format_with("\n---\n", |m, f| {
-                                            f(&fmt!(m.user.name, m.nick))
-                                        }),
+                                        members
+                                            .into_iter()
+                                            .format_with("\n---\n", |m, f| {
+                                                f(&fmt!(m.user.name, m.nick))
+                                            })
+                                            .to_string(),
                                     )
-                                    .footer(|f| {
-                                        f.text(format!(
-                                            "When: {}/{}",
-                                            date.day,
-                                            &Month::from_u32(date.month).unwrap().name()[..3],
-                                        ))
-                                    })
-                            })
-                        })
+                                    .footer(CreateEmbedFooter::new(format!(
+                                        "When: {}/{}",
+                                        date.day,
+                                        &Month::from_u32(date.month).unwrap().name()[..3],
+                                    ))),
+                            ),
+                        )
                         .await?;
                 }
             }
@@ -544,26 +565,6 @@ async fn set_bday_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     })
     .await?;
     msg.channel_id.say(ctx, "birthday role set!").await?;
-    Ok(())
-}
-
-#[group]
-#[prefix("quiz")]
-#[commands(set_quiz, unset_quiz)]
-struct Quiz;
-
-#[command("set")]
-async fn set_quiz(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let channel = args.single::<ChannelId>()?;
-    crate::quiz::add_quiz_guild(ctx, msg.guild_id.ok_or("not in a guild")?, channel).await?;
-    msg.channel_id.say(&ctx, "done").await?;
-    Ok(())
-}
-
-#[command("unset")]
-async fn unset_quiz(ctx: &Context, msg: &Message) -> CommandResult {
-    crate::quiz::remove_quiz_guild(ctx, msg.guild_id.ok_or("not in a guild")?).await?;
-    msg.channel_id.say(ctx, "done").await?;
     Ok(())
 }
 

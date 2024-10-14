@@ -15,7 +15,6 @@ pub mod command_groups {
     pub use custom::CUSTOM_GROUP;
     pub use general::BDAYS_GROUP;
     pub use general::GENERAL_GROUP;
-    pub use general::QUIZ_GROUP;
     pub use interrail::INTERRAIL_GROUP;
     pub use moderation::MODERATION_GROUP;
     pub use owner::OWNER_GROUP;

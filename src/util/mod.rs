@@ -20,13 +20,13 @@ pub async fn bot_id(http: impl AsRef<Http>) -> Option<UserId> {
                 .ok()
             {
                 Some(uid) => {
-                    BOT_ID.store(uid.0, Ordering::Relaxed);
-                    Some(UserId(uid.0))
+                    BOT_ID.store(uid.get(), Ordering::Relaxed);
+                    Some(UserId::new(uid.get()))
                 }
                 None => None,
             }
         }
-        x => Some(UserId(x)),
+        x => Some(UserId::new(x)),
     }
 }
 

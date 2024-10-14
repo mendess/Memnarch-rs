@@ -6,6 +6,7 @@ use crate::util::{consts::FILES_DIR, permissions::*};
 use chrono::{DateTime, Duration, Utc};
 use daemons::{ControlFlow, Daemon};
 use itertools::Itertools;
+use serenity::all::{CreateAttachment, CreateEmbed, CreateMessage, Http};
 use serenity::{
     framework::standard::{
         macros::{command, group},
@@ -19,13 +20,14 @@ use songbird::input::Input;
 use std::{
     collections::HashMap,
     error::Error,
-    fs::{self, DirBuilder, File, OpenOptions},
+    fs::{self, DirBuilder, OpenOptions},
     future::Future,
     io::{self, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration as StdDuration,
 };
+use tokio::fs::File;
 
 const SFX_FILES_DIR: &str = "sfx";
 const SFX_STATS_FILE: &str = "sfx_stats.json";
@@ -64,7 +66,7 @@ impl SfxStats {
     pub fn new() -> Self {
         SfxStats(
             Self::path()
-                .and_then(File::open)
+                .and_then(std::fs::File::open)
                 .ok()
                 .and_then(|f| {
                     serde_json::from_reader(f)
@@ -91,7 +93,7 @@ impl SfxStats {
         let mf = |e| map_err(sfx, e);
         let mj = |e| map_err(sfx, e);
         Self::path()
-            .and_then(File::create)
+            .and_then(std::fs::File::create)
             .map_err(mf)
             .and_then(|f| serde_json::to_writer(f, &self.0).map_err(mj))
     }
@@ -106,7 +108,7 @@ pub struct LeaveVoice {
 
 #[serenity::async_trait]
 impl Daemon<false> for LeaveVoice {
-    type Data = serenity::CacheAndHttp;
+    type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
     async fn run(&mut self, _: &Self::Data) -> ControlFlow {
         tracing::debug!("Leaving voice. Scheduled for {}", self.when);
@@ -170,10 +172,7 @@ async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             .say(&ctx, &format!("Playing {}", file.display()))
             .await?;
         tracing::info!("Playing sfx: {:?}", file);
-        match songbird::ffmpeg(&file).await {
-            Ok(source) => Ok(source),
-            Err(e) => Err(format!("Failed getting audio source: {:?}", e).into()),
-        }
+        Ok(songbird::input::File::new(file.clone()).into())
     })
     .await?;
     if let Err(e) = get!(ctx, SfxStats, lock)
@@ -194,7 +193,7 @@ where
 
     let call_lock = util::join_or_get_call(ctx, guild_id, msg.author.id).await?;
     let audio = audio_source().await?;
-    call_lock.lock().await.play_source(audio);
+    call_lock.lock().await.play_input(audio);
 
     let data = ctx.data.read().await;
     let dm = get!(> data, DaemonManagerKey);
@@ -232,9 +231,11 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
         files
     });
     msg.channel_id
-        .send_message(&ctx.http, |m| {
-            m.embed(|e| {
-                e.title("List of sfx:");
+        .send_message(
+            &ctx.http,
+            CreateMessage::new().embed({
+                let mut e = CreateEmbed::new();
+                e = e.title("List of sfx:");
                 match &sounds {
                     Ok(files) if !files.is_empty() => {
                         e.fields(files.iter().chunks(12).into_iter().map(|x| {
@@ -250,8 +251,8 @@ async fn list(ctx: &Context, msg: &Message) -> CommandResult {
                     }
                     Err(_) | Ok(_) => e.description("**No files :(**"),
                 }
-            })
-        })
+            }),
+        )
         .await?;
     Ok(())
 }
@@ -285,7 +286,13 @@ async fn add(ctx: &Context, msg: &Message) -> CommandResult {
 async fn delete(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let file = find_file(&args).await?;
     msg.channel_id
-        .send_message(&ctx, |m| m.add_file(&file))
+        .send_message(
+            &ctx,
+            CreateMessage::new().add_file(
+                CreateAttachment::file(&File::open(&file).await?, file.display().to_string())
+                    .await?,
+            ),
+        )
         .await?;
     fs::remove_file(&file)?;
     Ok(())
@@ -300,7 +307,13 @@ async fn delete(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 async fn get(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let file = find_file(&args).await?;
     msg.channel_id
-        .send_message(&ctx, |m| m.add_file(&file))
+        .send_message(
+            &ctx,
+            CreateMessage::new().add_file(
+                CreateAttachment::file(&File::open(&file).await?, file.display().to_string())
+                    .await?,
+            ),
+        )
         .await?;
     Ok(())
 }
@@ -315,29 +328,31 @@ async fn stats(ctx: &Context, msg: &Message) -> CommandResult {
         .map(|(k, v)| (k.clone(), *v))
         .collect::<Vec<(String, usize)>>();
     msg.channel_id
-        .send_message(&ctx, |m| {
-            m.embed(|e| {
-                e.title("Stats");
+        .send_message(
+            &ctx,
+            CreateMessage::new().embed({
                 stats.sort_unstable_by_key(|(_, v)| *v);
-                e.fields(stats.iter().chunks(12).into_iter().map(|x| {
-                    let f = x.collect::<Vec<_>>();
-                    let c1 = f[0].1.to_string();
-                    let c2 = f[f.len() - 1].1.to_string();
-                    (
-                        format!("{}-{}", c1, c2),
-                        f.iter().fold(String::new(), |acc, x| {
-                            acc + "\n"
-                                + &format!(
-                                    "{:<5}{}",
-                                    x.1,
-                                    Path::new(&x.0).file_name().unwrap().to_string_lossy()
-                                )
-                        }),
-                        true,
-                    )
-                }))
-            })
-        })
+                CreateEmbed::new()
+                    .title("Stats")
+                    .fields(stats.iter().chunks(12).into_iter().map(|x| {
+                        let f = x.collect::<Vec<_>>();
+                        let c1 = f[0].1.to_string();
+                        let c2 = f[f.len() - 1].1.to_string();
+                        (
+                            format!("{}-{}", c1, c2),
+                            f.iter().fold(String::new(), |acc, x| {
+                                acc + "\n"
+                                    + &format!(
+                                        "{:<5}{}",
+                                        x.1,
+                                        Path::new(&x.0).file_name().unwrap().to_string_lossy()
+                                    )
+                            }),
+                            true,
+                        )
+                    }))
+            }),
+        )
         .await?;
     Ok(())
 }

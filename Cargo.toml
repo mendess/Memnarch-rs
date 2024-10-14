@@ -6,20 +6,16 @@ edition = "2021"
 
 [dependencies]
 anyhow.workspace = true
-bot-api = { path = "./bot-api" }
 chrono = "0.4"
-daemons = { git = "https://github.com/mendess/discord-bot-utils", features = ["cron"], rev = "6e591f80013d253e67799f9df26dcb67ebfa5113" }
 futures.workspace = true
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
 itertools = "0.10"
-json-db = { git = "https://github.com/mendess/discord-bot-utils", rev = "6e591f80013d253e67799f9df26dcb67ebfa5113" }
 tracing.workspace = true
 tracing-subscriber = "0.3"
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 nom = "7"
 nom-regex = "0.2"
 num-traits = "0.2.17"
-pubsub = { git = "https://github.com/mendess/discord-bot-utils", features = ["serenity_cache"], rev = "6e591f80013d253e67799f9df26dcb67ebfa5113" }
 rand = "0.8"
 regex = "1"
 reqwest.workspace = true
@@ -27,7 +23,7 @@ serde.workspace = true
 serde_json.workspace = true
 serenity.workspace = true
 simsearch = "0.1.4"
-songbird = "0.3"
+songbird = "0.4"
 tempfile = "3"
 toml = "0.7"
 unicase = "2"
@@ -37,12 +33,34 @@ scryfall = "0.16.2"
 workspace = true
 features = ["rt", "rt-multi-thread", "io-util", "macros", "sync", "tracing"]
 
+[dependencies.actix-web]
+workspace = true
+features = ["rustls", "compress-brotli", "compress-gzip", "compress-zstd"]
+
+[dependencies.bot-api-types]
+git = "https://github.com/mendess/discord-bot-utils"
+rev = "d704ad478ccc8e5643788b28ac23f48fa06f32ca"
+
+[dependencies.daemons]
+git = "https://github.com/mendess/discord-bot-utils"
+rev = "d704ad478ccc8e5643788b28ac23f48fa06f32ca"
+features = ["cron"]
+
+[dependencies.json-db]
+git = "https://github.com/mendess/discord-bot-utils"
+rev = "d704ad478ccc8e5643788b28ac23f48fa06f32ca"
+
+[dependencies.pubsub]
+git = "https://github.com/mendess/discord-bot-utils"
+rev = "d704ad478ccc8e5643788b28ac23f48fa06f32ca"
+features = ["serenity_cache"]
+
 [dev-dependencies]
 paste = "1"
 proptest = "1"
 
 [workspace]
-members = ["py-eval", "bot-api", "bot-api-types"]
+members = ["py-eval"]
 
 [workspace.dependencies]
 anyhow = "1"
@@ -50,7 +68,7 @@ futures = "0.3"
 reqwest = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serenity = { version = "0.11", features = ["collector"] }
+serenity = { version = "0.12", features = ["collector"] }
 tracing = "0.1"
 
 [workspace.dependencies.tokio]
