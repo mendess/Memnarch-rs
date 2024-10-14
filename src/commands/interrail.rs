@@ -1,7 +1,7 @@
-use crate::get;
+use crate::{get, util::MentionExt};
 use serde::{Deserialize, Serialize};
 use serenity::{
-    all::EditMessage,
+    all::{EditMessage, Mention},
     framework::standard::{
         macros::{check, command, group},
         Args, CommandResult, Reason,
@@ -79,8 +79,8 @@ pub async fn edit(ctx: &Context, _: &Message, mut args: Args) -> CommandResult {
 #[owners_only]
 #[min_args(2)]
 pub async fn config(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let talk = args.single::<ChannelId>()?;
-    let stories = args.single::<ChannelId>()?;
+    let talk = args.single::<Mention>()?.into_channel()?;
+    let stories = args.single::<Mention>()?.into_channel()?;
     *get!(ctx, InterrailConfig, write) = InterrailConfig::with_ids(stories, talk)?;
     msg.channel_id.say(&ctx, "Configured").await?;
     Ok(())

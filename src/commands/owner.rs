@@ -1,12 +1,13 @@
 use std::str::FromStr;
 
 use serenity::{
+    all::Mention,
     client::Context,
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::{channel::Message, id::ChannelId},
+    model::channel::Message,
 };
 
 use crate::features::music_channel_broadcast;
@@ -53,7 +54,9 @@ pub async fn music_broadcast(ctx: &Context, msg: &Message, mut args: Args) -> Co
     }
 
     let (kind, mode) = (args.single::<Kind>()?, args.single::<Mode>()?);
-    let ch_id = args.single::<ChannelId>()?;
+    let Mention::Channel(ch_id) = args.single::<Mention>()? else {
+        return Err("not a valid channel id".into());
+    };
     let actioned = match (kind, mode) {
         (Kind::Source, Mode::Add) => music_channel_broadcast::add_source(ch_id).await,
         (Kind::Source, Mode::Remove) => music_channel_broadcast::rm_source(ch_id).await,

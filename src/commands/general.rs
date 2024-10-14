@@ -2,23 +2,19 @@ use crate::{
     get,
     prefs::{self, user::UserPrefs},
     reminders::{self, parser::*},
-    util::daemons::DaemonManagerKey,
+    util::{daemons::DaemonManagerKey, MentionExt},
 };
 use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, Timelike, Utc};
 use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use num_traits::FromPrimitive;
 use serenity::{
-    all::{CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage},
+    all::{CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage, Mention},
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::{
-        channel::Message,
-        guild::Member,
-        id::{RoleId, UserId},
-    },
+    model::{channel::Message, guild::Member},
     prelude::*,
 };
 use std::iter::from_fn;
@@ -144,7 +140,7 @@ async fn remindme(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
 #[command]
 async fn remind(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let user_ids = from_fn(|| args.single::<UserId>().ok()).collect::<Vec<_>>();
+    let user_ids = from_fn(|| args.single::<Mention>().ok()?.into_user().ok()).collect::<Vec<_>>();
     if user_ids.is_empty() {
         return Err("Please mention at least one person".into());
     }
@@ -407,8 +403,11 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
     }
 
     let gid = msg.guild_id.ok_or("must be in a guild")?;
-    match args.single::<UserId>() {
-        Ok(user) => {
+    match args.single::<Mention>().map(|m| m.into_user()) {
+        Ok(Err(invalid_mention)) => {
+            msg.channel_id.say(ctx, invalid_mention).await?;
+        }
+        Ok(Ok(user)) => {
             let date = crate::birthdays::of(gid, user)
                 .await?
                 .ok_or("No birthdays saved for this user 😭")?;
@@ -507,7 +506,7 @@ async fn next_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
 #[usage("@mention YYYY/MM/DD")]
 async fn add_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;
-    let uid = args.single::<UserId>()?;
+    let uid = args.single::<Mention>()?.into_user()?;
     let date = NaiveDate::parse_from_str(&args.single::<String>()?, "%Y/%m/%d")?;
     let old = crate::birthdays::add_bday(gid, uid, date).await?;
     match old {
@@ -531,7 +530,7 @@ async fn add_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult
 #[usage("@mention")]
 async fn remove_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let gid = msg.guild_id.ok_or("must be in a server")?;
-    let uid = args.single::<UserId>()?;
+    let uid = args.single::<Mention>()?.into_user()?;
     match crate::birthdays::remove_bday(gid, uid).await? {
         Some(date) => {
             msg.channel_id
@@ -559,7 +558,7 @@ async fn remove_bday(ctx: &Context, msg: &Message, mut args: Args) -> CommandRes
 #[min_args(1)]
 #[usage("@role")]
 async fn set_bday_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let role_id = args.single::<RoleId>()?;
+    let role_id = args.single::<Mention>()?.into_role()?;
     prefs::guild::update(msg.guild_id.ok_or("not in a guild")?, |prefs| {
         prefs.birthday_role = Some(role_id)
     })

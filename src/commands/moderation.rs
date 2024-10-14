@@ -1,16 +1,15 @@
 use futures::StreamExt;
 use serenity::{
-    all::EditMessage,
+    all::{EditMessage, Mention},
     framework::standard::{
         macros::{command, group},
         Args, CommandResult,
     },
-    model::{
-        channel::Message,
-        prelude::{ReactionType, RoleId},
-    },
+    model::{channel::Message, prelude::ReactionType},
     prelude::*,
 };
+
+use crate::util::MentionExt;
 
 #[group]
 #[commands(add_reaction_role, add_base_role)]
@@ -33,7 +32,7 @@ async fn add_reaction_role(ctx: &Context, msg: &Message, mut args: Args) -> Comm
         }
     };
     let emoji = args.single::<ReactionType>()?;
-    let role = args.single::<RoleId>()?;
+    let role = args.single::<Mention>()?.into_role()?;
 
     crate::moderation::reaction_roles::reaction_role_add(
         ctx,
@@ -51,7 +50,7 @@ async fn add_reaction_role(ctx: &Context, msg: &Message, mut args: Args) -> Comm
 #[min_args(1)]
 #[required_permissions(ADMINISTRATOR)]
 async fn add_base_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let role = args.single::<RoleId>()?;
+    let role = args.single::<Mention>()?.into_role()?;
     let gid = msg.guild_id.expect("should be used in a guild");
     let mut notif = msg.channel_id.say(ctx, "added role to:\n").await?;
     let members = gid.members_iter(ctx);

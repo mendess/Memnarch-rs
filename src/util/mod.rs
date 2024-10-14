@@ -3,10 +3,44 @@ pub mod daemons;
 pub mod permissions;
 
 use futures::future::TryFutureExt;
-use serenity::{http::Http, model::id::UserId};
+use serenity::{
+    all::{ChannelId, Mention, RoleId},
+    http::Http,
+    model::id::UserId,
+};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static BOT_ID: AtomicU64 = AtomicU64::new(0);
+
+pub trait MentionExt {
+    fn into_user(self) -> Result<UserId, &'static str>;
+    fn into_role(self) -> Result<RoleId, &'static str>;
+    fn into_channel(self) -> Result<ChannelId, &'static str>;
+}
+
+impl MentionExt for Mention {
+    fn into_user(self) -> Result<UserId, &'static str> {
+        match self {
+            Self::User(uid) => Ok(uid),
+            Self::Role(_) => Err("expected user mention got role mention"),
+            Self::Channel(_) => Err("expected user mention got channel mention"),
+        }
+    }
+    fn into_role(self) -> Result<RoleId, &'static str> {
+        match self {
+            Self::Role(rid) => Ok(rid),
+            Self::User(_) => Err("expected role mention got user mention"),
+            Self::Channel(_) => Err("expected role mention got channel mention"),
+        }
+    }
+    fn into_channel(self) -> Result<ChannelId, &'static str> {
+        match self {
+            Self::Channel(cid) => Ok(cid),
+            Self::User(_) => Err("expected channel mention got user mention"),
+            Self::Role(_) => Err("expected channel mention got role mention"),
+        }
+    }
+}
 
 pub async fn bot_id(http: impl AsRef<Http>) -> Option<UserId> {
     match BOT_ID.load(Ordering::Relaxed) {
