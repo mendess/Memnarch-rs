@@ -3,7 +3,6 @@
 use ::daemons::ControlFlow;
 use anyhow::Context as _;
 use futures::{stream, FutureExt, StreamExt};
-use memnarch_rs::commands::interrail::InterrailConfig;
 use memnarch_rs::features::{
     self, birthdays, custom_commands, moderation, mtg_spoilers, music_channel_broadcast, reminders
 };
@@ -199,7 +198,6 @@ async fn main() -> anyhow::Result<()> {
                 .group(&OWNER_GROUP)
                 .group(&QUOTES_GROUP)
                 .group(&CUSTOM_GROUP)
-                .group(&INTERRAIL_GROUP)
                 .group(&SFX_GROUP)
                 .group(&SFXALIASES_GROUP)
                 .group(&TTS_GROUP)
@@ -208,7 +206,6 @@ async fn main() -> anyhow::Result<()> {
                 .help(&MY_HELP)
         })
         .register_songbird()
-        .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
         .type_map_insert::<LeaveVoiceDaemons>(Default::default())
         .type_map_insert::<SfxStats>(Arc::new(Mutex::new(SfxStats::new())))
         .event_handler(pubsub::event_handler::Handler::new(bot_id))

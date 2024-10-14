@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use futures::FutureExt;
-use json_db::multifile_db::{FileKeySerializer, MultifileDb};
+use json_db::multifile_db::MultifileDb;
 use pubsub::{events, ControlFlow};
 use serenity::all::{Context, GuildId, Message};
 
@@ -33,19 +33,6 @@ async fn check_if_custom_command(ctx: &Context, msg: &Message) {
         if let Err(e) = f(ctx, msg, g).await {
             tracing::error!("Custom command failed: {:?}", e);
         }
-    }
-}
-
-struct Parser;
-
-impl FileKeySerializer<GuildId> for Parser {
-    type ParseError = <GuildId as FileKeySerializer<GuildId>>::ParseError;
-    fn from_str(s: &str) -> Result<GuildId, Self::ParseError> {
-        GuildId::from_str(dbg!(s))
-    }
-
-    fn to_string(pk: GuildId) -> String {
-        dbg!(pk.to_string())
     }
 }
 
