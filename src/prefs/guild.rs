@@ -14,8 +14,6 @@ pub struct GuildPrefs {
     pub birthday_channel: Option<ChannelId>,
     #[serde(default)]
     pub birthday_role: Option<RoleId>,
-    #[serde(default)]
-    pub cursed: bool,
 }
 
 pub async fn get(u: GuildId) -> io::Result<Option<GuildPrefs>> {
