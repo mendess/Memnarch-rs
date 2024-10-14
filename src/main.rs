@@ -3,10 +3,9 @@
 use ::daemons::ControlFlow;
 use anyhow::Context as _;
 use futures::{stream, FutureExt, StreamExt};
-use memnarch_rs::commands::custom::CustomCommands;
 use memnarch_rs::commands::interrail::InterrailConfig;
 use memnarch_rs::features::{
-    self, birthdays, moderation, mtg_spoilers, music_channel_broadcast, reminders,
+    self, birthdays, custom_commands, moderation, mtg_spoilers, music_channel_broadcast, reminders
 };
 use memnarch_rs::{
     commands::{
@@ -193,7 +192,6 @@ async fn main() -> anyhow::Result<()> {
                     .owners(owners),
             );
             framework
-                .normal_message(normal_message)
                 .after(after)
                 .on_dispatch_error(on_dispatch_error)
                 .group(&GENERAL_GROUP)
@@ -210,7 +208,6 @@ async fn main() -> anyhow::Result<()> {
                 .help(&MY_HELP)
         })
         .register_songbird()
-        .type_map_insert::<CustomCommands>(Arc::new(RwLock::new(CustomCommands::default())))
         .type_map_insert::<InterrailConfig>(Arc::new(RwLock::new(InterrailConfig::new())))
         .type_map_insert::<LeaveVoiceDaemons>(Default::default())
         .type_map_insert::<SfxStats>(Arc::new(Mutex::new(SfxStats::new())))
@@ -224,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
         .context("loading reminders")?;
     moderation::reaction_roles::initialize().await?;
     music_channel_broadcast::initialize().await;
+    custom_commands::initialize().await;
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
     try_init!(daemon_manager, birthdays);
     try_init!(daemon_manager, mtg_spoilers);
@@ -353,32 +351,6 @@ async fn my_help(
 ) -> CommandResult {
     let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
     Ok(())
-}
-
-#[hook]
-async fn normal_message(ctx: &Context, msg: &Message) {
-    if ctx.cache.current_user().id == msg.author.id {
-        return;
-    }
-    if !msg.content.starts_with('|') {
-        return;
-    }
-    async fn f(ctx: &Context, msg: &Message, g: GuildId) -> anyhow::Result<()> {
-        let cmd = match &msg.content.split_whitespace().next() {
-            Some(s) if !s.is_empty() => &s[1..],
-            _ => return Ok(()),
-        };
-        tracing::trace!("looking for command: {}", cmd);
-        if let Some(o) = memnarch_rs::get!(mut ctx, CustomCommands, write).execute(g, cmd)? {
-            msg.channel_id.say(&ctx, o).await?;
-        }
-        Ok(())
-    }
-    if let Some(g) = msg.guild_id {
-        if let Err(e) = f(ctx, msg, g).await {
-            tracing::error!("Custom command failed: {:?}", e);
-        }
-    }
 }
 
 #[hook]

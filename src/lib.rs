@@ -11,7 +11,6 @@ pub mod util;
 use toml as _;
 use tracing_subscriber as _;
 
-use commands::custom::CustomCommands;
 use features::{birthdays, moderation, mtg_spoilers, reminders};
 
 use serde::{Deserialize, Serialize};
@@ -23,7 +22,7 @@ use serenity::{
     },
     model::{
         channel::Message,
-        id::{ChannelId, GuildId, UserId},
+        id::{ChannelId, UserId},
     },
     prelude::*,
 };
@@ -76,32 +75,6 @@ async fn my_help(
 ) -> CommandResult {
     let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
     Ok(())
-}
-
-#[hook]
-async fn normal_message(ctx: &Context, msg: &Message) {
-    if ctx.cache.current_user().id == msg.author.id {
-        return;
-    }
-    if !msg.content.starts_with('|') {
-        return;
-    }
-    async fn f(ctx: &Context, msg: &Message, g: GuildId) -> anyhow::Result<()> {
-        let cmd = match &msg.content.split_whitespace().next() {
-            Some(s) if !s.is_empty() => &s[1..],
-            _ => return Ok(()),
-        };
-        tracing::trace!("looking for command: {}", cmd);
-        if let Some(o) = crate::get!(mut ctx, CustomCommands, write).execute(g, cmd)? {
-            msg.channel_id.say(&ctx, o).await?;
-        }
-        Ok(())
-    }
-    if let Some(g) = msg.guild_id {
-        if let Err(e) = f(ctx, msg, g).await {
-            tracing::error!("Custom command failed: {:?}", e);
-        }
-    }
 }
 
 #[hook]

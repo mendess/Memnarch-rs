@@ -79,7 +79,6 @@ pub async fn initialize() {
         }
         let channels = CHANNELS.load().await.context("loading channels database")?;
         if !channels.sources.contains(&message.channel_id) {
-            tracing::debug!("ch_id({}) is not a source", message.channel_id);
             return Ok(());
         }
         tracing::trace!(content = ?message.content, "parsing message content");

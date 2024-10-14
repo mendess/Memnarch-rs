@@ -40,20 +40,20 @@ features = ["rustls", "compress-brotli", "compress-gzip", "compress-zstd"]
 
 [dependencies.bot-api-types]
 git = "https://github.com/mendess/discord-bot-utils"
-rev = "8859ab63af892000d2d5a733b8261cb10711420a"
+rev = "fe2da522e79e100b4d2316e84a190ee40e2427f3"
 
 [dependencies.daemons]
 git = "https://github.com/mendess/discord-bot-utils"
-rev = "8859ab63af892000d2d5a733b8261cb10711420a"
+rev = "fe2da522e79e100b4d2316e84a190ee40e2427f3"
 features = ["cron"]
 
 [dependencies.json-db]
 git = "https://github.com/mendess/discord-bot-utils"
-rev = "8859ab63af892000d2d5a733b8261cb10711420a"
+rev = "fe2da522e79e100b4d2316e84a190ee40e2427f3"
 
 [dependencies.pubsub]
 git = "https://github.com/mendess/discord-bot-utils"
-rev = "8859ab63af892000d2d5a733b8261cb10711420a"
+rev = "fe2da522e79e100b4d2316e84a190ee40e2427f3"
 features = ["serenity_cache"]
 
 [dev-dependencies]
