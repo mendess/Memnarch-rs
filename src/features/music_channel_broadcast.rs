@@ -42,7 +42,7 @@ pub async fn broadcast(
     source_channel_id: ChannelId,
     url: &str,
 ) -> anyhow::Result<()> {
-    tracing::info!(?url, "broadcasting banger");
+    tracing::trace!(?url, "broadcasting banger");
     let channels = CHANNELS.load().await.context("loading channels database")?;
     for ch in channels
         .destinations
@@ -77,8 +77,10 @@ pub async fn initialize() {
         }
         let channels = CHANNELS.load().await.context("loading channels database")?;
         if !channels.sources.contains(&message.channel_id) {
+            tracing::debug!("ch_id({}) is not a source", message.channel_id);
             return Ok(());
         }
+        tracing::trace!(content = ?message.content, "parsing message content");
         for url in parse_urls_from_message(&message.content) {
             broadcast(
                 &ctx.http,
@@ -164,4 +166,26 @@ pub async fn rm_destination(ch: ChannelId) -> anyhow::Result<bool> {
         .destinations
         .remove(&ch);
     Ok(removed)
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn deser() {
+        let s = r#"{"sources":["952887798145355777","955400996467654696","1260332705263128637","1052590945998217307"],"destinations":["1223937402368688230","955400996467654696","1052590945998217307","1260332705263128637"]}"#;
+
+        let _: super::Channels = serde_json::from_str(s).unwrap();
+    }
+
+    #[test]
+    fn parse_urls_from_message() {
+        let content = "https://youtu.be/E58qLXBfLrs?si=dwgd8CizQuSde62o";
+        match super::parse_urls_from_message(content)
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
+            [one] => assert_eq!(one.as_str(), content),
+            e => panic!("invalid: {e:?}"),
+        }
+    }
 }
