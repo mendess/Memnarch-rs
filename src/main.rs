@@ -6,7 +6,7 @@ use futures::{stream, FutureExt, StreamExt};
 use memnarch_rs::commands::custom::CustomCommands;
 use memnarch_rs::commands::interrail::InterrailConfig;
 use memnarch_rs::features::{
-    self, birthdays, calendar, moderation, mtg_spoilers, music_channel_broadcast, reminders,
+    self, birthdays, moderation, mtg_spoilers, music_channel_broadcast, reminders,
 };
 use memnarch_rs::{
     commands::{
@@ -205,7 +205,6 @@ async fn main() -> anyhow::Result<()> {
                 .group(&SFX_GROUP)
                 .group(&SFXALIASES_GROUP)
                 .group(&TTS_GROUP)
-                .group(&CALENDAR_GROUP)
                 .group(&PY_GROUP)
                 .group(&MODERATION_GROUP)
                 .help(&MY_HELP)
@@ -223,7 +222,6 @@ async fn main() -> anyhow::Result<()> {
     reminders::load_reminders(&mut daemon_manager)
         .await
         .context("loading reminders")?;
-    calendar::initialize(&mut daemon_manager).await;
     moderation::reaction_roles::initialize().await?;
     music_channel_broadcast::initialize().await;
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));

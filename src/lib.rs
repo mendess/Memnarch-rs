@@ -13,7 +13,7 @@ use toml as _;
 use tracing_subscriber as _;
 
 use commands::custom::CustomCommands;
-use features::{birthdays, calendar, moderation, mtg_spoilers, reminders};
+use features::{birthdays, moderation, mtg_spoilers, reminders};
 
 use serde::{Deserialize, Serialize};
 use serenity::{
