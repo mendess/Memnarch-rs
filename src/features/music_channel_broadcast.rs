@@ -55,7 +55,11 @@ pub async fn broadcast(
         if let Err(error) = ch
             .say(
                 ctx.http(),
-                format!("new banger from {}: {}", source_channel_id.mention(), url),
+                if source_channel_id == 952887798145355777 {
+                    format!("new banger: {}", url)
+                } else {
+                    format!("new banger from {}: {}", source_channel_id.mention(), url)
+                },
             )
             .await
         {
