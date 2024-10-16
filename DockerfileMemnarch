@@ -39,6 +39,7 @@ FROM debian:bookworm-slim
 RUN apt update -y && apt install libopus-dev ffmpeg youtube-dl libpython3-dev -y
 
 RUN echo '#!/bin/sh           \n\
+# boo                         \n\
 case $1 in                    \n\
     py)                       \n\
         [ $# -gt 0 ] && shift \n\

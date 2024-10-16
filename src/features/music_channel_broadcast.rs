@@ -38,20 +38,19 @@ static BANGERS: GlobalDatabase<Vec<SentBanger>> =
         Permissions::from_mode(0b110_100_100)
     });
 
-pub async fn broadcast(
+async fn broadcast_impl(
+    channels: &json_db::DbGuard<'_, Channels, std::io::Error>,
     ctx: impl CacheHttp,
     author: UserId,
     source_channel_id: ChannelId,
     url: &str,
 ) -> anyhow::Result<()> {
-    tracing::trace!(?url, "broadcasting banger");
-    let channels = CHANNELS.load().await.context("loading channels database")?;
     for ch in channels
         .destinations
         .iter()
         .filter(|ch| **ch != source_channel_id)
     {
-        tracing::info!(?ch, "sending banger to channel");
+        tracing::info!(?ch, url, "sending banger to channel");
         if let Err(error) = ch
             .say(
                 ctx.http(),
@@ -73,6 +72,18 @@ pub async fn broadcast(
     }
     Ok(())
 }
+pub async fn broadcast(
+    ctx: impl CacheHttp,
+    author: UserId,
+    source_channel_id: ChannelId,
+    url: &str,
+) -> anyhow::Result<()> {
+    let channels = tokio::time::timeout(std::time::Duration::from_secs(10), CHANNELS.load())
+        .await
+        .context("timed out loading db")?
+        .context("loading channels database")?;
+    broadcast_impl(&channels, ctx, author, source_channel_id, url).await
+}
 
 pub async fn initialize() {
     use pubsub::events;
@@ -85,9 +96,9 @@ pub async fn initialize() {
         if !channels.sources.contains(&message.channel_id) {
             return Ok(());
         }
-        tracing::trace!(content = ?message.content, "parsing message content");
         for url in parse_urls_from_message(&message.content) {
-            broadcast(
+            broadcast_impl(
+                &channels,
                 &ctx.http,
                 message.author.id,
                 message.channel_id,
