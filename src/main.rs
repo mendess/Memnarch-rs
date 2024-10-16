@@ -150,6 +150,10 @@ async fn main() -> anyhow::Result<()> {
         "
     );
     config_logger();
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("{}", git_describe::git_describe!());
+        return Ok(());
+    }
     let config = load_config().context("loading config")?;
     let http = Http::new(&config.token);
     let (owners, bot_id) = match http.get_current_application_info().await {
