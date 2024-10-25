@@ -8,7 +8,7 @@ use regex::{Match, Regex};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serenity::{
-    all::{Context, Message},
+    all::{Channel, Context, CreateAllowedMentions, CreateMessage, Message},
     http::CacheHttp,
     model::{
         id::{ChannelId, UserId},
@@ -50,20 +50,43 @@ async fn broadcast_impl(
         .iter()
         .filter(|ch| **ch != source_channel_id)
     {
-        tracing::info!(?ch, url, "sending banger to channel");
-        if let Err(error) = ch
-            .say(
-                ctx.http(),
-                if source_channel_id == 952887798145355777 {
-                    format!("new banger: {}", url)
-                } else {
-                    format!("new banger from {}: {}", source_channel_id.mention(), url)
-                },
-            )
-            .await
-        {
-            tracing::error!(?error, channel = %ch, "failed to send message")
+        let author = async {
+            let Channel::Guild(ch) = ch.to_channel(&ctx).await.ok()? else {
+                return None;
+            };
+            ch.guild_id.member(&ctx, author).await.ok()
         }
+        .await;
+        tracing::info!(?ch, url, "sending banger to channel");
+        let result = ch
+            .send_message(
+                ctx.http(),
+                CreateMessage::new()
+                    .content(match author {
+                        Some(author) if source_channel_id == 952887798145355777 => {
+                            format!("new banger from {}: {}", author.mention(), url)
+                        }
+                        None if source_channel_id == 952887798145355777 => {
+                            format!("new banger: {}", url)
+                        }
+                        Some(author) => {
+                            format!(
+                                "new banger in {} from {}: {}",
+                                source_channel_id.mention(),
+                                author.mention(),
+                                url
+                            )
+                        }
+                        None => {
+                            format!("new banger in {}: {}", source_channel_id.mention(), url)
+                        }
+                    })
+                    .allowed_mentions(CreateAllowedMentions::new().empty_users()),
+            )
+            .await;
+        if let Err(error) = result {
+            tracing::error!(?error, channel = %ch, "failed to send message");
+        };
     }
     if let Ok(url) = url.parse() {
         if let Err(error) = store_banger(author, url).await {
