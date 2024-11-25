@@ -1,11 +1,17 @@
-use std::{collections::HashSet, fs::Permissions, os::unix::fs::PermissionsExt, sync::OnceLock};
+use std::{
+    collections::HashSet,
+    fmt::{self, Write},
+    fs::Permissions,
+    os::unix::fs::PermissionsExt,
+    sync::{LazyLock, OnceLock},
+};
 
 use anyhow::Context as _;
 use futures::FutureExt;
 use json_db::GlobalDatabase;
 use pubsub::ControlFlow;
 use regex::{Match, Regex};
-use reqwest::Url;
+use reqwest::{header, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serenity::{
     all::{Channel, Context, CreateAllowedMentions, CreateMessage, Message},
@@ -17,6 +23,7 @@ use serenity::{
 };
 
 use crate::in_files;
+use actix_web::http::header::http_percent_encode;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Channels {
@@ -38,6 +45,70 @@ static BANGERS: GlobalDatabase<Vec<SentBanger>> =
         Permissions::from_mode(0b110_100_100)
     });
 
+async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<Url>> {
+    static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+    static TITLE_REGEX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("<title>([^<]+)</title>").unwrap());
+
+    let resp = {
+        tracing::info!(%url, "querying spotify");
+        let resp = CLIENT
+            .get(url.clone())
+            .header(header::USER_AGENT, "curl/7.81.0")
+            .send()
+            .await?
+            .error_for_status()?;
+        if [StatusCode::FOUND, StatusCode::MOVED_PERMANENTLY].contains(&resp.status()) {
+            let Some(location) = resp.headers().get(header::LOCATION) else {
+                return Ok(None);
+            };
+            tracing::info!(%url, ?location, "following redirect");
+            CLIENT
+                .get(url.join(location.to_str()?)?)
+                .header(header::USER_AGENT, "curl/7.81.0")
+                .send()
+                .await?
+        } else {
+            resp
+        }
+    };
+    let body = resp.text().await?;
+
+    let Some(title) = TITLE_REGEX.captures(&body) else {
+        return Ok(None);
+    };
+
+    struct Title<'s>(&'s [u8]);
+    impl fmt::Display for Title<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            http_percent_encode(f, self.0)
+        }
+    }
+
+    let title = title
+        .get(1)
+        .unwrap()
+        .as_str()
+        .replace("Spotify", "song official");
+
+    tracing::info!(title, "searching for spotify song");
+
+    let resp = CLIENT
+        .get(format!(
+            "https://mendess.xyz/api/v1/playlist/search/{}",
+            Title(title.trim().as_bytes())
+        ))
+        .send()
+        .await?
+        .error_for_status()
+        .context("failed to search")?;
+
+    let id = resp.text().await?;
+    static YT: LazyLock<Url> = LazyLock::new(|| Url::parse("https://youtu.be/").unwrap());
+
+    Ok(Some(YT.join(id.trim())?))
+}
+
 async fn broadcast_impl(
     channels: &json_db::DbGuard<'_, Channels, std::io::Error>,
     ctx: impl CacheHttp,
@@ -45,6 +116,22 @@ async fn broadcast_impl(
     source_channel_id: ChannelId,
     url: &str,
 ) -> anyhow::Result<()> {
+    let Ok(url) = Url::parse(url) else {
+        return Ok(());
+    };
+    let spotify_2_yt = match url.host_str() {
+        Some("tenor.com") => return Ok(()),
+        Some("open.spotify.com") if url.path().contains("track/") => {
+            match resolve_spotify(&url).await {
+                Ok(yt) => yt,
+                Err(e) => {
+                    tracing::error!(error = ?e, "failed to resolve spotify song");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
     for ch in channels
         .destinations
         .iter()
@@ -57,29 +144,35 @@ async fn broadcast_impl(
             ch.guild_id.member(&ctx, author).await.ok()
         }
         .await;
-        tracing::info!(?ch, url, "sending banger to channel");
+        tracing::info!(?ch, %url, "sending banger to channel");
         let result = ch
             .send_message(
                 ctx.http(),
                 CreateMessage::new()
-                    .content(match author {
-                        Some(author) if source_channel_id == 952887798145355777 => {
-                            format!("new banger from {}: {}", author.mention(), url)
+                    .content({
+                        let mut base = match author {
+                            Some(author) if source_channel_id == 952887798145355777 => {
+                                format!("new banger from {}: {}", author.mention(), url)
+                            }
+                            None if source_channel_id == 952887798145355777 => {
+                                format!("new banger: {}", url)
+                            }
+                            Some(author) => {
+                                format!(
+                                    "new banger in {} from {}: {}",
+                                    source_channel_id.mention(),
+                                    author.mention(),
+                                    url
+                                )
+                            }
+                            None => {
+                                format!("new banger in {}: {}", source_channel_id.mention(), url)
+                            }
+                        };
+                        if let Some(spotify_2_yt) = &spotify_2_yt {
+                            write!(base, "\n`youtube:` {spotify_2_yt}").unwrap()
                         }
-                        None if source_channel_id == 952887798145355777 => {
-                            format!("new banger: {}", url)
-                        }
-                        Some(author) => {
-                            format!(
-                                "new banger in {} from {}: {}",
-                                source_channel_id.mention(),
-                                author.mention(),
-                                url
-                            )
-                        }
-                        None => {
-                            format!("new banger in {}: {}", source_channel_id.mention(), url)
-                        }
+                        base
                     })
                     .allowed_mentions(CreateAllowedMentions::new().empty_users()),
             )
@@ -88,13 +181,12 @@ async fn broadcast_impl(
             tracing::error!(?error, channel = %ch, "failed to send message");
         };
     }
-    if let Ok(url) = url.parse() {
-        if let Err(error) = store_banger(author, url).await {
-            tracing::error!(?error, "failed to store banger")
-        }
+    if let Err(error) = store_banger(author, spotify_2_yt.unwrap_or(url)).await {
+        tracing::error!(?error, "failed to store banger")
     }
     Ok(())
 }
+
 pub async fn broadcast(
     ctx: impl CacheHttp,
     author: UserId,
