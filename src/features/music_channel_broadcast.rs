@@ -85,11 +85,7 @@ async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<Url>> {
         }
     }
 
-    let title = title
-        .get(1)
-        .unwrap()
-        .as_str()
-        .replace("Spotify", "song official");
+    let title = title.get(1).unwrap().as_str().replace("Spotify", "");
 
     tracing::info!(title, "searching for spotify song");
 
