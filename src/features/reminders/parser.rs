@@ -21,7 +21,7 @@ fn at_tag(s: &str) -> IResult<&str, &str> {
     alt((tag("at"), tag("@"), tag("as"), tag("às")))(s)
 }
 
-fn spaced<'s, P, O, E>(p: P) -> impl FnMut(&'s str) -> IResult<&str, O, E>
+fn spaced<'s, P, O, E>(p: P) -> impl FnMut(&'s str) -> IResult<&'s str, O, E>
 where
     P: nom::Parser<&'s str, O, E>,
     E: nom::error::ParseError<&'s str>,
@@ -44,7 +44,7 @@ fn parse_number<R: RangeBounds<u16>>(range: R) -> impl FnMut(&str) -> IResult<&s
 fn preceded_number<'s, R: RangeBounds<u16>>(
     tag_str: &'static str,
     range: R,
-) -> impl FnMut(&'s str) -> IResult<&str, Option<u16>> {
+) -> impl FnMut(&'s str) -> IResult<&'s str, Option<u16>> {
     move |input| match alt((preceded(tag(tag_str), character::digit1), tag(" ")))(input)? {
         (_, " ") => Ok((input, None)),
         (a, digit) => match digit.parse() {

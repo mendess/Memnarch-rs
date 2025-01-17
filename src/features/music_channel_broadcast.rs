@@ -45,7 +45,12 @@ static BANGERS: GlobalDatabase<Vec<SentBanger>> =
         Permissions::from_mode(0b110_100_100)
     });
 
-async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<Url>> {
+struct SpotifyScrape {
+    url: Url,
+    title_searched: String,
+}
+
+async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<SpotifyScrape>> {
     static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
     static TITLE_REGEX: LazyLock<Regex> =
         LazyLock::new(|| Regex::new("<title>([^<]+)</title>").unwrap());
@@ -102,7 +107,10 @@ async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<Url>> {
     let id = resp.text().await?;
     static YT: LazyLock<Url> = LazyLock::new(|| Url::parse("https://youtu.be/").unwrap());
 
-    Ok(Some(YT.join(id.trim())?))
+    Ok(Some(SpotifyScrape {
+        url: YT.join(id.trim())?,
+        title_searched: title,
+    }))
 }
 
 async fn broadcast_impl(
@@ -165,8 +173,13 @@ async fn broadcast_impl(
                                 format!("new banger in {}: {}", source_channel_id.mention(), url)
                             }
                         };
-                        if let Some(spotify_2_yt) = &spotify_2_yt {
-                            write!(base, "\n`youtube:` {spotify_2_yt}").unwrap()
+                        if let Some(SpotifyScrape {
+                            url,
+                            title_searched,
+                        }) = &spotify_2_yt
+                        {
+                            write!(base, "\n`youtube:` {url}\nsearched for: {title_searched}")
+                                .unwrap()
                         }
                         base
                     })
@@ -177,7 +190,7 @@ async fn broadcast_impl(
             tracing::error!(?error, channel = %ch, "failed to send message");
         };
     }
-    if let Err(error) = store_banger(author, spotify_2_yt.unwrap_or(url)).await {
+    if let Err(error) = store_banger(author, spotify_2_yt.map(|s| s.url).unwrap_or(url)).await {
         tracing::error!(?error, "failed to store banger")
     }
     Ok(())
