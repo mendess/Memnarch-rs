@@ -26,6 +26,7 @@ COPY ./src ./src
 # needed for git describe
 COPY ./.git ./.git
 COPY ./py-eval/src ./py-eval/src
+COPY ./ytdl-key ./ytdl-key
 
 # build for release
 RUN rm ./target/release/memnarch-rs* && \
