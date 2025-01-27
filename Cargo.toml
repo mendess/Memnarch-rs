@@ -6,13 +6,12 @@ edition = "2021"
 
 [dependencies]
 anyhow.workspace = true
-constcat = "0.5"
 chrono = "0.4"
+constcat = "0.5"
 futures.workspace = true
 git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
+html-escape = "0.2"
 itertools = "0.10"
-tracing.workspace = true
-tracing-subscriber = "0.3"
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 nom = "7"
 nom-regex = "0.2"
@@ -20,6 +19,7 @@ num-traits = "0.2.17"
 rand = "0.8"
 regex = "1"
 reqwest.workspace = true
+scryfall = "0.16.2"
 serde.workspace = true
 serde_json.workspace = true
 serenity.workspace = true
@@ -27,8 +27,9 @@ simsearch = "0.1.4"
 songbird = "0.4"
 tempfile = "3"
 toml = "0.7"
+tracing-subscriber = "0.3"
+tracing.workspace = true
 unicase = "2"
-scryfall = "0.16.2"
 
 [dependencies.tokio]
 workspace = true

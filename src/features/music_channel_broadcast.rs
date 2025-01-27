@@ -92,6 +92,8 @@ async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<SpotifyScrape>> {
     }
 
     let title = title.get(1).unwrap().as_str().replace("Spotify", "");
+    let title =
+        html_escape::decode_html_entities(title.trim().trim_end_matches("|").trim()).into_owned();
 
     tracing::info!(title, "searching for spotify song");
 
@@ -111,7 +113,7 @@ async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<SpotifyScrape>> {
 
     Ok(Some(SpotifyScrape {
         url: YT.join(id.trim())?,
-        title_searched: title,
+        title_searched: title.to_string(),
     }))
 }
 
