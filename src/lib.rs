@@ -1,6 +1,5 @@
 #![warn(unused_crate_dependencies)]
 #![warn(unused_features)]
-#![warn(rust_2018_idioms)]
 #![expect(deprecated)]
 
 pub mod commands;
@@ -16,9 +15,8 @@ use features::{birthdays, moderation, mtg_spoilers, reminders};
 use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
-        help_commands,
+        Args, CommandError, CommandGroup, CommandResult, DispatchError, HelpOptions, help_commands,
         macros::{help, hook},
-        Args, CommandError, CommandGroup, CommandResult, DispatchError, HelpOptions,
     },
     model::{
         channel::Message,

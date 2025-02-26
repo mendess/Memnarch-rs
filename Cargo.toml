@@ -2,7 +2,7 @@
 name = "memnarch-rs"
 version = "0.1.0"
 authors = ["Mendess2526 <pedro.mendes.26@gmail.com>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 anyhow = "1"
@@ -28,7 +28,7 @@ songbird = "0.4"
 tempfile = "3"
 toml = "0.7"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicase = "2"
 
 [dependencies.tokio]

@@ -1,13 +1,13 @@
 use crate::util::tuple_map::TupleMap;
 use chrono::{Duration, NaiveTime};
 use nom::{
+    Finish, IResult,
     branch::alt,
     bytes::complete::{self as bytes, tag},
     character::complete::{self as character, space0 as spc},
     combinator::map,
-    error::{make_error, ErrorKind},
+    error::{ErrorKind, make_error},
     sequence::{delimited, pair, preceded, terminated, tuple},
-    Finish, IResult,
 };
 use nom_regex::str::re_find;
 use regex::Regex;
@@ -178,7 +178,7 @@ pub fn parse(a: &str) -> Result<Reminder<'_>, nom::error::Error<&str>> {
 
 #[cfg(test)]
 mod test {
-    use super::{parse, PartialDate, Reminder, TimeSpec};
+    use super::{PartialDate, Reminder, TimeSpec, parse};
     use chrono::{Duration, NaiveTime};
 
     use proptest::prelude::*;

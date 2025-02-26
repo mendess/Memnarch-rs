@@ -3,8 +3,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serenity::{
     framework::standard::{
-        macros::{command, group},
         Args, CommandResult,
+        macros::{command, group},
     },
     model::channel::Message,
     prelude::*,

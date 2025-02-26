@@ -3,16 +3,16 @@ use std::{
     fmt::Write,
     io,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
-use daemons::{async_trait, ControlFlow, Daemon};
+use daemons::{ControlFlow, Daemon, async_trait};
 use futures::{
-    future::{join, OptionFuture},
     FutureExt,
+    future::{OptionFuture, join},
 };
 use itertools::Itertools;
 use mtg_spoilers::{CardText, Spoiler, SpoilerSource};
@@ -26,7 +26,7 @@ use serenity::{
     prelude::{Context, Mutex},
 };
 
-use crate::util::daemons::{cache_and_http, DaemonManager};
+use crate::util::daemons::{DaemonManager, cache_and_http};
 use json_db::GlobalDatabase;
 
 mod paths {
@@ -375,10 +375,9 @@ async fn send_card(
                 }
                 builder
             })
-            .components(vec![CreateActionRow::Buttons(vec![CreateButton::new(
-                DISCUSSION_BUTTON,
-            )
-            .label("Discuss/Translate")])]),
+            .components(vec![CreateActionRow::Buttons(vec![
+                CreateButton::new(DISCUSSION_BUTTON).label("Discuss/Translate"),
+            ])]),
     )
     .await?;
 

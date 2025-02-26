@@ -4,8 +4,8 @@ use serenity::{
     all::Mention,
     client::Context,
     framework::standard::{
-        macros::{command, group},
         Args, CommandResult,
+        macros::{command, group},
     },
     model::channel::Message,
 };

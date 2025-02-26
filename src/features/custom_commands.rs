@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use futures::FutureExt;
 use json_db::multifile_db::MultifileDb;
-use pubsub::{events, ControlFlow};
+use pubsub::{ControlFlow, events};
 use serenity::all::{Context, GuildId, Message};
 
 use crate::in_files;
