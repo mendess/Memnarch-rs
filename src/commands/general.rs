@@ -2,17 +2,17 @@ use crate::{
     get,
     prefs::{self, user::UserPrefs},
     reminders::{self, parser::*},
-    util::{daemons::DaemonManagerKey, MentionExt},
+    util::{MentionExt, daemons::DaemonManagerKey},
 };
 use chrono::{DateTime, Datelike, Duration, Month, NaiveDate, NaiveDateTime, Timelike, Utc};
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, stream};
 use itertools::Itertools;
 use num_traits::FromPrimitive;
 use serenity::{
     all::{CreateEmbed, CreateEmbedFooter, CreateMessage, EditMessage, Mention},
     framework::standard::{
-        macros::{command, group},
         Args, CommandResult,
+        macros::{command, group},
     },
     model::{channel::Message, guild::Member},
     prelude::*,

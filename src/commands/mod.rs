@@ -14,6 +14,6 @@ pub mod command_groups {
     pub use moderation::MODERATION_GROUP;
     pub use owner::OWNER_GROUP;
     pub use quotes::QUOTES_GROUP;
-    pub use sfx::{SFXALIASES_GROUP, SFX_GROUP};
+    pub use sfx::{SFX_GROUP, SFXALIASES_GROUP};
     pub use tts::TTS_GROUP;
 }

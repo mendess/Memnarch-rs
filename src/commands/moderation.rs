@@ -2,8 +2,8 @@ use futures::StreamExt;
 use serenity::{
     all::{EditMessage, Mention},
     framework::standard::{
-        macros::{command, group},
         Args, CommandResult,
+        macros::{command, group},
     },
     model::{channel::Message, prelude::ReactionType},
     prelude::*,

@@ -2,7 +2,7 @@
 
 use ::daemons::ControlFlow;
 use anyhow::Context as _;
-use futures::{stream, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt, stream};
 use memnarch_rs::features::{
     self, birthdays, custom_commands, moderation, mtg_spoilers, music_channel_broadcast, reminders,
 };
@@ -15,10 +15,9 @@ use serenity::all::standard::Configuration;
 use serenity::all::{CreateMessage, Http};
 use serenity::{
     framework::standard::{
-        help_commands,
-        macros::{help, hook},
         Args, CommandError, CommandGroup, CommandResult, DispatchError, HelpOptions,
-        StandardFramework,
+        StandardFramework, help_commands,
+        macros::{help, hook},
     },
     model::{
         channel::Message,
@@ -38,9 +37,10 @@ use std::{
 use tokio::time::timeout;
 use tracing::Metadata;
 use tracing_subscriber::filter::filter_fn;
-use tracing_subscriber::{layer::SubscriberExt, Layer};
+use tracing_subscriber::layer::SubscriberExt;
 
 use memnarch_rs::util::daemons::{DaemonManager, DaemonManagerKey};
+use tracing_subscriber::EnvFilter;
 
 fn load_config() -> std::io::Result<memnarch_rs::Config> {
     DirBuilder::new().recursive(true).create(FILES_DIR)?;
@@ -82,48 +82,39 @@ impl TypeMapKey for UpdateNotify {
 }
 
 fn config_logger() {
-    if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "debug");
-    }
-
-    let moldule_filter = |meta: &Metadata| {
-        meta.target().starts_with("memnarch_rs") || meta.target().starts_with("daemons")
-    };
-
     let console = tracing_subscriber::fmt::layer()
         .pretty()
-        .with_writer(io::stderr)
-        .with_filter(filter_fn(moldule_filter));
+        .with_writer(io::stderr);
 
-    let file = tracing_subscriber::fmt::layer()
-        .with_writer(|| {
-            OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open("memnarch.log")
-                .expect("can't create log file")
-        })
-        .with_filter(filter_fn(moldule_filter));
+    let file = tracing_subscriber::fmt::layer().with_writer(|| {
+        OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("memnarch.log")
+            .expect("can't create log file")
+    });
 
-    let critical_file = tracing_subscriber::fmt::layer()
-        .with_writer(|| {
-            let home = std::env::var("HOME")
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                .expect("Can't find home directory");
-            let file_path = PathBuf::from_iter([home, "memnarch_critical_error.log".into()]);
-            OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(file_path)
-                .expect("can't create critical log file")
-        })
-        .with_filter(filter_fn(moldule_filter));
+    let critical_file = tracing_subscriber::fmt::layer().with_writer(|| {
+        let home = std::env::var("HOME")
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .expect("Can't find home directory");
+        let file_path = PathBuf::from_iter([home, "memnarch_critical_error.log".into()]);
+        OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(file_path)
+            .expect("can't create critical log file")
+    });
 
     tracing::subscriber::set_global_default(
         tracing_subscriber::registry()
             .with(console)
             .with(file)
-            .with(critical_file),
+            .with(critical_file)
+            .with(EnvFilter::from_default_env())
+            .with(filter_fn(|meta: &Metadata| {
+                meta.target().starts_with("memnarch_rs") || meta.target().starts_with("daemons")
+            })),
     )
     .unwrap();
 }

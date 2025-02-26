@@ -6,7 +6,7 @@ use serenity::{
     prelude::Context,
 };
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     io,
     os::unix::prelude::OsStrExt,
     path::{Path, PathBuf},
@@ -15,7 +15,7 @@ use std::{
 };
 use tokio::{fs, sync::Mutex};
 
-use json_db::{json_hash_map::JsonHashMap, Database};
+use json_db::{Database, json_hash_map::JsonHashMap};
 
 use crate::in_files;
 

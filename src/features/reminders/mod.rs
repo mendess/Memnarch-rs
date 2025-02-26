@@ -4,7 +4,7 @@ use crate::{
     in_files,
     util::{
         bot_id,
-        daemons::{cache_and_http, DaemonManager},
+        daemons::{DaemonManager, cache_and_http},
     },
 };
 use chrono::{DateTime, Utc};

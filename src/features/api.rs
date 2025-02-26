@@ -3,8 +3,8 @@ pub use bot_api_types as request_types;
 use std::{fmt, sync::Arc};
 
 use actix_web::{
-    web::{self, Data},
     App, HttpResponse, HttpServer, Responder, ResponseError,
+    web::{self, Data},
 };
 use request_types::{Dm, MessageBody};
 use serenity::all::{Cache, CreateEmbed, CreateMessage, Http};
