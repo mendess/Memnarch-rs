@@ -29,15 +29,9 @@ use serenity::{
 
 use std::collections::HashSet;
 
-fn default_py_eval_address() -> String {
-    "localhost:31415".into()
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct Config {
     pub token: String,
-    #[serde(default = "default_py_eval_address")]
-    pub py_eval_address: String,
     pub monitor_log_channel: Option<ChannelId>,
 }
 
@@ -45,7 +39,6 @@ impl Config {
     pub fn new(token: String) -> Self {
         Self {
             token,
-            py_eval_address: default_py_eval_address(),
             monitor_log_channel: None,
         }
     }

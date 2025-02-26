@@ -202,7 +202,6 @@ async fn main() -> anyhow::Result<()> {
                 .group(&SFX_GROUP)
                 .group(&SFXALIASES_GROUP)
                 .group(&TTS_GROUP)
-                .group(&PY_GROUP)
                 .group(&MODERATION_GROUP)
                 .help(&MY_HELP)
         })
