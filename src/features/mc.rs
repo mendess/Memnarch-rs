@@ -70,7 +70,7 @@ async fn run(data: &<McChecker as Daemon<true>>::Data) -> anyhow::Result<()> {
             last_message,
         } = server;
         let msg = match timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(30),
             mccli::fetch_server_info(
                 addr.to_socket_addrs()?
                     .next()
@@ -78,7 +78,7 @@ async fn run(data: &<McChecker as Daemon<true>>::Data) -> anyhow::Result<()> {
             ),
         )
         .await
-        .context("timed out pinging to server")
+        .context("timed out pinging the server")
         .and_then(|r| r)
         {
             Ok(_) if *last_state != LastKnownState::Online => {
