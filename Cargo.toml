@@ -58,6 +58,10 @@ git = "https://github.com/mendess/discord-bot-utils"
 rev = "fe2da522e79e100b4d2316e84a190ee40e2427f3"
 features = ["serenity_cache"]
 
+[dependencies.mccli]
+git = "https://github.com/mendess/experiments"
+rev = "426b0662c7990206d98a1ea6c54470da55c384e5"
+
 [dev-dependencies]
 paste = "1"
 proptest = "1"

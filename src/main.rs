@@ -4,7 +4,8 @@ use ::daemons::ControlFlow;
 use anyhow::Context as _;
 use futures::{FutureExt, StreamExt, stream};
 use memnarch_rs::features::{
-    self, birthdays, custom_commands, moderation, mtg_spoilers, music_channel_broadcast, reminders,
+    self, birthdays, custom_commands, mc, moderation, mtg_spoilers, music_channel_broadcast,
+    reminders,
 };
 use memnarch_rs::{
     commands::{command_groups::*, sfx::util::LeaveVoiceDaemons},
@@ -212,6 +213,7 @@ async fn main() -> anyhow::Result<()> {
     let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
     try_init!(daemon_manager, birthdays);
     try_init!(daemon_manager, mtg_spoilers);
+    try_init!(daemon_manager, mc);
     {
         let mut data = client.data.write().await;
         if let Some(id) = std::env::args()
