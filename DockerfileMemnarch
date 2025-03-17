@@ -12,10 +12,6 @@ WORKDIR /memnarch-rs
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
 COPY ./.cargo ./.cargo
-RUN echo "THE FOLLOWING WARNINGS ARE OKAY!!!!" && \
-    cargo new --bin py-eval
-
-COPY ./py-eval/Cargo.toml ./py-eval/Cargo.toml
 
 # cache dependencies
 RUN cargo build --release --workspace
@@ -25,13 +21,11 @@ RUN rm -r ./src
 COPY ./src ./src
 # needed for git describe
 COPY ./.git ./.git
-COPY ./py-eval/src ./py-eval/src
 COPY ./ytdl-key ./ytdl-key
 
 # build for release
 RUN rm ./target/release/memnarch-rs* && \
-    rm ./target/release/py-eval* && \
-    find ./src ./py-eval/src -name '*.rs' -exec touch '{}' ';' && \
+    find ./src -name '*.rs' -exec touch '{}' ';' && \
     cargo build --release --workspace
 
 # executing image
@@ -39,20 +33,6 @@ FROM debian:bookworm-slim
 
 RUN apt update -y && apt install libopus-dev ffmpeg youtube-dl libpython3-dev -y
 
-RUN echo '#!/bin/sh           \n\
-# boo                         \n\
-case $1 in                    \n\
-    py)                       \n\
-        [ $# -gt 0 ] && shift \n\
-       ./py-eval "$@"         \n\
-        ;;                    \n\
-    *)                        \n\
-        [ $# -gt 0 ] && shift \n\
-        ./memnarch-rs "$@"    \n\
-        ;;                    \n\
-esac' > entrypoint.sh && chmod +x entrypoint.sh
-
 COPY --from=build /memnarch-rs/target/release/memnarch-rs .
-COPY --from=build /memnarch-rs/target/release/py-eval .
 
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["./memnarch-rs"]
