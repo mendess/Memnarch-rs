@@ -1910,6 +1910,7 @@ checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 [[package]]
 name = "mccli"
 version = "0.1.0"
+source = "git+https://github.com/mendess/experiments?rev=426b0662c7990206d98a1ea6c54470da55c384e5#426b0662c7990206d98a1ea6c54470da55c384e5"
 dependencies = [
  "anyhow",
  "clap",

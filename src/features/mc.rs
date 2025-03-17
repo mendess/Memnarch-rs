@@ -78,7 +78,8 @@ async fn run(data: &<McChecker as Daemon<true>>::Data) -> anyhow::Result<()> {
             ),
         )
         .await
-        .context("timedout talking to server")?
+        .context("timed out pinging to server")
+        .and_then(|r| r)
         {
             Ok(_) if *last_state != LastKnownState::Online => {
                 *last_state = LastKnownState::Online;
