@@ -9,9 +9,9 @@ RUN USER=root cargo new --bin memnarch-rs
 WORKDIR /memnarch-rs
 
 # copy manifests
-COPY ./Cargo.lock ./Cargo.lock
-COPY ./Cargo.toml ./Cargo.toml
 COPY ./.cargo ./.cargo
+COPY ./Cargo.toml ./Cargo.toml
+COPY ./Cargo.lock ./Cargo.lock
 
 # cache dependencies
 RUN cargo build --release --workspace
