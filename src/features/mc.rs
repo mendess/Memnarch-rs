@@ -6,24 +6,21 @@ use anyhow::Context;
 use daemons::{ControlFlow, Daemon, async_trait};
 use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
-use serenity::all::{ChannelId, Colour, CreateEmbed, CreateMessage, Http, MessageId};
+use serenity::all::{ChannelId, EditChannel, Http};
 use std::{collections::HashMap, io, net::ToSocketAddrs, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::timeout};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
-enum LastKnownState {
-    Online,
-    #[default]
-    Offline,
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+struct Update {
+    ch_name: String,
+    ch_topic: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TrackedServer {
     addr: String,
     #[serde(default)]
-    last_state: LastKnownState,
-    #[serde(default)]
-    last_message: Option<MessageId>,
+    prev_update: Option<Update>,
 }
 
 static CHANNELS: GlobalDatabase<HashMap<ChannelId, TrackedServer>> =
@@ -43,8 +40,17 @@ impl Daemon<true> for McChecker {
 
     async fn run(&mut self, data: &Self::Data) -> ControlFlow {
         self.0 = true;
-        if let Err(e) = run(data).await {
-            tracing::error!(error = ?e, "failed to update server info")
+        let mut channels = match CHANNELS.load().await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!(error = ?e, "failed to load mc-checker config");
+                return ControlFlow::CONTINUE;
+            }
+        };
+        for (cid, server) in channels.iter_mut() {
+            if let Err(e) = run(data, *cid, server).await {
+                tracing::error!(error = ?e, "failed to update server info")
+            }
         }
         ControlFlow::CONTINUE
     }
@@ -62,53 +68,71 @@ impl Daemon<true> for McChecker {
     }
 }
 
-async fn run(data: &<McChecker as Daemon<true>>::Data) -> anyhow::Result<()> {
-    for (c, server) in CHANNELS.load().await?.iter_mut() {
-        let TrackedServer {
-            addr,
-            last_state,
-            last_message,
-        } = server;
-        let msg = match timeout(
-            Duration::from_secs(30),
-            mccli::fetch_server_info(
-                addr.to_socket_addrs()?
-                    .next()
-                    .with_context(|| format!("no socket addresses for {addr}"))?,
+#[tracing::instrument(skip(data))]
+async fn run(
+    data: &<McChecker as Daemon<true>>::Data,
+    cid: ChannelId,
+    server: &mut TrackedServer,
+) -> anyhow::Result<()> {
+    const ONLINE_EMOJI: &str = "-🟢";
+    const OFFLINE_EMOJI: &str = "-🔴";
+
+    tracing::debug!("checking");
+    let data = cache_and_http(data);
+    let check_result = timeout(
+        Duration::from_secs(30),
+        mccli::fetch_server_info(
+            server
+                .addr
+                .to_socket_addrs()?
+                .next()
+                .with_context(|| format!("no socket addresses for {}", server.addr))?,
+        ),
+    )
+    .await
+    .context("timed out pinging the server")
+    .and_then(|r| r);
+
+    let mut channel = cid
+        .to_channel(data)
+        .await?
+        .guild()
+        .context("channel is not a guild channel")?;
+
+    let update = {
+        let (name_emoji, topic) = match check_result {
+            Ok(s) => (
+                ONLINE_EMOJI,
+                format!("server is online with {} players", s.players.online),
             ),
-        )
-        .await
-        .context("timed out pinging the server")
-        .and_then(|r| r)
-        {
-            Ok(_) if *last_state != LastKnownState::Online => {
-                *last_state = LastKnownState::Online;
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .color(Colour::DARK_GREEN)
-                        .title("server is online ✅"),
-                )
-            }
-            Err(e) if *last_state != LastKnownState::Offline => {
-                *last_state = LastKnownState::Offline;
-                let mut reason = e.to_string();
-                reason.truncate(1024);
-                CreateMessage::new().embed(
-                    CreateEmbed::new()
-                        .color(Colour::RED)
-                        .title("server is offline ❌")
-                        .field("why?", reason, true),
-                )
-            }
-            _ => return Ok(()),
+            Err(e) => (OFFLINE_EMOJI, format!("server is offline because: {e}")),
         };
 
-        if let Some(last_message) = last_message.take() {
-            if let Err(e) = c.delete_message(&data.1, last_message).await {
-                tracing::error!(error = ?e, "failed to delete last message");
-            }
+        let new_name = if let Some(name) = channel.name().strip_suffix(ONLINE_EMOJI) {
+            format!("{name}{name_emoji}")
+        } else if let Some(name) = channel.name().strip_suffix(OFFLINE_EMOJI) {
+            format!("{name}{name_emoji}")
+        } else {
+            format!("{}{name_emoji}", channel.name())
+        };
+        Update {
+            ch_name: new_name,
+            ch_topic: topic,
         }
-        *last_message = Some(c.send_message(cache_and_http(data), msg).await?.id);
+    };
+
+    if server.prev_update.as_ref() != Some(&update) {
+        tracing::debug!("changing channel to {update:?}");
+        channel
+            .edit(
+                data,
+                EditChannel::new()
+                    .name(&update.ch_name)
+                    .topic(&update.ch_topic),
+            )
+            .await?;
+
+        server.prev_update = Some(update);
     }
 
     Ok(())
