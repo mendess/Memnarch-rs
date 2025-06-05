@@ -118,7 +118,7 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
         let title = msg.message.embeds.first().and_then(|e| {
             e.title
                 .as_deref()
-                .or_else(|| e.url.as_ref().and_then(|u| u.split('/').last()))
+                .or_else(|| e.url.as_ref().and_then(|u| u.split('/').next_back()))
         });
 
         #[derive(Default)]
@@ -386,7 +386,7 @@ async fn send_card(
 
 fn name_from_image(s: &str) -> &str {
     s.split('/')
-        .last()
+        .next_back()
         .and_then(|s| {
             let (name, _) = s.split_once('.')?;
             Some(name)

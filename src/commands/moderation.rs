@@ -58,7 +58,7 @@ async fn add_base_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
     tokio::pin!(members);
     while let Some(m) = members.next().await {
         let m = m?;
-        if !m.roles.iter().any(|r| *r == role) {
+        if !m.roles.contains(&role) {
             m.add_role(ctx, role).await?;
             member_names.push(m.display_name().to_owned());
             if let Err(e) = notif

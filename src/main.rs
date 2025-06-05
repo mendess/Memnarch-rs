@@ -67,7 +67,7 @@ fn load_config() -> std::io::Result<memnarch_rs::Config> {
 
         let config = memnarch_rs::Config::new(token);
         if let Err(e) = toml::to_string_pretty(&config)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
             .and_then(|config_str| file.write_all(config_str.as_bytes()))
         {
             tracing::error!("Failed to store token: {}", e);
@@ -97,7 +97,7 @@ fn config_logger() {
 
     let critical_file = tracing_subscriber::fmt::layer().with_writer(|| {
         let home = std::env::var("HOME")
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+            .map_err(io::Error::other)
             .expect("Can't find home directory");
         let file_path = PathBuf::from_iter([home, "memnarch_critical_error.log".into()]);
         OpenOptions::new()
