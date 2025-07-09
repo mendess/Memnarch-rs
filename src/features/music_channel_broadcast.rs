@@ -160,21 +160,20 @@ async fn broadcast_impl(
                     .content({
                         let mut base = match author {
                             Some(author) if source_channel_id == 952887798145355777 => {
-                                format!("new banger from {}: {}", author.mention(), url)
+                                format!("new banger from {}: {url}", author.mention())
                             }
                             None if source_channel_id == 952887798145355777 => {
-                                format!("new banger: {}", url)
+                                format!("new banger: {url}")
                             }
                             Some(author) => {
                                 format!(
-                                    "new banger in {} from {}: {}",
+                                    "new banger in {} from {}: {url}",
                                     source_channel_id.mention(),
-                                    author.mention(),
-                                    url
+                                    author.mention()
                                 )
                             }
                             None => {
-                                format!("new banger in {}: {}", source_channel_id.mention(), url)
+                                format!("new banger in {}: {url}", source_channel_id.mention())
                             }
                         };
                         if let Some(SpotifyScrape {
