@@ -54,7 +54,8 @@ async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<SpotifyScrape>> {
     static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
     static TITLE_REGEX: LazyLock<Regex> =
         LazyLock::new(|| Regex::new("<title>([^<]+)</title>").unwrap());
-    const BEARER_TOKEN: &str = include_str!("../../ytdl-key");
+    static BEARER_TOKEN: LazyLock<String> =
+        LazyLock::new(|| std::fs::read_to_string("./files/ytdl-key").unwrap());
 
     let resp = {
         tracing::info!(%url, "querying spotify");
@@ -102,7 +103,7 @@ async fn resolve_spotify(url: &Url) -> anyhow::Result<Option<SpotifyScrape>> {
             "https://mendess.xyz/api/v1/playlist/search/{}",
             Title(title.trim().as_bytes())
         ))
-        .bearer_auth(BEARER_TOKEN)
+        .bearer_auth(&*BEARER_TOKEN)
         .send()
         .await?
         .error_for_status()
