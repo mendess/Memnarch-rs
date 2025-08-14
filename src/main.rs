@@ -240,13 +240,12 @@ async fn main() -> anyhow::Result<()> {
                 "Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot\n",
                 ready.user.id
             );
-            if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>() {
-                if let Err(e) = id
+            if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>()
+                && let Err(e) = id
                     .send_message(&ctx, CreateMessage::new().content("Updated successfully!"))
                     .await
-                {
-                    tracing::error!("Couldn't send update notification: {}", e);
-                }
+            {
+                tracing::error!("Couldn't send update notification: {}", e);
             }
             ControlFlow::BREAK
         }

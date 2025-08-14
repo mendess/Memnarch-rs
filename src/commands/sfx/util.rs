@@ -83,24 +83,22 @@ async fn init_voice_leave() {
                             Alone::NotEmpty
                         })
                     }
-                    if let Some(id) = old.as_ref().and_then(|vs| vs.channel_id) {
-                        if alone(id, ctx).await == Some(Alone::OnlyBots) {
-                            if let Some(guild_id) = new.guild_id {
-                                let sb =
-                                    songbird::get(ctx).await.expect("Songbird not initialized");
-                                tracing::debug!("Leaving voice channel: {}", guild_id);
-                                if let Err(e) = sb.remove(guild_id).await {
-                                    tracing::error!("Could not leave voice channel: {}", e);
-                                } else {
-                                    let data = ctx.data.read().await;
-                                    let mut dm = crate::get!(> data, DaemonManagerKey, lock);
-                                    crate::get!(> data, LeaveVoiceDaemons, lock)
-                                        .remove(&mut dm, guild_id)
-                                        .await;
-                                }
-                            };
+                    if let Some(id) = old.as_ref().and_then(|vs| vs.channel_id)
+                        && alone(id, ctx).await == Some(Alone::OnlyBots)
+                        && let Some(guild_id) = new.guild_id
+                    {
+                        let sb = songbird::get(ctx).await.expect("Songbird not initialized");
+                        tracing::debug!("Leaving voice channel: {}", guild_id);
+                        if let Err(e) = sb.remove(guild_id).await {
+                            tracing::error!("Could not leave voice channel: {}", e);
+                        } else {
+                            let data = ctx.data.read().await;
+                            let mut dm = crate::get!(> data, DaemonManagerKey, lock);
+                            crate::get!(> data, LeaveVoiceDaemons, lock)
+                                .remove(&mut dm, guild_id)
+                                .await;
                         }
-                    }
+                    };
                     ControlFlow::CONTINUE
                 }
                 .boxed()

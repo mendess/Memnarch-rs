@@ -22,17 +22,17 @@ async fn check_if_custom_command(ctx: &Context, msg: &Message) {
             _ => return Ok(()),
         };
         tracing::trace!("looking for command: {}", cmd);
-        if let Some(o) = CUSTOM_COMMANDS.get(&g).await? {
-            if let Some(out) = o.load().await?.get(cmd) {
-                msg.channel_id.say(&ctx, out).await?;
-            }
+        if let Some(o) = CUSTOM_COMMANDS.get(&g).await?
+            && let Some(out) = o.load().await?.get(cmd)
+        {
+            msg.channel_id.say(&ctx, out).await?;
         }
         Ok(())
     }
-    if let Some(g) = msg.guild_id {
-        if let Err(e) = f(ctx, msg, g).await {
-            tracing::error!("Custom command failed: {:?}", e);
-        }
+    if let Some(g) = msg.guild_id
+        && let Err(e) = f(ctx, msg, g).await
+    {
+        tracing::error!("Custom command failed: {:?}", e);
     }
 }
 

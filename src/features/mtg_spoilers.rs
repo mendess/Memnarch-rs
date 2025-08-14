@@ -274,13 +274,12 @@ async fn delete_discuss_button(ctx: &Context, t: &GuildChannel) {
             })
         })
     });
-    if let Some(mut button_message) = button_message {
-        if let Err(e) = button_message
+    if let Some(mut button_message) = button_message
+        && let Err(e) = button_message
             .edit(ctx, EditMessage::new().components(Default::default()))
             .await
-        {
-            tracing::error!(?e, "failed to remove {DISCUSSION_BUTTON} button");
-        }
+    {
+        tracing::error!(?e, "failed to remove {DISCUSSION_BUTTON} button");
     }
 }
 
