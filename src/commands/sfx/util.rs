@@ -1,4 +1,5 @@
 use crate::util::daemons::{DaemonManager, DaemonManagerKey};
+use anyhow::Context as _;
 use daemons::ControlFlow;
 use futures::prelude::*;
 use pubsub::{self, events::VoiceStateUpdate};
@@ -8,27 +9,29 @@ use serenity::{
     prelude::TypeMapKey,
 };
 use songbird::Call;
-use std::{collections::HashMap, error::Error, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, OnceCell};
 // use crate::util::Mutex;
 
 pub async fn join_or_get_call(
-    ctx: &Context,
+    ctx: super::super::Context<'_>,
     gid: GuildId,
     author: UserId,
-) -> Result<Arc<Mutex<Call>>, Box<dyn Error + Send + Sync>> {
-    let sb = songbird::get(ctx).await.expect("Songbird not initialized");
+) -> anyhow::Result<Arc<Mutex<Call>>> {
+    let sb = songbird::get(ctx.serenity_context())
+        .await
+        .expect("Songbird not initialized");
 
     let call = match sb.get(gid) {
         Some(call) => call,
         None => {
             let (gid, voice_channel) = {
-                let guild = ctx.cache.guild(gid).ok_or("Invalid guild")?;
+                let guild = ctx.cache().guild(gid).context("Invalid guild")?;
                 let voice_channel = guild
                     .voice_states
                     .get(&author)
                     .and_then(|vs| vs.channel_id)
-                    .ok_or("Not in a voice channel")?;
+                    .context("Not in a voice channel")?;
                 (guild.id, voice_channel)
             };
 
@@ -106,4 +109,65 @@ async fn init_voice_leave() {
             .await;
         })
         .await;
+}
+
+pub async fn paginate<U, E>(
+    ctx: poise::Context<'_, U, E>,
+    pages: &[serenity::builder::CreateEmbed],
+) -> Result<(), serenity::Error> {
+    // Define some unique identifiers for the navigation buttons
+    let ctx_id = ctx.id();
+    let prev_button_id = format!("{}prev", ctx_id);
+    let next_button_id = format!("{}next", ctx_id);
+
+    // Send the embed with the first page as content
+    let reply = {
+        let components = serenity::builder::CreateActionRow::Buttons(vec![
+            serenity::builder::CreateButton::new(&prev_button_id).emoji('◀'),
+            serenity::builder::CreateButton::new(&next_button_id).emoji('▶'),
+        ]);
+
+        poise::CreateReply::default()
+            .embed(pages[0].clone())
+            .components(vec![components])
+    };
+
+    ctx.send(reply).await?;
+
+    // Loop through incoming interactions with the navigation buttons
+    let mut current_page = 0;
+    while let Some(press) = serenity::collector::ComponentInteractionCollector::new(ctx)
+        // We defined our button IDs to start with `ctx_id`. If they don't, some other command's
+        // button was pressed
+        .filter(move |press| press.data.custom_id.starts_with(&ctx_id.to_string()))
+        // Timeout when no navigation button has been pressed for 24 hours
+        .timeout(std::time::Duration::from_secs(3600 * 24))
+        .await
+    {
+        // Depending on which button was pressed, go to next or previous page
+        if press.data.custom_id == next_button_id {
+            current_page += 1;
+            if current_page >= pages.len() {
+                current_page = 0;
+            }
+        } else if press.data.custom_id == prev_button_id {
+            current_page = current_page.checked_sub(1).unwrap_or(pages.len() - 1);
+        } else {
+            // This is an unrelated button interaction
+            continue;
+        }
+
+        // Update the message with the new page contents
+        press
+            .create_response(
+                ctx.serenity_context(),
+                serenity::builder::CreateInteractionResponse::UpdateMessage(
+                    serenity::builder::CreateInteractionResponseMessage::new()
+                        .embed(pages[current_page].clone()),
+                ),
+            )
+            .await?;
+    }
+
+    Ok(())
 }

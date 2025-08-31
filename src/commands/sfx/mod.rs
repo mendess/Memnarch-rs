@@ -1,27 +1,19 @@
 pub mod util;
 
-use crate::util::daemons::DaemonManagerKey;
-use crate::util::permissions::*;
-use crate::{get, in_files};
+use crate::in_files;
+use anyhow::Context as _;
 use chrono::{DateTime, Duration, Utc};
 use daemons::{ControlFlow, Daemon};
 use itertools::Itertools;
 use json_db::GlobalDatabase;
+use poise::{CreateReply, command};
 use serde::{Deserialize, Serialize};
-use serenity::all::{CreateAttachment, CreateEmbed, CreateMessage, Http};
-use serenity::{
-    framework::standard::{
-        Args, CommandResult,
-        macros::{command, group},
-    },
-    model::{channel::Message, id::GuildId},
-    prelude::*,
-};
+use serenity::all::{CreateAttachment, CreateEmbed, Http};
+use serenity::model::id::GuildId;
 use simsearch::SimSearch;
 use songbird::input::Input;
 use std::{
     collections::HashMap,
-    error::Error,
     fs::{self, DirBuilder, OpenOptions},
     future::Future,
     io::{self, Write},
@@ -76,59 +68,167 @@ impl Daemon<false> for LeaveVoice {
     }
 }
 
-#[group]
-#[prefix("sfx")]
-#[commands(list, add, play, delete, get, stats, stop)]
-struct SFX;
+#[command(
+    slash_command,
+    guild_only,
+    subcommands("stop", "play", "list", "add", "delete", "stats", "download")
+)]
+pub async fn sfx(_: super::Context<'_>) -> anyhow::Result<()> {
+    Ok(())
+}
 
-#[group]
-#[commands(s)]
-struct SFXAliases;
+/// Play a saved sfx!
+#[command(slash_command, guild_only)]
+async fn play(ctx: super::Context<'_>, query: String) -> anyhow::Result<()> {
+    play_impl(ctx, &query).await
+}
 
-#[command]
-#[description("Stops everything")]
-#[only_in(guilds)]
-pub async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
-    if let Some(call) = songbird::get(ctx)
+/// Stops everything
+#[command(slash_command, guild_only)]
+async fn stop(ctx: super::Context<'_>) -> anyhow::Result<()> {
+    if let Some(call) = songbird::get(ctx.serenity_context())
         .await
-        .expect("Songbird not initialized")
-        .get(msg.guild_id.unwrap())
+        .context("Songbird not initialized")?
+        .get(ctx.guild_id().unwrap())
     {
         call.lock().await.stop();
         Ok(())
     } else {
-        Err("Not in a voice channel".into())
+        Err(anyhow::anyhow!("Not in a voice channel"))
     }
 }
 
-#[command]
-#[min_args(1)]
-#[description("Play a saved sfx!")]
-#[usage("part of name")]
-#[example("wow")]
-#[only_in(guilds)]
-pub async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    play_impl(ctx, msg, args).await
+/// List the available sfx files
+#[command(slash_command, guild_only)]
+async fn list(ctx: super::Context<'_>) -> anyhow::Result<()> {
+    let sounds = fs::read_dir(sfx_path::<&str, _>(None).await?).map(|x| {
+        let mut files = x
+            .filter_map(Result::ok)
+            .map(|x| String::from(x.path().as_path().file_name().unwrap().to_string_lossy()))
+            .map(unicase::UniCase::new)
+            .collect::<Vec<_>>();
+        files.sort_unstable();
+        files
+    });
+    match sounds {
+        Ok(sounds) if !sounds.is_empty() => {
+            util::paginate(
+                ctx,
+                &sounds
+                    .iter()
+                    .chunks(30)
+                    .into_iter()
+                    .map(|x| {
+                        let f = x.collect::<Vec<_>>();
+                        let c1 = f[0].to_uppercase().chars().next().unwrap();
+                        let c2 = f[f.len() - 1].to_uppercase().chars().next().unwrap();
+                        CreateEmbed::new().title("List of sfx:").field(
+                            format!("{c1}-{c2}"),
+                            f.iter().fold(String::new(), |acc, x| acc + "\n" + x),
+                            true,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .await?
+        }
+        Err(_) | Ok(_) => {
+            ctx.say("No files :(").await?;
+        }
+    };
+    Ok(())
 }
 
-#[command]
-#[aliases("play")]
-#[min_args(1)]
-#[description("Play a saved sfx!")]
-#[usage("part of name")]
-#[example("wow")]
-#[only_in(guilds)]
-pub async fn s(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    play_impl(ctx, msg, args).await
+/// Saves a new sfx file
+#[command(slash_command, guild_only)]
+async fn add(ctx: super::Context<'_>) -> anyhow::Result<()> {
+    let command = match ctx {
+        poise::Context::Application(application_context) => application_context.interaction,
+        poise::Context::Prefix(_) => unreachable!(),
+    };
+    for opt in command.data.options().iter() {
+        let attachment = match opt.value {
+            serenity::all::ResolvedValue::Attachment(attachment) => attachment,
+            _ => continue,
+        };
+        if attachment.size > 1024 * 1024 {
+            return Err(anyhow::anyhow!(
+                "File size too high, please keep it under 1Mb."
+            ));
+        }
+        let bytes = attachment.download().await?;
+        let path = sfx_path(&attachment.filename).await?;
+        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+        file.write_all(&bytes)?;
+        ctx.say("File added!").await?;
+    }
+    Ok(())
 }
 
-async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+/// Remove an sfx file
+#[command(slash_command, guild_only)]
+async fn delete(ctx: super::Context<'_>, query: String) -> anyhow::Result<()> {
+    let file = find_file(&query).await?;
+    ctx.send(CreateReply::default().attachment(
+        CreateAttachment::file(&File::open(&file).await?, file.display().to_string()).await?,
+    ))
+    .await?;
+    fs::remove_file(&file)?;
+    Ok(())
+}
+
+/// Download an sfx file
+#[command(slash_command, guild_only)]
+async fn download(ctx: super::Context<'_>, query: String) -> anyhow::Result<()> {
+    let file = find_file(&query).await?;
+    ctx.send(CreateReply::default().attachment(
+        CreateAttachment::file(&File::open(&file).await?, file.display().to_string()).await?,
+    ))
+    .await?;
+    Ok(())
+}
+
+/// Show the stats of the most played sfx
+#[command(slash_command, guild_only)]
+async fn stats(ctx: super::Context<'_>) -> anyhow::Result<()> {
+    let mut stats = SFX_STATS
+        .load()
+        .await?
+        .0
+        .iter()
+        .map(|(k, v)| (k.clone(), *v))
+        .collect::<Vec<(String, usize)>>();
+    ctx.send(CreateReply::default().embed({
+        stats.sort_unstable_by_key(|(_, v)| *v);
+        CreateEmbed::new()
+            .title("Stats")
+            .fields(stats.iter().chunks(12).into_iter().map(|x| {
+                let f = x.collect::<Vec<_>>();
+                let c1 = f[0].1.to_string();
+                let c2 = f[f.len() - 1].1.to_string();
+                (
+                    format!("{}-{}", c1, c2),
+                    f.iter().fold(String::new(), |acc, x| {
+                        acc + "\n"
+                            + &format!(
+                                "{:<5}{}",
+                                x.1,
+                                Path::new(&x.0).file_name().unwrap().to_string_lossy()
+                            )
+                    }),
+                    true,
+                )
+            }))
+    }))
+    .await?;
+    Ok(())
+}
+
+async fn play_impl(ctx: super::Context<'_>, search_string: &str) -> anyhow::Result<()> {
     let mut file = PathBuf::new();
-    play_sfx(ctx, msg, || async {
-        file = find_file(&args).await?;
-        msg.channel_id
-            .say(&ctx, &format!("Playing {}", file.display()))
-            .await?;
+    play_sfx(ctx, || async {
+        file = find_file(search_string).await?;
+        ctx.say(&format!("Playing {}", file.display())).await?;
         tracing::info!("Playing sfx: {:?}", file);
         Ok(songbird::input::File::new(file.clone()).into())
     })
@@ -143,182 +243,46 @@ async fn play_impl(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     Ok(())
 }
 
-pub async fn play_sfx<F, Fut>(ctx: &Context, msg: &Message, audio_source: F) -> CommandResult
+pub(crate) async fn play_sfx<F, Fut>(ctx: super::Context<'_>, audio_source: F) -> anyhow::Result<()>
 where
     F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<Input, Box<dyn Error + Send + Sync>>>,
+    Fut: Future<Output = anyhow::Result<Input>>,
 {
-    let guild_id = msg.guild_id.ok_or("Not in a guild")?;
+    let guild_id = ctx.guild_id().context("Not in a guild")?;
 
-    let call_lock = util::join_or_get_call(ctx, guild_id, msg.author.id).await?;
+    let call_lock = util::join_or_get_call(ctx, guild_id, ctx.author().id).await?;
     let audio = audio_source().await?;
     call_lock.lock().await.play_input(audio);
 
-    let data = ctx.data.read().await;
-    let dm = get!(> data, DaemonManagerKey);
+    let data = ctx.data();
+    let mut dm = data.daemons.lock().await;
     let id = dm
-        .lock()
-        .await
         .add_daemon(LeaveVoice {
             when: Utc::now()
                 .checked_add_signed(Duration::minutes(30))
                 .unwrap(),
             guild_id,
-            songbird: data.get::<songbird::SongbirdKey>().unwrap().clone(),
+            songbird: ctx
+                .serenity_context()
+                .data
+                .read()
+                .await
+                .get::<songbird::SongbirdKey>()
+                .unwrap()
+                .clone(),
         })
         .await;
 
-    let mut dm = dm.lock().await;
-    get!(> data, util::LeaveVoiceDaemons, lock)
+    data.leave_voice
+        .lock()
+        .await
         .set(&mut dm, guild_id, id)
         .await;
 
     Ok(())
 }
 
-#[command]
-#[description("List the available sfx files")]
-#[usage("")]
-async fn list(ctx: &Context, msg: &Message) -> CommandResult {
-    let sounds = fs::read_dir(sfx_path::<&str, _>(None).await?).map(|x| {
-        let mut files = x
-            .filter_map(Result::ok)
-            .map(|x| String::from(x.path().as_path().file_name().unwrap().to_string_lossy()))
-            .map(unicase::UniCase::new)
-            .collect::<Vec<_>>();
-        files.sort_unstable();
-        files
-    });
-    msg.channel_id
-        .send_message(
-            &ctx.http,
-            CreateMessage::new().embed({
-                let mut e = CreateEmbed::new();
-                e = e.title("List of sfx:");
-                match &sounds {
-                    Ok(files) if !files.is_empty() => {
-                        e.fields(files.iter().chunks(12).into_iter().map(|x| {
-                            let f = x.collect::<Vec<_>>();
-                            let c1 = f[0].to_uppercase().chars().next().unwrap();
-                            let c2 = f[f.len() - 1].to_uppercase().chars().next().unwrap();
-                            (
-                                [c1, '-', c2].iter().collect::<String>(),
-                                f.iter().fold(String::new(), |acc, x| acc + "\n" + x),
-                                true,
-                            )
-                        }))
-                    }
-                    Err(_) | Ok(_) => e.description("**No files :(**"),
-                }
-            }),
-        )
-        .await?;
-    Ok(())
-}
-
-#[command]
-#[checks("is_friend")]
-#[description("Saves a new sfx file")]
-#[usage("{Attatchment}")]
-async fn add(ctx: &Context, msg: &Message) -> CommandResult {
-    for attachment in msg.attachments.iter() {
-        if attachment.size > 1024 * 1024 {
-            return Err("File size too high, please keep it under 1Mb."
-                .to_string()
-                .into());
-        }
-        let bytes = attachment.download().await?;
-        let path = sfx_path(&attachment.filename).await?;
-        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-        file.write_all(&bytes)?;
-        msg.channel_id.say(&ctx, "File added!").await?;
-    }
-    Ok(())
-}
-
-#[command]
-#[min_args(1)]
-#[checks("is_friend")]
-#[description("Remove an sfx file")]
-#[usage("part of name")]
-#[example("wow")]
-async fn delete(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let file = find_file(&args).await?;
-    msg.channel_id
-        .send_message(
-            &ctx,
-            CreateMessage::new().add_file(
-                CreateAttachment::file(&File::open(&file).await?, file.display().to_string())
-                    .await?,
-            ),
-        )
-        .await?;
-    fs::remove_file(&file)?;
-    Ok(())
-}
-
-#[command]
-#[aliases("retreive", "retrieve")]
-#[min_args(1)]
-#[description("Upload an sfx file to discord")]
-#[usage("part of name")]
-#[example("wow")]
-async fn get(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let file = find_file(&args).await?;
-    msg.channel_id
-        .send_message(
-            &ctx,
-            CreateMessage::new().add_file(
-                CreateAttachment::file(&File::open(&file).await?, file.display().to_string())
-                    .await?,
-            ),
-        )
-        .await?;
-    Ok(())
-}
-
-#[command]
-#[description("Show the stats of the most played sfx")]
-#[usage("")]
-async fn stats(ctx: &Context, msg: &Message) -> CommandResult {
-    let mut stats = SFX_STATS
-        .load()
-        .await?
-        .0
-        .iter()
-        .map(|(k, v)| (k.clone(), *v))
-        .collect::<Vec<(String, usize)>>();
-    msg.channel_id
-        .send_message(
-            &ctx,
-            CreateMessage::new().embed({
-                stats.sort_unstable_by_key(|(_, v)| *v);
-                CreateEmbed::new()
-                    .title("Stats")
-                    .fields(stats.iter().chunks(12).into_iter().map(|x| {
-                        let f = x.collect::<Vec<_>>();
-                        let c1 = f[0].1.to_string();
-                        let c2 = f[f.len() - 1].1.to_string();
-                        (
-                            format!("{}-{}", c1, c2),
-                            f.iter().fold(String::new(), |acc, x| {
-                                acc + "\n"
-                                    + &format!(
-                                        "{:<5}{}",
-                                        x.1,
-                                        Path::new(&x.0).file_name().unwrap().to_string_lossy()
-                                    )
-                            }),
-                            true,
-                        )
-                    }))
-            }),
-        )
-        .await?;
-    Ok(())
-}
-
-async fn find_file(search_string: &Args) -> io::Result<PathBuf> {
+async fn find_file(search_string: &str) -> io::Result<PathBuf> {
     use std::io::{Error, ErrorKind::NotFound};
     let (search, vec) = fs::read_dir(sfx_path::<&str, _>(None).await?)?
         .filter_map(Result::ok)
@@ -331,7 +295,6 @@ async fn find_file(search_string: &Args) -> io::Result<PathBuf> {
                 (search, vec)
             },
         );
-    let search_string = search_string.rest();
     match search.search(search_string).first() {
         Some(&i) => Ok(vec[i].path()),
         None => Err(Error::new(

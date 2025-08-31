@@ -11,7 +11,7 @@ static USER_PREFS: GlobalDatabase<HashMap<UserId, UserPrefs>> =
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct UserPrefs {
     #[serde(default)]
-    pub timezone_offset: Option<i64>,
+    pub timezone_offset: Option<i8>,
 }
 
 pub async fn get(u: UserId) -> io::Result<Option<UserPrefs>> {

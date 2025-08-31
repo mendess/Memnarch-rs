@@ -119,7 +119,7 @@ fn bday_map() -> &'static BdayMap {
     })
 }
 
-pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
+pub async fn initialize(d: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     let dm = d.clone();
     d.lock()
         .await

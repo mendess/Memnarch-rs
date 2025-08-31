@@ -1,19 +1,26 @@
-pub mod custom;
-pub mod general;
-pub mod moderation;
-pub mod owner;
-pub mod quotes;
+mod bday;
+mod global;
+mod moderation;
+mod mtg_spoilers;
+mod quotes;
 pub mod sfx;
-pub mod tts;
+mod tts;
+
+type Context<'c> = poise::Context<'c, super::Bot, anyhow::Error>;
+type Command = poise::Command<super::Bot, anyhow::Error>;
 
 pub mod command_groups {
     use super::*;
-    pub use custom::CUSTOM_GROUP;
-    pub use general::BDAYS_GROUP;
-    pub use general::GENERAL_GROUP;
-    pub use moderation::MODERATION_GROUP;
-    pub use owner::OWNER_GROUP;
-    pub use quotes::QUOTES_GROUP;
-    pub use sfx::{SFX_GROUP, SFXALIASES_GROUP};
-    pub use tts::TTS_GROUP;
+
+    pub use global::commands as global;
+
+    // 797882422884433940
+    pub use moderation::commands as moderation;
+    pub use self::mtg_spoilers::commands as mtg_spoilers;
+
+    // 136220994812641280
+    pub use quotes::commands as quotes;
+    pub use sfx::sfx;
+    pub use tts::tts;
+    pub use bday::bday;
 }

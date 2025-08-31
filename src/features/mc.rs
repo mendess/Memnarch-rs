@@ -29,7 +29,7 @@ static CHANNELS: GlobalDatabase<HashMap<ChannelId, TrackedServer>> =
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct McChecker(bool);
 
-pub async fn initialize(manager: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
+pub async fn initialize(manager: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     manager.lock().await.add_daemon(McChecker(false)).await;
     Ok(())
 }

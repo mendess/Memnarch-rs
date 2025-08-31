@@ -9,13 +9,13 @@ anyhow = "1"
 chrono = "0.4"
 constcat = "0.5"
 futures = "0.3"
-git-describe = { git = "https://github.com/mendess/git-describe", version = "0.2" }
 html-escape = "0.2"
 itertools = "0.10"
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 nom = "7"
 nom-regex = "0.2"
 num-traits = "0.2.17"
+poise = "0.6.1"
 rand = "0.8"
 regex = "1"
 reqwest = { version = "0.11", features = ["json"] }

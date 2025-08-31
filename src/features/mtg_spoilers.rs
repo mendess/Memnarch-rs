@@ -147,7 +147,14 @@ async fn create_thread(ctx: &Context, i: &Interaction) {
                         .and_then(|i| i.png.or(i.large).or(i.normal).or(i.small).or(i.border_crop)),
                     scryfall_uri: Some(card.scryfall_uri),
                     rest: match card.card_faces {
-                        Some(faces) if !faces.is_empty() => todo!(),
+                        Some(faces) if !faces.is_empty() => faces
+                            .into_iter()
+                            .map(|f| CardText {
+                                name: Some(f.name),
+                                type_line: f.type_line,
+                                text: f.oracle_text,
+                            })
+                            .collect(),
                         _ => {
                             vec![CardText {
                                 name: Some(card.name),
@@ -283,7 +290,7 @@ async fn delete_discuss_button(ctx: &Context, t: &GuildChannel) {
     }
 }
 
-pub async fn initialize(d: &mut Arc<Mutex<DaemonManager>>) -> io::Result<()> {
+pub async fn initialize(d: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     tokio::fs::create_dir_all(paths::BASE).await?;
     d.lock().await.add_daemon(SpoilerChecker::default()).await;
     subscribe::<events::InteractionCreate, _>(|ctx, i| {

@@ -1,44 +1,32 @@
 use futures::StreamExt;
 use serenity::{
-    all::{EditMessage, Mention},
-    framework::standard::{
-        Args, CommandResult,
-        macros::{command, group},
-    },
-    model::{channel::Message, prelude::ReactionType},
-    prelude::*,
+    all::{MessageId, RoleId},
+    model::prelude::ReactionType,
 };
 
-use crate::util::MentionExt;
+use poise::{CreateReply, command};
 
-#[group]
-#[commands(add_reaction_role, add_base_role)]
-struct Moderation;
+pub fn commands() -> impl Iterator<Item = super::Command> {
+    [add_reaction_role(), add_role_to_all_members()].into_iter()
+}
 
-#[command]
-#[min_args(2)]
-#[required_permissions(ADMINISTRATOR)]
-async fn add_reaction_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let target = match &msg.referenced_message {
-        Some(target) => target,
-        None => {
-            msg.channel_id
-                .say(
-                    ctx,
-                    "must reply to the message you want the reaction roles to be added to",
-                )
-                .await?;
-            return Ok(());
-        }
-    };
-    let emoji = args.single::<ReactionType>()?;
-    let role = args.single::<Mention>()?.into_role()?;
-
+/// Add a new role to be react added.
+#[command(
+    slash_command,
+    guild_only,
+    default_member_permissions = "ADMINISTRATOR"
+)]
+async fn add_reaction_role(
+    ctx: super::Context<'_>,
+    emoji: ReactionType,
+    role: RoleId,
+    msg_id: MessageId,
+) -> anyhow::Result<()> {
     crate::moderation::reaction_roles::reaction_role_add(
         ctx,
-        msg.guild_id.unwrap(),
-        msg.channel_id,
-        target.id,
+        ctx.guild_id().unwrap(),
+        ctx.channel_id(),
+        msg_id,
         emoji,
         role,
     )
@@ -46,13 +34,15 @@ async fn add_reaction_role(ctx: &Context, msg: &Message, mut args: Args) -> Comm
     Ok(())
 }
 
-#[command]
-#[min_args(1)]
-#[required_permissions(ADMINISTRATOR)]
-async fn add_base_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let role = args.single::<Mention>()?.into_role()?;
-    let gid = msg.guild_id.expect("should be used in a guild");
-    let mut notif = msg.channel_id.say(ctx, "added role to:\n").await?;
+/// Add [role] to all users.
+#[command(
+    slash_command,
+    guild_only,
+    default_member_permissions = "ADMINISTRATOR"
+)]
+async fn add_role_to_all_members(ctx: super::Context<'_>, role: RoleId) -> anyhow::Result<()> {
+    let gid = ctx.guild_id().expect("should be used in a guild");
+    let notif = ctx.say("added role to:\n").await?;
     let members = gid.members_iter(ctx);
     let mut member_names = vec![];
     tokio::pin!(members);
@@ -64,7 +54,7 @@ async fn add_base_role(ctx: &Context, msg: &Message, mut args: Args) -> CommandR
             if let Err(e) = notif
                 .edit(
                     ctx,
-                    EditMessage::new().content({
+                    CreateReply::default().content({
                         let mut content = String::new();
                         let mut count = 0;
                         let i = member_names

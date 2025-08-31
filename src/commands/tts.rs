@@ -1,34 +1,21 @@
-use crate::commands::sfx::STOP_COMMAND;
+use poise::command;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serenity::{
-    framework::standard::{
-        Args, CommandResult,
-        macros::{command, group},
-    },
-    model::channel::Message,
-    prelude::*,
-};
-use std::{error::Error, sync::OnceLock};
+use std::sync::OnceLock;
 use tokio::sync::RwLock;
 
-#[group]
-#[commands(say, save, config, list, stop)]
-#[prefix("tts")]
-#[default_command(say)]
-struct Tts;
+#[command(slash_command, guild_only, subcommands("say", "config", "download"))]
+pub async fn tts(_: super::Context<'_>) -> anyhow::Result<()> {
+    Ok(())
+}
 
-#[command]
-#[min_args(1)]
-#[description("play a tts message over voice")]
-#[usage("text")]
-#[example("pogchamp")]
-pub async fn say(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    super::sfx::play_sfx(ctx, msg, || async {
-        let text = args.rest();
+/// play a tts message over voice
+#[command(slash_command, guild_only)]
+pub async fn say(ctx: super::Context<'_>, text: String) -> anyhow::Result<()> {
+    super::sfx::play_sfx(ctx, || async {
         let service = current_service().read().await;
         let voice = current_voice().read().await;
-        let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
+        let tts_link = generate_tts(Some(&*service), Some(&*voice), &text).await?;
         Ok(songbird::input::YoutubeDl::new(reqwest::Client::new(), tts_link).into())
     })
     .await
@@ -44,22 +31,14 @@ fn current_voice() -> &'static RwLock<String> {
     CURRENT_VOICE.get_or_init(|| RwLock::new(String::from("Brian")))
 }
 
-#[command]
-#[min_args(2)]
-#[description("change tts defaults")]
-#[usage("Polly Brian")]
-pub async fn config(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let service = args.single::<String>()?;
-    let voice = args.single::<String>()?;
-    msg.channel_id
-        .say(
-            &ctx,
-            format!(
-                "Defaults change to service = {} and voice = {}",
-                service, voice,
-            ),
-        )
-        .await?;
+/// change tts defaults
+#[command(slash_command)]
+pub async fn config(ctx: super::Context<'_>, service: String, voice: String) -> anyhow::Result<()> {
+    ctx.say(format!(
+        "Defaults change to service = {} and voice = {}",
+        service, voice,
+    ))
+    .await?;
     *current_service().write().await = service;
     *current_voice().write().await = voice;
     Ok(())
@@ -69,7 +48,7 @@ async fn generate_tts(
     service: Option<&str>,
     voice: Option<&str>,
     text: &str,
-) -> Result<String, Box<dyn Error + Send + Sync + 'static>> {
+) -> anyhow::Result<String> {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     let client = CLIENT.get_or_init(Client::new);
 
@@ -89,27 +68,17 @@ async fn generate_tts(
             tracing::info!("Playing {}", speak_url);
             Ok(speak_url)
         }
-        TtsResponse::Error { error } => Err(error.into()),
+        TtsResponse::Error { error } => Err(anyhow::anyhow!("failed to generate tts: {error}")),
     }
 }
 
-#[command]
-#[min_args(1)]
-#[description("generates a tss audio file")]
-#[usage("text")]
-#[example("pogchamp")]
-pub async fn save(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let text = args.rest();
+/// generates a tss audio file
+#[command(slash_command)]
+pub async fn download(ctx: super::Context<'_>, text: String) -> anyhow::Result<()> {
     let service = current_service().read().await;
     let voice = current_voice().read().await;
-    let tts_link = generate_tts(Some(&*service), Some(&*voice), text).await?;
-    msg.channel_id.say(&ctx, tts_link).await?;
-    Ok(())
-}
-
-#[command]
-pub async fn list(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.channel_id.say(&ctx, "not implemented yet").await?;
+    let tts_link = generate_tts(Some(&*service), Some(&*voice), &text).await?;
+    ctx.say(tts_link).await?;
     Ok(())
 }
 

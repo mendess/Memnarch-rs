@@ -1,38 +1,16 @@
-#![expect(deprecated)]
-
 use ::daemons::ControlFlow;
 use anyhow::Context as _;
-use futures::{FutureExt, StreamExt, stream};
-use memnarch_rs::features::{
-    self, birthdays, custom_commands, mc, moderation, mtg_spoilers, music_channel_broadcast,
-    reminders,
-};
-use memnarch_rs::{
-    commands::{command_groups::*, sfx::util::LeaveVoiceDaemons},
-    util::consts::FILES_DIR,
-};
+use futures::FutureExt;
+use memnarch_rs::commands::command_groups;
+use memnarch_rs::features;
 use pubsub::events;
-use serenity::all::standard::Configuration;
-use serenity::all::{CreateMessage, Http};
-use serenity::{
-    framework::standard::{
-        Args, CommandError, CommandGroup, CommandResult, DispatchError, HelpOptions,
-        StandardFramework, help_commands,
-        macros::{help, hook},
-    },
-    model::{
-        channel::Message,
-        id::{ChannelId, GuildId, UserId},
-    },
-    prelude::*,
-};
+use serenity::all::Http;
+use serenity::{model::id::UserId, prelude::*};
 use songbird::SerenityInit;
 use std::{
-    collections::HashSet,
     fs::{DirBuilder, OpenOptions},
     io::{self, Read, Write},
     path::PathBuf,
-    sync::Arc,
     time::Duration,
 };
 use tokio::time::timeout;
@@ -40,12 +18,12 @@ use tracing::Metadata;
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt;
 
-use memnarch_rs::util::daemons::{DaemonManager, DaemonManagerKey};
+use memnarch_rs::{Bot, in_files};
 use tracing_subscriber::EnvFilter;
 
 fn load_config() -> std::io::Result<memnarch_rs::Config> {
-    DirBuilder::new().recursive(true).create(FILES_DIR)?;
-    let config_file_path = [FILES_DIR, "config.toml"].iter().collect::<PathBuf>();
+    DirBuilder::new().recursive(true).create(in_files!())?;
+    let config_file_path = in_files!("config.toml");
     let mut config_str = String::new();
     let mut file = OpenOptions::new()
         .read(true)
@@ -74,12 +52,6 @@ fn load_config() -> std::io::Result<memnarch_rs::Config> {
         }
         config
     }))
-}
-
-pub struct UpdateNotify;
-
-impl TypeMapKey for UpdateNotify {
-    type Value = ChannelId;
 }
 
 fn config_logger() {
@@ -120,16 +92,6 @@ fn config_logger() {
     .unwrap();
 }
 
-macro_rules! try_init {
-    ($d:expr, $m:ident) => {
-        if let std::result::Result::Err(e) = $m::initialize(&mut $d).await {
-            tracing::error!("Failed to initialize {}: {:?}", stringify!($m), e);
-        } else {
-            tracing::info!("{} initialized!", stringify!($m));
-        }
-    };
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     println!(
@@ -142,91 +104,32 @@ async fn main() -> anyhow::Result<()> {
         "
     );
     config_logger();
-    if std::env::args().nth(1).as_deref() == Some("--version") {
-        println!("{}", git_describe::git_describe!());
-        return Ok(());
-    }
     let config = load_config().context("loading config")?;
     let http = Http::new(&config.token);
-    let (owners, bot_id) = match http.get_current_application_info().await {
-        Ok(info) => {
-            let mut owners = HashSet::new();
-            if let Some(team) = info.team {
-                owners.insert(team.owner_user_id);
-            } else {
-                owners.insert(info.owner.expect("cache should be enabled").id);
-            }
-            match http.get_current_user().await {
-                Ok(bot_id) => (owners, bot_id.id),
-                Err(why) => {
-                    tracing::error!("Could not access current user: {why}");
-                    (owners, UserId::new(352881326044741644))
-                }
-            }
-        }
+    let bot_id = match http.get_current_user().await {
+        Ok(bot_id) => bot_id.id,
         Err(why) => {
-            tracing::error!("Could not access application info: {why}");
-            (
-                [UserId::new(98500250540478464)].into_iter().collect(),
-                UserId::new(352881326044741644),
-            )
+            tracing::error!("Could not access current user: {why}");
+            UserId::new(352881326044741644)
         }
     };
 
     let mut client = Client::builder(&config.token, GatewayIntents::all())
-        .framework({
-            let framework = StandardFramework::new();
-            framework.configure(
-                Configuration::new()
-                    .prefix("|")
-                    .no_dm_prefix(true)
-                    .on_mention(Some(bot_id))
-                    .owners(owners),
-            );
-            framework
-                .after(after)
-                .on_dispatch_error(on_dispatch_error)
-                .group(&GENERAL_GROUP)
-                .group(&BDAYS_GROUP)
-                .group(&OWNER_GROUP)
-                .group(&QUOTES_GROUP)
-                .group(&CUSTOM_GROUP)
-                .group(&SFX_GROUP)
-                .group(&SFXALIASES_GROUP)
-                .group(&TTS_GROUP)
-                .group(&MODERATION_GROUP)
-                .help(&MY_HELP)
-        })
+        .framework(
+            poise::Framework::builder()
+                .options(poise::FrameworkOptions {
+                    post_command: |c| after(c).boxed(),
+                    on_error: |e| on_dispatch_error(e).boxed(),
+                    ..Default::default()
+                })
+                .setup(|ctx, ready, _framework| post_init_bot(ctx, ready).boxed())
+                .build(),
+        )
         .register_songbird()
-        .type_map_insert::<LeaveVoiceDaemons>(Default::default())
         .event_handler(pubsub::event_handler::Handler::new(bot_id))
         .await
         .expect("Err creating client");
-    let mut daemon_manager =
-        DaemonManager::spawn(Arc::new((client.cache.clone(), client.http.clone())));
-    reminders::load_reminders(&mut daemon_manager)
-        .await
-        .context("loading reminders")?;
-    moderation::reaction_roles::initialize().await?;
-    music_channel_broadcast::initialize().await;
-    custom_commands::initialize().await;
-    let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
-    try_init!(daemon_manager, birthdays);
-    try_init!(daemon_manager, mtg_spoilers);
-    try_init!(daemon_manager, mc);
-    {
-        let mut data = client.data.write().await;
-        if let Some(id) = std::env::args()
-            .skip_while(|x| x != "-r")
-            .nth(1)
-            .and_then(|id| id.parse::<ChannelId>().ok())
-        {
-            data.insert::<UpdateNotify>(id);
-        }
-        data.insert::<DaemonManagerKey>(daemon_manager);
-        data.insert::<memnarch_rs::Config>(config);
-    }
-    pubsub::subscribe::<events::Ready, _>(|ctx, ready| {
+    pubsub::subscribe::<events::Ready, _>(|_ctx, ready| {
         use futures::prelude::*;
         async move {
             println!(
@@ -240,54 +143,10 @@ async fn main() -> anyhow::Result<()> {
                 "Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot\n",
                 ready.user.id
             );
-            if let Some(id) = ctx.data.write().await.remove::<UpdateNotify>()
-                && let Err(e) = id
-                    .send_message(&ctx, CreateMessage::new().content("Updated successfully!"))
-                    .await
-            {
-                tracing::error!("Couldn't send update notification: {}", e);
-            }
             ControlFlow::BREAK
         }
         .boxed()
     })
-    .await;
-    pubsub::subscribe::<events::VoiceStateUpdate, _>(
-        |ctx, events::VoiceStateUpdate { new, .. }| {
-            async move {
-                // Disconnect channel of mirrodin
-                if let (Some(gid @ 352399774818762759), Some(id @ 707561909846802462)) = (
-                    new.guild_id.map(|i| i.get()),
-                    new.channel_id.map(|i| i.get()),
-                ) {
-                    async fn f(id: ChannelId, gid: GuildId, ctx: &Context) -> anyhow::Result<()> {
-                        let c = id.to_channel(ctx).await.and_then(|c| {
-                            c.guild()
-                                .ok_or(serenity::Error::Other("Not a guild channel"))
-                        })?;
-                        stream::iter(c.members(ctx)?)
-                            .for_each(|mut m| async move {
-                                let name = std::mem::take(&mut m.user.name);
-                                if let Err(e) = gid.disconnect_member(ctx, m).await {
-                                    tracing::error!(
-                                    "Failed to disconnect member {} from disconnect channel: {}",
-                                    name,
-                                    e
-                                );
-                                }
-                            })
-                            .await;
-                        Ok(())
-                    }
-                    if let Err(e) = f(id.into(), gid.into(), ctx).await {
-                        tracing::error!("Failed to disconnect user: {}", e);
-                    }
-                }
-                ControlFlow::CONTINUE
-            }
-            .boxed()
-        },
-    )
     .await;
     pubsub::subscribe::<events::GuildCreate, _>(|_, events::GuildCreate { guild, .. }| {
         async move {
@@ -319,45 +178,54 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[help]
-#[max_levenshtein_distance(5)]
-#[lacking_permissions("hide")]
-#[wrong_channel("hide")]
-#[lacking_conditions("hide")]
-#[lacking_ownership("hide")]
-#[strikethrough_commands_tip_in_guild(" ")]
-#[strikethrough_commands_tip_in_dm(" ")]
-#[embed_success_colour("#71A5B0")]
-#[indention_prefix("- ")]
-async fn my_help(
-    context: &Context,
-    msg: &Message,
-    args: Args,
-    help_options: &'static HelpOptions,
-    groups: &[&'static CommandGroup],
-    owners: HashSet<UserId>,
-) -> CommandResult {
-    let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
-    Ok(())
+async fn post_init_bot(
+    ctx: &serenity::all::Context,
+    ready: &serenity::all::Ready,
+) -> anyhow::Result<Bot> {
+    poise::builtins::register_globally(ctx, &command_groups::global().collect::<Vec<_>>()).await?;
+
+    for g in &ready.guilds {
+        if g.id.get() == 136220994812641280 || g.id.get() == 352399774818762759 {
+            poise::builtins::register_in_guild(
+                ctx,
+                &command_groups::quotes()
+                    .chain([
+                        command_groups::sfx(),
+                        command_groups::tts(),
+                        command_groups::bday(),
+                    ])
+                    .collect::<Vec<_>>(),
+                g.id,
+            )
+            .await?
+        }
+        if g.id.get() == 797882422884433940 || g.id.get() == 352399774818762759 {
+            poise::builtins::register_in_guild(
+                ctx,
+                &command_groups::moderation()
+                    .chain(command_groups::mtg_spoilers())
+                    .collect::<Vec<_>>(),
+                g.id,
+            )
+            .await?
+        }
+        tracing::info!("registered commands to {}", g.id);
+    }
+    Bot::init(ctx).await
 }
 
-#[hook]
-async fn after(ctx: &Context, msg: &Message, cmd_name: &str, error: Result<(), CommandError>) {
+async fn after(ctx: poise::Context<'_, Bot, anyhow::Error>) {
+    tracing::info!(cmd = ?ctx.command().name, author = ?ctx.author().name, "processed command");
+}
+
+async fn on_dispatch_error(error: poise::FrameworkError<'_, Bot, anyhow::Error>) {
     match error {
-        Ok(()) => {
-            tracing::info!("Processed command '{}' for user '{}'", cmd_name, msg.author)
+        poise::FrameworkError::Command { error, ctx, .. } => {
+            let _ = ctx.say(error.to_string()).await;
+            tracing::error!(cmd = ?ctx.command().name, ?error, "Command failed");
         }
-        Err(why) => {
-            let _ = msg.channel_id.say(ctx, why.to_string()).await;
-            tracing::error!("Command '{}' failed with {:?}", cmd_name, why)
+        error => {
+            tracing::error!(?error, "framework error");
         }
     }
-}
-
-#[hook]
-async fn on_dispatch_error(ctx: &Context, msg: &Message, e: DispatchError, command_name: &str) {
-    msg.channel_id
-        .say(ctx, format!("failed to dispatch {command_name}. {:?}", e))
-        .await
-        .expect("Couldn't communicate dispatch error");
 }

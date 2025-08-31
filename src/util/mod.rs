@@ -1,6 +1,5 @@
 pub mod consts;
 pub mod daemons;
-pub mod permissions;
 
 use futures::future::TryFutureExt;
 use serenity::{

@@ -1,6 +1,4 @@
-#![warn(unused_crate_dependencies)]
 #![warn(unused_features)]
-#![expect(deprecated)]
 
 pub mod commands;
 pub mod features;
@@ -10,22 +8,14 @@ pub mod util;
 use toml as _;
 use tracing_subscriber as _;
 
-use features::{birthdays, moderation, mtg_spoilers, reminders};
+use features::{birthdays, moderation, mtg_spoilers, quotes, reminders};
 
 use serde::{Deserialize, Serialize};
-use serenity::{
-    framework::standard::{
-        Args, CommandError, CommandGroup, CommandResult, DispatchError, HelpOptions, help_commands,
-        macros::{help, hook},
-    },
-    model::{
-        channel::Message,
-        id::{ChannelId, UserId},
-    },
-    prelude::*,
-};
+use serenity::{model::id::ChannelId, prelude::*};
 
-use std::collections::HashSet;
+use crate::{commands::sfx::util::LeaveVoiceDaemons, util::daemons::DaemonManager};
+use anyhow::Context as _;
+use std::sync::Arc;
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -42,51 +32,44 @@ impl Config {
     }
 }
 
-impl TypeMapKey for Config {
-    type Value = Self;
+#[derive(Debug)]
+pub struct Bot {
+    pub daemons: Arc<Mutex<DaemonManager>>,
+    pub leave_voice: Mutex<LeaveVoiceDaemons>,
+    pub quotes: Mutex<quotes::QuoteManager>,
 }
 
-#[help]
-#[max_levenshtein_distance(5)]
-#[lacking_permissions("hide")]
-#[wrong_channel("hide")]
-#[lacking_conditions("hide")]
-#[lacking_ownership("hide")]
-#[strikethrough_commands_tip_in_guild(" ")]
-#[strikethrough_commands_tip_in_dm(" ")]
-#[embed_success_colour("#71A5B0")]
-#[indention_prefix("- ")]
-async fn my_help(
-    context: &Context,
-    msg: &Message,
-    args: Args,
-    help_options: &'static HelpOptions,
-    groups: &[&'static CommandGroup],
-    owners: HashSet<UserId>,
-) -> CommandResult {
-    let _ = help_commands::with_embeds(context, msg, args, help_options, groups, owners).await;
-    Ok(())
+macro_rules! try_init {
+    ($d:expr, $($m:ident)::*) => {
+        if let std::result::Result::Err(e) = $($m)::*::initialize(&mut $d).await {
+            tracing::error!("Failed to initialize {}: {:?}", stringify!($($m)::*), e);
+        } else {
+            tracing::info!("{} initialized!", stringify!($($m)::*));
+        }
+    };
 }
 
-#[hook]
-async fn after(ctx: &Context, msg: &Message, cmd_name: &str, error: Result<(), CommandError>) {
-    match error {
-        Ok(()) => {
-            tracing::trace!("Processed command '{}' for user '{}'", cmd_name, msg.author)
-        }
-        Err(why) => {
-            let _ = msg.channel_id.say(ctx, why.to_string()).await;
-            tracing::trace!("Command '{}' failed with {:?}", cmd_name, why)
-        }
+impl Bot {
+    pub async fn init(ctx: &serenity::all::Context) -> anyhow::Result<Self> {
+        let mut daemon_manager =
+            DaemonManager::spawn(Arc::new((ctx.cache.clone(), ctx.http.clone())));
+        features::reminders::load_reminders(&mut daemon_manager)
+            .await
+            .context("loading reminders")?;
+        features::moderation::reaction_roles::initialize().await?;
+        features::music_channel_broadcast::initialize().await;
+        features::disconnect_channel::initialize().await;
+        let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
+        try_init!(daemon_manager, features::birthdays);
+        try_init!(daemon_manager, features::mtg_spoilers);
+        try_init!(daemon_manager, features::mc);
+
+        Ok(Bot {
+            daemons: daemon_manager,
+            leave_voice: Default::default(),
+            quotes: Mutex::new(quotes::QuoteManager::load().await?),
+        })
     }
-}
-
-#[hook]
-async fn on_dispatch_error(ctx: &Context, msg: &Message, e: DispatchError, command_name: &str) {
-    msg.channel_id
-        .say(ctx, format!("failed to dispatch {command_name}. {:?}", e))
-        .await
-        .expect("Couldn't communicate dispatch error");
 }
 
 #[macro_export]
