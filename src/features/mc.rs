@@ -3,11 +3,11 @@ use crate::{
     util::daemons::{DaemonManager, cache_and_http},
 };
 use anyhow::Context;
-use daemons::{ControlFlow, Daemon, async_trait};
+use daemons::{Daemon, async_trait};
 use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
 use serenity::all::{ChannelId, EditChannel, Http};
-use std::{collections::HashMap, io, net::ToSocketAddrs, sync::Arc, time::Duration};
+use std::{collections::HashMap, io, net::ToSocketAddrs, ops::ControlFlow, sync::Arc, time::Duration};
 use tokio::{sync::Mutex, time::timeout};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -38,13 +38,13 @@ pub async fn initialize(manager: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
 impl Daemon<true> for McChecker {
     type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
-    async fn run(&mut self, data: &Self::Data) -> ControlFlow {
+    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
         self.0 = true;
         let mut channels = match CHANNELS.load().await {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!(error = ?e, "failed to load mc-checker config");
-                return ControlFlow::CONTINUE;
+                return ControlFlow::Continue(());
             }
         };
         for (cid, server) in channels.iter_mut() {
@@ -52,7 +52,7 @@ impl Daemon<true> for McChecker {
                 tracing::error!(error = ?e, "failed to update server info")
             }
         }
-        ControlFlow::CONTINUE
+        ControlFlow::Continue(())
     }
 
     async fn interval(&self) -> Duration {

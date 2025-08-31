@@ -1,14 +1,10 @@
 use std::{
-    collections::BTreeMap,
-    io::{self, Write},
-    str::from_utf8,
-    sync::{Arc, OnceLock},
-    time::Duration,
+    collections::BTreeMap, io::{self, Write}, ops::ControlFlow, str::from_utf8, sync::{Arc, OnceLock}, time::Duration
 };
 
 use anyhow::Context;
 use chrono::{Datelike, Local, Month, NaiveDate, NaiveDateTime, NaiveTime, Utc};
-use daemons::{ControlFlow, Daemon};
+use daemons::Daemon;
 use futures::TryFutureExt;
 use json_db::multifile_db::{FileKeySerializer, MultifileDb};
 use serenity::{
@@ -305,13 +301,13 @@ fn deser(v: &[u8]) -> Result<BTreeMap<BDay, Vec<BDayBoy>>, Error> {
 
 type BDayChecker<F, Fut> = Cron<F, Fut, 0, 0, 30>;
 
-async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFlow {
+async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> daemons::ControlFlow {
     let today = BDay::from(Utc::now().naive_utc().date());
     let g = match bday_map().iter_guard().await {
         Ok(g) => g,
         Err(e) => {
             tracing::error!("failed to load bdays for checking: {e:?}");
-            return ControlFlow::CONTINUE;
+            return ControlFlow::Continue(());
         }
     };
     for (gid, guild) in g.iter() {
@@ -392,7 +388,7 @@ async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> ControlFl
             }
         }
     }
-    ControlFlow::CONTINUE
+    ControlFlow::Continue(())
 }
 
 struct UnBdayBoy {
@@ -404,7 +400,7 @@ struct UnBdayBoy {
 impl Daemon<false> for UnBdayBoy {
     type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
-    async fn run(&mut self, data: &Self::Data) -> ControlFlow {
+    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
         async fn _r(
             this: &mut UnBdayBoy,
             data: (&Arc<serenity::cache::Cache>, &Http),
@@ -429,7 +425,7 @@ impl Daemon<false> for UnBdayBoy {
         if let Err(e) = _r(self, (&data.0, &*data.1)).await {
             tracing::error!("failed to remove birthday role: {:?}", e)
         }
-        ControlFlow::BREAK
+        ControlFlow::Break(())
     }
 
     async fn name(&self) -> String {

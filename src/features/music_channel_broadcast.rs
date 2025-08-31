@@ -2,6 +2,7 @@ use std::{
     collections::HashSet,
     fmt::{self, Write},
     fs::Permissions,
+    ops::ControlFlow,
     os::unix::fs::PermissionsExt,
     sync::{LazyLock, OnceLock},
 };
@@ -9,7 +10,6 @@ use std::{
 use anyhow::Context as _;
 use futures::FutureExt;
 use json_db::GlobalDatabase;
-use pubsub::ControlFlow;
 use regex::{Match, Regex};
 use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
@@ -245,7 +245,7 @@ pub async fn initialize() {
                     "failed to handle message that might have come from a music channel"
                 );
             }
-            ControlFlow::CONTINUE
+            ControlFlow::Continue(())
         }
         .boxed()
     })

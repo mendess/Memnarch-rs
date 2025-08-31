@@ -1,6 +1,7 @@
 use futures::{FutureExt as _, StreamExt as _, stream};
-use pubsub::{ControlFlow, events};
+use pubsub::events;
 use serenity::all::{ChannelId, Context, GuildId};
+use std::ops::ControlFlow;
 
 pub async fn initialize() {
     pubsub::subscribe::<events::VoiceStateUpdate, _>(
@@ -34,7 +35,7 @@ pub async fn initialize() {
                         tracing::error!("Failed to disconnect user: {}", e);
                     }
                 }
-                ControlFlow::CONTINUE
+                ControlFlow::Continue(())
             }
             .boxed()
         },

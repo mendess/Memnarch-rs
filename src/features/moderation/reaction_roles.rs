@@ -1,4 +1,3 @@
-use ::daemons::ControlFlow;
 use futures::FutureExt;
 use serenity::{
     http::CacheHttp,
@@ -6,12 +5,7 @@ use serenity::{
     prelude::Context,
 };
 use std::{
-    collections::{HashMap, hash_map::Entry},
-    io,
-    os::unix::prelude::OsStrExt,
-    path::{Path, PathBuf},
-    str::from_utf8,
-    sync::OnceLock,
+    collections::{hash_map::Entry, HashMap}, io, ops::ControlFlow, os::unix::prelude::OsStrExt, path::{Path, PathBuf}, str::from_utf8, sync::OnceLock
 };
 use tokio::{fs, sync::Mutex};
 
@@ -118,7 +112,7 @@ pub async fn initialize() -> io::Result<()> {
     pubsub::subscribe::<ReactionAdd, _>(|ctx: &Context, args: &Reaction| {
         async move {
             handler::<true>(ctx, args).await;
-            ControlFlow::CONTINUE
+            ControlFlow::Continue(())
         }
         .boxed()
     })
@@ -126,7 +120,7 @@ pub async fn initialize() -> io::Result<()> {
     pubsub::subscribe::<ReactionRemove, _>(|ctx: &Context, args: &Reaction| {
         async move {
             handler::<false>(ctx, args).await;
-            ControlFlow::CONTINUE
+            ControlFlow::Continue(())
         }
         .boxed()
     })

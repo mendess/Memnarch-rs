@@ -1,6 +1,5 @@
 use crate::util::daemons::{DaemonManager, DaemonManagerKey};
 use anyhow::Context as _;
-use daemons::ControlFlow;
 use futures::prelude::*;
 use pubsub::{self, events::VoiceStateUpdate};
 use serenity::{
@@ -9,7 +8,7 @@ use serenity::{
     prelude::TypeMapKey,
 };
 use songbird::Call;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::ControlFlow, sync::Arc};
 use tokio::sync::{Mutex, OnceCell};
 // use crate::util::Mutex;
 
@@ -102,7 +101,7 @@ async fn init_voice_leave() {
                                 .await;
                         }
                     };
-                    ControlFlow::CONTINUE
+                    ControlFlow::Continue(())
                 }
                 .boxed()
             })

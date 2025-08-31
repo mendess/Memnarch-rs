@@ -3,7 +3,7 @@ pub mod util;
 use crate::in_files;
 use anyhow::Context as _;
 use chrono::{DateTime, Duration, Utc};
-use daemons::{ControlFlow, Daemon};
+use daemons::Daemon;
 use itertools::Itertools;
 use json_db::GlobalDatabase;
 use poise::{CreateReply, command};
@@ -22,6 +22,7 @@ use std::{
     time::Duration as StdDuration,
 };
 use tokio::fs::File;
+use std::ops::ControlFlow;
 
 const SFX_FILES_DIR: &str = in_files!("sfx");
 
@@ -51,12 +52,12 @@ pub struct LeaveVoice {
 impl Daemon<false> for LeaveVoice {
     type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
-    async fn run(&mut self, _: &Self::Data) -> ControlFlow {
+    async fn run(&mut self, _: &Self::Data) -> daemons::ControlFlow {
         tracing::debug!("Leaving voice. Scheduled for {}", self.when);
         if let Err(e) = self.songbird.remove(self.guild_id).await {
             tracing::error!("Could not leave voice channel: {}", e);
         }
-        ControlFlow::BREAK
+        ControlFlow::Break(())
     }
 
     async fn interval(&self) -> StdDuration {

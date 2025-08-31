@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use chrono::{DateTime, Utc};
-use daemons::{ControlFlow, Daemon};
+use daemons::Daemon;
 use futures::FutureExt;
 use json_db::GlobalDatabase;
 use serde::{Deserialize, Serialize};
@@ -19,10 +19,7 @@ use serenity::{
     prelude::Mentionable,
 };
 use std::{
-    collections::{HashMap, HashSet},
-    io,
-    sync::Arc,
-    time::Duration as StdDuration,
+    collections::{HashMap, HashSet}, io, ops::ControlFlow, sync::Arc, time::Duration as StdDuration
 };
 
 pub const BLOCK_EMOJI: &str = "🛡️";
@@ -43,7 +40,7 @@ pub struct Reminder {
 impl Daemon<false> for Reminder {
     type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
-    async fn run(&mut self, data: &Self::Data) -> ControlFlow {
+    async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
         let data = cache_and_http(data);
         match self.id.create_dm_channel(data).await {
             Ok(pch) => {
@@ -52,11 +49,11 @@ impl Daemon<false> for Reminder {
                 } else if let Err(e) = remove_reminder(self).await {
                     tracing::error!("Failed to remove reminder: {:?}", e);
                 }
-                ControlFlow::BREAK
+                ControlFlow::Break(())
             }
             Err(e) => {
                 tracing::error!("Failed to create dm channel: {:?}", e);
-                ControlFlow::CONTINUE
+                ControlFlow::Continue(())
             }
         }
     }
@@ -182,7 +179,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
                 Ok(None) => (),
                 Err(e) => tracing::error!("{:?}", e),
             }
-            ControlFlow::CONTINUE
+            ControlFlow::Continue(())
         }
         .boxed()
     })
@@ -208,7 +205,7 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
                 Ok(None) => (),
                 Err(e) => tracing::error!("{:?}", e),
             }
-            ControlFlow::CONTINUE
+            ControlFlow::Continue(())
         }
         .boxed()
     })

@@ -62,14 +62,14 @@ impl Daemon<true> for SpoilerChecker {
             Ok(c) => c,
             Err(e) => {
                 tracing::error!("failed to create cache: {e:?}");
-                return daemons::ControlFlow::CONTINUE;
+                return daemons::ControlFlow::Continue(());
             }
         };
         let new_cards = match mythic::new_cards(cache).await {
             Ok(n) => n,
             Err(e) => {
                 tracing::error!("failed to fetch new cards: {e:?}");
-                return daemons::ControlFlow::CONTINUE;
+                return daemons::ControlFlow::Continue(());
             }
         };
 
@@ -93,7 +93,7 @@ impl Daemon<true> for SpoilerChecker {
             tracing::error!("failed to send new cards: {e:?}");
         }
         tracing::info!("finished checking for spoilers");
-        daemons::ControlFlow::CONTINUE
+        ControlFlow::Continue(())
     }
 
     async fn interval(&self) -> Duration {
@@ -296,7 +296,7 @@ pub async fn initialize(d: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     subscribe::<events::InteractionCreate, _>(|ctx, i| {
         async move {
             create_thread(ctx, i).await;
-            ControlFlow::CONTINUE
+            ControlFlow::Continue(())
         }
         .boxed()
     })
@@ -304,7 +304,7 @@ pub async fn initialize(d: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
     subscribe::<events::ThreadCreate, _>(|ctx, t| {
         async move {
             delete_discuss_button(ctx, t).await;
-            ControlFlow::CONTINUE
+            ControlFlow::Continue(())
         }
         .boxed()
     })

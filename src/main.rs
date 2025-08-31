@@ -1,15 +1,13 @@
-use ::daemons::ControlFlow;
 use anyhow::Context as _;
 use futures::FutureExt;
 use memnarch_rs::commands::command_groups;
 use memnarch_rs::features;
 use pubsub::events;
-use serenity::all::Http;
-use serenity::{model::id::UserId, prelude::*};
 use songbird::SerenityInit;
 use std::{
     fs::{DirBuilder, OpenOptions},
     io::{self, Read, Write},
+    ops::ControlFlow,
     path::PathBuf,
     time::Duration,
 };
@@ -19,6 +17,7 @@ use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt;
 
 use memnarch_rs::{Bot, in_files};
+use serenity::{Client, all::GatewayIntents};
 use tracing_subscriber::EnvFilter;
 
 fn load_config() -> std::io::Result<memnarch_rs::Config> {
@@ -84,7 +83,11 @@ fn config_logger() {
             .with(console)
             .with(file)
             .with(critical_file)
-            .with(EnvFilter::from_default_env())
+            .with(
+                EnvFilter::builder()
+                    .with_default_directive(tracing::Level::INFO.into())
+                    .from_env_lossy(),
+            )
             .with(filter_fn(|meta: &Metadata| {
                 meta.target().starts_with("memnarch_rs") || meta.target().starts_with("daemons")
             })),
@@ -104,54 +107,28 @@ async fn main() -> anyhow::Result<()> {
         "
     );
     config_logger();
-    let config = load_config().context("loading config")?;
-    let http = Http::new(&config.token);
-    let bot_id = match http.get_current_user().await {
-        Ok(bot_id) => bot_id.id,
-        Err(why) => {
-            tracing::error!("Could not access current user: {why}");
-            UserId::new(352881326044741644)
-        }
-    };
-
-    let mut client = Client::builder(&config.token, GatewayIntents::all())
-        .framework(
-            poise::Framework::builder()
-                .options(poise::FrameworkOptions {
-                    post_command: |c| after(c).boxed(),
-                    on_error: |e| on_dispatch_error(e).boxed(),
-                    ..Default::default()
-                })
-                .setup(|ctx, ready, _framework| post_init_bot(ctx, ready).boxed())
-                .build(),
-        )
-        .register_songbird()
-        .event_handler(pubsub::event_handler::Handler::new(bot_id))
-        .await
-        .expect("Err creating client");
-    pubsub::subscribe::<events::Ready, _>(|_ctx, ready| {
-        use futures::prelude::*;
-        async move {
-            println!(
-                "
-░█░█░█▀█░░░█▀█░█▀█░█▀▄░░░█▀▄░█░█░█▀█░█▀█░▀█▀░█▀█░█▀▀
-░█░█░█▀▀░░░█▀█░█░█░█░█░░░█▀▄░█░█░█░█░█░█░░█░░█░█░█░█
-░▀▀▀░▀░░░░░▀░▀░▀░▀░▀▀░░░░▀░▀░▀▀▀░▀░▀░▀░▀░▀▀▀░▀░▀░▀▀▀
-                "
-            );
-            println!(
-                "Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot\n",
-                ready.user.id
-            );
-            ControlFlow::BREAK
-        }
-        .boxed()
-    })
-    .await;
+    let mut client = Client::builder(
+        &load_config().context("loading config")?.token,
+        GatewayIntents::all(),
+    )
+    .framework(
+        poise::Framework::builder()
+            .options(poise::FrameworkOptions {
+                post_command: |c| after(c).boxed(),
+                on_error: |e| on_dispatch_error(e).boxed(),
+                ..Default::default()
+            })
+            .setup(|ctx, ready, _framework| post_init_bot(ctx, ready).boxed())
+            .build(),
+    )
+    .register_songbird()
+    .event_handler(pubsub::event_handler::Handler::new(Default::default()))
+    .await
+    .expect("Err creating client");
     pubsub::subscribe::<events::GuildCreate, _>(|_, events::GuildCreate { guild, .. }| {
         async move {
             tracing::info!("found guild {}::{}", guild.name, guild.id);
-            ControlFlow::CONTINUE
+            ControlFlow::Continue(())
         }
         .boxed()
     })
@@ -211,7 +188,21 @@ async fn post_init_bot(
         }
         tracing::info!("registered commands to {}", g.id);
     }
-    Bot::init(ctx).await
+
+    let bot = Bot::init(ctx).await?;
+    println!(
+        "
+░█░█░█▀█░░░█▀█░█▀█░█▀▄░░░█▀▄░█░█░█▀█░█▀█░▀█▀░█▀█░█▀▀
+░█░█░█▀▀░░░█▀█░█░█░█░█░░░█▀▄░█░█░█░█░█░█░░█░░█░█░█░█
+░▀▀▀░▀░░░░░▀░▀░▀░▀░▀▀░░░░▀░▀░▀▀▀░▀░▀░▀░▀░▀▀▀░▀░▀░▀▀▀
+                "
+    );
+    println!(
+        "Invite me https://discord.com/oauth2/authorize?client_id={}&scope=bot\n",
+        ready.user.id
+    );
+
+    Ok(bot)
 }
 
 async fn after(ctx: poise::Context<'_, Bot, anyhow::Error>) {
