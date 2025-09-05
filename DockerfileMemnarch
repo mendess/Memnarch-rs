@@ -1,6 +1,6 @@
 # inspiration: https://dev.to/rogertorres/first-steps-with-docker-rust-30oi
 
-FROM rust:1.85-bookworm as build
+FROM rust:1.89-bookworm as build
 
 RUN apt update -y && apt install cmake libpython3-dev -y
 
@@ -21,7 +21,6 @@ RUN rm -r ./src
 COPY ./src ./src
 # needed for git describe
 COPY ./.git ./.git
-COPY ./ytdl-key ./ytdl-key
 
 # build for release
 RUN rm ./target/release/memnarch-rs* && \
@@ -34,5 +33,6 @@ FROM debian:bookworm-slim
 RUN apt update -y && apt install libopus-dev ffmpeg youtube-dl libpython3-dev -y
 
 COPY --from=build /memnarch-rs/target/release/memnarch-rs .
+RUN mkdir logs && chmod 777 logs
 
 ENTRYPOINT ["./memnarch-rs"]

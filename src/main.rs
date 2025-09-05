@@ -8,7 +8,6 @@ use std::{
     fs::{DirBuilder, OpenOptions},
     io::{self, Read, Write},
     ops::ControlFlow,
-    path::PathBuf,
     time::Duration,
 };
 use tokio::time::timeout;
@@ -63,19 +62,15 @@ fn config_logger() {
         OpenOptions::new()
             .append(true)
             .create(true)
-            .open("memnarch.log")
+            .open("logs/memnarch.log")
             .expect("can't create log file")
     });
 
     let critical_file = tracing_subscriber::fmt::layer().with_writer(|| {
-        let home = std::env::var("HOME")
-            .map_err(io::Error::other)
-            .expect("Can't find home directory");
-        let file_path = PathBuf::from_iter([home, "memnarch_critical_error.log".into()]);
         OpenOptions::new()
             .append(true)
             .create(true)
-            .open(file_path)
+            .open("/logs/memnarch_critical_error.log")
             .expect("can't create critical log file")
     });
 
