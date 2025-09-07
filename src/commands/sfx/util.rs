@@ -1,4 +1,4 @@
-use crate::util::daemons::{DaemonManager, DaemonManagerKey};
+use crate::util::daemons::DaemonManager;
 use anyhow::Context as _;
 use futures::prelude::*;
 use pubsub::{self, events::VoiceStateUpdate};
@@ -10,7 +10,6 @@ use serenity::{
 use songbird::Call;
 use std::{collections::HashMap, ops::ControlFlow, sync::Arc};
 use tokio::sync::{Mutex, OnceCell};
-// use crate::util::Mutex;
 
 pub async fn join_or_get_call(
     ctx: super::super::Context<'_>,
@@ -69,24 +68,12 @@ async fn init_voice_leave() {
         .get_or_init(|| async {
             pubsub::subscribe::<VoiceStateUpdate, _>(|ctx, VoiceStateUpdate { old, new }| {
                 async move {
-                    #[derive(PartialEq, Eq)]
-                    enum Alone {
-                        Empty,
-                        OnlyBots,
-                        NotEmpty,
-                    }
-                    async fn alone(id: ChannelId, ctx: &Context) -> Option<Alone> {
+                    async fn alone(id: ChannelId, ctx: &Context) -> Option<bool> {
                         let members = id.to_channel(ctx).await.ok()?.guild()?.members(ctx).ok()?;
-                        Some(if members.is_empty() {
-                            Alone::Empty
-                        } else if members.iter().all(|m| m.user.bot) {
-                            Alone::OnlyBots
-                        } else {
-                            Alone::NotEmpty
-                        })
+                        Some(members.iter().all(|m| m.user.bot))
                     }
                     if let Some(id) = old.as_ref().and_then(|vs| vs.channel_id)
-                        && alone(id, ctx).await == Some(Alone::OnlyBots)
+                        && alone(id, ctx).await == Some(true)
                         && let Some(guild_id) = new.guild_id
                     {
                         let sb = songbird::get(ctx).await.expect("Songbird not initialized");
@@ -95,9 +82,11 @@ async fn init_voice_leave() {
                             tracing::error!("Could not leave voice channel: {}", e);
                         } else {
                             let data = ctx.data.read().await;
-                            let mut dm = crate::get!(> data, DaemonManagerKey, lock);
-                            crate::get!(> data, LeaveVoiceDaemons, lock)
-                                .remove(&mut dm, guild_id)
+                            let bot = data.get::<crate::Bot>().unwrap();
+                            bot.leave_voice
+                                .lock()
+                                .await
+                                .remove(&mut *bot.daemons.lock().await, guild_id)
                                 .await;
                         }
                     };

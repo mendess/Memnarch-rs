@@ -2,7 +2,10 @@ use std::{fmt, str::FromStr};
 
 use serenity::all::ChannelId;
 
-use crate::{commands::{Command, Context}, features::music_channel_broadcast};
+use crate::{
+    commands::{Command, Context},
+    features::music_channel_broadcast,
+};
 use poise::command;
 
 pub fn commands() -> impl Iterator<Item = Command> {
@@ -54,7 +57,7 @@ impl FromStr for Mode {
     }
 }
 
-#[command(slash_command, owners_only)]
+#[command(slash_command, guild_only, owners_only)]
 pub async fn music_broadcast(
     ctx: Context<'_>,
     kind: Kind,

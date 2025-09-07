@@ -19,7 +19,11 @@ use serenity::{
     prelude::Mentionable,
 };
 use std::{
-    collections::{HashMap, HashSet}, io, ops::ControlFlow, sync::Arc, time::Duration as StdDuration
+    collections::{HashMap, HashSet},
+    io,
+    ops::ControlFlow,
+    sync::Arc,
+    time::Duration as StdDuration,
 };
 
 pub const BLOCK_EMOJI: &str = "🛡️";

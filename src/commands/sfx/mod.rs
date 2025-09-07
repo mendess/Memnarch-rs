@@ -12,6 +12,7 @@ use serenity::all::{CreateAttachment, CreateEmbed, Http};
 use serenity::model::id::GuildId;
 use simsearch::SimSearch;
 use songbird::input::Input;
+use std::ops::ControlFlow;
 use std::{
     collections::HashMap,
     fs::{self, DirBuilder, OpenOptions},
@@ -22,7 +23,6 @@ use std::{
     time::Duration as StdDuration,
 };
 use tokio::fs::File;
-use std::ops::ControlFlow;
 
 const SFX_FILES_DIR: &str = in_files!("sfx");
 

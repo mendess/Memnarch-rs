@@ -1,7 +1,7 @@
 use crate::in_files;
 use rand::seq::SliceRandom as _;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{io, path::PathBuf};
 use tokio::{
     fs::{DirBuilder, File},
     io::{AsyncReadExt as _, AsyncWriteExt as _},
@@ -26,7 +26,11 @@ impl QuoteManager {
 
     pub(crate) async fn load() -> std::io::Result<Self> {
         let path = Self::path().await?;
-        let mut file = File::open(path).await?;
+        let mut file = match File::open(path).await {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Default::default()),
+            Err(e) => return Err(e),
+        };
         let mut s = String::new();
         file.read_to_string(&mut s).await.and_then(|_| {
             serde_json::from_str(&s).map_err(|e| {

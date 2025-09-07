@@ -5,9 +5,12 @@ use crate::{
 use anyhow::Context;
 use daemons::{Daemon, async_trait};
 use json_db::GlobalDatabase;
+use mappable_rc::Marc;
 use serde::{Deserialize, Serialize};
 use serenity::all::{ChannelId, EditChannel, Http};
-use std::{collections::HashMap, io, net::ToSocketAddrs, ops::ControlFlow, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap, io, net::ToSocketAddrs, ops::ControlFlow, sync::Arc, time::Duration,
+};
 use tokio::{sync::Mutex, time::timeout};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -29,7 +32,7 @@ static CHANNELS: GlobalDatabase<HashMap<ChannelId, TrackedServer>> =
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct McChecker(bool);
 
-pub async fn initialize(manager: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
+pub async fn initialize(manager: &Marc<Mutex<DaemonManager>>) -> io::Result<()> {
     manager.lock().await.add_daemon(McChecker(false)).await;
     Ok(())
 }

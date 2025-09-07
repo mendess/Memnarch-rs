@@ -1,5 +1,10 @@
 use std::{
-    collections::BTreeMap, io::{self, Write}, ops::ControlFlow, str::from_utf8, sync::{Arc, OnceLock}, time::Duration
+    collections::BTreeMap,
+    io::{self, Write},
+    ops::ControlFlow,
+    str::from_utf8,
+    sync::{Arc, OnceLock},
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -20,6 +25,7 @@ use crate::{
     prefs::guild as guild_prefs,
     util::daemons::{Cron, DaemonManager},
 };
+use mappable_rc::Marc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BDayBoy {
@@ -115,7 +121,7 @@ fn bday_map() -> &'static BdayMap {
     })
 }
 
-pub async fn initialize(d: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
+pub async fn initialize(d: &Marc<Mutex<DaemonManager>>) -> io::Result<()> {
     let dm = d.clone();
     d.lock()
         .await
@@ -301,7 +307,7 @@ fn deser(v: &[u8]) -> Result<BTreeMap<BDay, Vec<BDayBoy>>, Error> {
 
 type BDayChecker<F, Fut> = Cron<F, Fut, 0, 0, 30>;
 
-async fn check_bday(http: Arc<Http>, dm: Arc<Mutex<DaemonManager>>) -> daemons::ControlFlow {
+async fn check_bday(http: Arc<Http>, dm: Marc<Mutex<DaemonManager>>) -> daemons::ControlFlow {
     let today = BDay::from(Utc::now().naive_utc().date());
     let g = match bday_map().iter_guard().await {
         Ok(g) => g,

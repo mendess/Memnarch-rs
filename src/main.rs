@@ -16,6 +16,7 @@ use tracing::Metadata;
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt;
 
+use mappable_rc::Marc;
 use memnarch_rs::{Bot, in_files};
 use serenity::{Client, all::GatewayIntents};
 use tracing_subscriber::EnvFilter;
@@ -112,10 +113,11 @@ async fn main() -> anyhow::Result<()> {
         GatewayIntents::all(),
     )
     .framework(
-        poise::Framework::builder()
+        poise::Framework::<mappable_rc::Marc<_>, _>::builder()
             .options(poise::FrameworkOptions {
                 post_command: |c| after(c).boxed(),
                 on_error: |e| on_dispatch_error(e).boxed(),
+                commands: command_groups::all(),
                 ..Default::default()
             })
             .setup(|ctx, ready, _framework| post_init_bot(ctx, ready).boxed())
@@ -158,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
 async fn post_init_bot(
     ctx: &serenity::all::Context,
     ready: &serenity::all::Ready,
-) -> anyhow::Result<Bot> {
+) -> anyhow::Result<Marc<Bot>> {
     poise::builtins::register_globally(ctx, &command_groups::global().collect::<Vec<_>>()).await?;
 
     for g in &ready.guilds {
@@ -190,6 +192,9 @@ async fn post_init_bot(
     }
 
     let bot = Bot::init(ctx).await?;
+
+    ctx.data.write().await.insert::<Bot>(bot.clone());
+
     println!(
         "
 ░█░█░█▀█░░░█▀█░█▀█░█▀▄░░░█▀▄░█░█░█▀█░█▀█░▀█▀░█▀█░█▀▀
@@ -205,11 +210,13 @@ async fn post_init_bot(
     Ok(bot)
 }
 
-async fn after(ctx: poise::Context<'_, Bot, anyhow::Error>) {
+async fn after(ctx: poise::Context<'_, mappable_rc::Marc<Bot>, anyhow::Error>) {
     tracing::info!(cmd = ?ctx.command().name, author = ?ctx.author().name, "processed command");
 }
 
-async fn on_dispatch_error(error: poise::FrameworkError<'_, Bot, anyhow::Error>) {
+async fn on_dispatch_error(
+    error: poise::FrameworkError<'_, mappable_rc::Marc<Bot>, anyhow::Error>,
+) {
     match error {
         poise::FrameworkError::Command { error, ctx, .. } => {
             let _ = ctx.say(error.to_string()).await;

@@ -28,6 +28,7 @@ use serenity::{
 
 use crate::util::daemons::{DaemonManager, cache_and_http};
 use json_db::GlobalDatabase;
+use mappable_rc::Marc;
 
 mod paths {
     use constcat::concat;
@@ -290,7 +291,7 @@ async fn delete_discuss_button(ctx: &Context, t: &GuildChannel) {
     }
 }
 
-pub async fn initialize(d: &Arc<Mutex<DaemonManager>>) -> io::Result<()> {
+pub async fn initialize(d: &Marc<Mutex<DaemonManager>>) -> io::Result<()> {
     tokio::fs::create_dir_all(paths::BASE).await?;
     d.lock().await.add_daemon(SpoilerChecker::default()).await;
     subscribe::<events::InteractionCreate, _>(|ctx, i| {

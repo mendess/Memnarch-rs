@@ -15,6 +15,7 @@ use serenity::{model::id::ChannelId, prelude::*};
 
 use crate::{commands::sfx::util::LeaveVoiceDaemons, util::daemons::DaemonManager};
 use anyhow::Context as _;
+use mappable_rc::Marc;
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize)]
@@ -34,14 +35,18 @@ impl Config {
 
 #[derive(Debug)]
 pub struct Bot {
-    pub daemons: Arc<Mutex<DaemonManager>>,
+    pub daemons: Mutex<DaemonManager>,
     pub leave_voice: Mutex<LeaveVoiceDaemons>,
     pub quotes: Mutex<quotes::QuoteManager>,
 }
 
+impl TypeMapKey for Bot {
+    type Value = Marc<Self>;
+}
+
 macro_rules! try_init {
-    ($d:expr, $($m:ident)::*) => {
-        if let std::result::Result::Err(e) = $($m)::*::initialize(&mut $d).await {
+    ($($m:ident)::*, $d:expr) => {
+        if let std::result::Result::Err(e) = $($m)::*::initialize(&$d).await {
             tracing::error!("Failed to initialize {}: {:?}", stringify!($($m)::*), e);
         } else {
             tracing::info!("{} initialized!", stringify!($($m)::*));
@@ -50,85 +55,35 @@ macro_rules! try_init {
 }
 
 impl Bot {
-    pub async fn init(ctx: &serenity::all::Context) -> anyhow::Result<Self> {
+    pub async fn init(ctx: &serenity::all::Context) -> anyhow::Result<Marc<Self>> {
         let mut daemon_manager =
             DaemonManager::spawn(Arc::new((ctx.cache.clone(), ctx.http.clone())));
         features::reminders::load_reminders(&mut daemon_manager)
             .await
             .context("loading reminders")?;
-        features::moderation::reaction_roles::initialize().await?;
+        features::moderation::reaction_roles::initialize()
+            .await
+            .context("initializing reaction roles")?;
         features::music_channel_broadcast::initialize().await;
         features::disconnect_channel::initialize().await;
-        let mut daemon_manager = Arc::new(Mutex::new(daemon_manager));
-        try_init!(daemon_manager, features::birthdays);
-        try_init!(daemon_manager, features::mtg_spoilers);
-        try_init!(daemon_manager, features::mc);
 
-        Ok(Bot {
-            daemons: daemon_manager,
+        let this = Marc::new(Bot {
+            daemons: Mutex::new(daemon_manager),
             leave_voice: Default::default(),
-            quotes: Mutex::new(quotes::QuoteManager::load().await?),
-        })
-    }
-}
+            quotes: Mutex::new(
+                quotes::QuoteManager::load()
+                    .await
+                    .context("loading quotes")?,
+            ),
+        });
 
-#[macro_export]
-macro_rules! get {
-    ($ctx:ident, $t:ty) => {
-        $ctx.data.read().await.get::<$t>().expect(::std::concat!(
-            ::std::stringify!($t),
-            " was not initialized"
-        ))
-    };
-    (mut $ctx:ident, $t:ty) => {
-        $ctx.data
-            .write()
-            .await
-            .expect("lock took too long")
-            .get_mut::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
-    };
-    ($ctx:ident, $t:ty, $lock:ident) => {
-        $ctx.data
-            .read()
-            .await
-            .get::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
-            .$lock()
-            .await
-    };
-    (mut $ctx:ident, $t:ty, $lock:ident) => {
-        $ctx.data
-            .write()
-            .await
-            .get_mut::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
-            .$lock()
-            .await
-    };
-    (> $data:ident, $t:ty) => {
-        $data.get::<$t>().expect(::std::concat!(
-            ::std::stringify!($t),
-            " was not initialized"
-        ))
-    };
-    (> $data:ident, $t:ty, $lock:ident) => {
-        $data
-            .get::<$t>()
-            .expect(::std::concat!(
-                ::std::stringify!($t),
-                " was not initialized"
-            ))
-            .$lock()
-            .await
-    };
+        {
+            let daemons = Marc::map(this.clone(), |b| &b.daemons);
+            try_init!(features::birthdays, daemons);
+            try_init!(features::mtg_spoilers, daemons);
+            try_init!(features::mc, daemons);
+        }
+
+        Ok(this)
+    }
 }

@@ -5,7 +5,13 @@ use serenity::{
     prelude::Context,
 };
 use std::{
-    collections::{hash_map::Entry, HashMap}, io, ops::ControlFlow, os::unix::prelude::OsStrExt, path::{Path, PathBuf}, str::from_utf8, sync::OnceLock
+    collections::{HashMap, hash_map::Entry},
+    io,
+    ops::ControlFlow,
+    os::unix::prelude::OsStrExt,
+    path::{Path, PathBuf},
+    str::from_utf8,
+    sync::OnceLock,
 };
 use tokio::{fs, sync::Mutex};
 

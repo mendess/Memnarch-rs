@@ -4,7 +4,7 @@ use serenity::{
     model::prelude::ReactionType,
 };
 
-use poise::{CreateReply, command};
+use poise::{CreateReply, ReplyHandle, command};
 
 pub fn commands() -> impl Iterator<Item = super::Command> {
     [add_reaction_role(), add_role_to_all_members()].into_iter()
@@ -42,45 +42,47 @@ async fn add_reaction_role(
 )]
 async fn add_role_to_all_members(ctx: super::Context<'_>, role: RoleId) -> anyhow::Result<()> {
     let gid = ctx.guild_id().expect("should be used in a guild");
-    let notif = ctx.say("added role to:\n").await?;
+    let notif = ctx.say("added role to:").await?;
+    let mut error = None;
     let members = gid.members_iter(ctx);
-    let mut member_names = vec![];
     tokio::pin!(members);
     while let Some(m) = members.next().await {
         let m = m?;
         if !m.roles.contains(&role) {
-            m.add_role(ctx, role).await?;
-            member_names.push(m.display_name().to_owned());
-            if let Err(e) = notif
-                .edit(
-                    ctx,
-                    CreateReply::default().content({
-                        let mut content = String::new();
-                        let mut count = 0;
-                        let i = member_names
-                            .iter()
-                            .rev()
-                            .take_while(|m| {
-                                count += m.len();
-                                count < 2000
-                            })
-                            .count();
-                        for m in member_names
-                            .iter()
-                            .skip(member_names.len().saturating_sub(i))
-                        {
-                            content.push_str(m);
-                            content.push('\n');
-                        }
-                        content.insert_str(0, "added role to:\n");
-                        content
-                    }),
-                )
-                .await
-            {
-                tracing::error!("failed to edit list of added people: {e:?}");
+            match m.add_role(ctx, role).await {
+                Ok(()) => {
+                    edit_member_list_msg(ctx, m.display_name(), &notif).await;
+                }
+                Err(_) => {
+                    let emsg = match &error {
+                        Some(m) => m,
+                        None => error.insert(ctx.say("failed to add role to:").await?),
+                    };
+                    edit_member_list_msg(ctx, m.display_name(), emsg).await;
+                }
             }
         }
     }
     Ok(())
+}
+
+async fn edit_member_list_msg(ctx: super::Context<'_>, member: &str, reply: &ReplyHandle<'_>) {
+    let msg = reply.message().await.unwrap();
+    let mut content = msg.into_owned().content;
+    if let Err(e) = reply
+        .edit(
+            ctx,
+            CreateReply::default().content({
+                if content.len() + member.len() > 2000 {
+                    return;
+                }
+                content.push('\n');
+                content.push_str(member);
+                content
+            }),
+        )
+        .await
+    {
+        tracing::error!("failed to edit list of added people: {e:?}");
+    }
 }

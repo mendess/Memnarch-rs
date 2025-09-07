@@ -11,11 +11,11 @@ constcat = "0.5"
 futures = "0.3"
 html-escape = "0.2"
 itertools = "0.10"
+mappable-rc = "0.1.1"
 mtg-spoilers = { git = "https://github.com/mendess/mtg-spoilers" }
 nom = "7"
 nom-regex = "0.2"
 num-traits = "0.2.17"
-poise = "0.6.1"
 rand = "0.8"
 regex = "1"
 reqwest = { version = "0.11", features = ["json"] }
@@ -61,6 +61,11 @@ features = ["serenity_cache"]
 [dependencies.mccli]
 git = "https://github.com/mendess/experiments"
 rev = "426b0662c7990206d98a1ea6c54470da55c384e5"
+
+[dependencies.poise]
+#version = "0.6.1"
+git = "https://github.com/serenity-rs/poise"
+rev = "518ff0564865bca2abf01ae8995b77340f439ef9"
 
 [dev-dependencies]
 paste = "1"
