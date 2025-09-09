@@ -110,153 +110,158 @@ impl Daemon<true> for SpoilerChecker {
 const DISCUSSION_BUTTON: &str = "mtg-spoilers-discuss-button";
 
 async fn create_thread(ctx: &Context, i: &Interaction) {
-    if let Some(msg) = i.clone().message_component() {
-        let Some(gid) = msg.guild_id else {
-            return;
-        };
-        let nick = msg.user.nick_in(ctx, gid).await.unwrap_or_default();
-        let guild_name = gid.name(ctx).unwrap_or_default();
-        let title = msg.message.embeds.first().and_then(|e| {
-            e.title
-                .as_deref()
-                .or_else(|| e.url.as_ref().and_then(|u| u.split('/').next_back()))
-        });
+    let Some(msg) = i.clone().message_component() else {
+        return;
+    };
+    if msg.data.custom_id != DISCUSSION_BUTTON {
+        return;
+    }
+    let Some(gid) = msg.guild_id else {
+        return;
+    };
+    let nick = msg.user.nick_in(ctx, gid).await.unwrap_or_default();
+    let guild_name = gid.name(ctx).unwrap_or_default();
+    let title = msg.message.embeds.first().and_then(|e| {
+        e.title
+            .as_deref()
+            .or_else(|| e.url.as_ref().and_then(|u| u.split('/').next_back()))
+    });
 
-        #[derive(Default)]
-        struct Card {
-            thumbnail: Option<reqwest::Url>,
-            scryfall_uri: Option<reqwest::Url>,
-            rest: Vec<CardText>,
-        }
+    #[derive(Default)]
+    struct Card {
+        thumbnail: Option<reqwest::Url>,
+        scryfall_uri: Option<reqwest::Url>,
+        rest: Vec<CardText>,
+    }
 
-        tracing::info!(
-            "{} ({nick}) requested a spoilers thread in {guild_name} to discuss {}",
-            msg.user.name,
-            title.unwrap_or_default(),
-        );
-        let mythic_spoiler_url = msg
-            .message
-            .embeds
-            .first()
-            .and_then(|e| e.url.as_deref())
-            .and_then(|url| url.parse().ok());
-        let fetch_card = OptionFuture::from(title.map(|title| async move {
-            match scryfall::Card::named_fuzzy(title).await {
-                Ok(card) => Some(Card {
-                    thumbnail: card
-                        .image_uris
-                        .and_then(|i| i.png.or(i.large).or(i.normal).or(i.small).or(i.border_crop)),
-                    scryfall_uri: Some(card.scryfall_uri),
-                    rest: match card.card_faces {
-                        Some(faces) if !faces.is_empty() => faces
-                            .into_iter()
-                            .map(|f| CardText {
-                                name: Some(f.name),
-                                type_line: f.type_line,
-                                text: f.oracle_text,
-                            })
-                            .collect(),
-                        _ => {
-                            vec![CardText {
-                                name: Some(card.name),
-                                type_line: card.type_line,
-                                text: card.oracle_text,
-                            }]
-                        }
-                    },
-                }),
-                Err(e) => {
-                    if !matches!(&e, scryfall::Error::ScryfallError(e) if e.status == 404) {
-                        tracing::error!(?e, "failed to fetch oracle text for {title:?}");
-                    }
-                    let scraped_card = OptionFuture::from(
-                        mythic_spoiler_url.map(mtg_spoilers::mythic::get_card_text),
-                    )
-                    .await
-                    .map(|card| {
-                        card.map(|card| Card {
-                            rest: card,
-                            ..Default::default()
+    tracing::info!(
+        "{} ({nick}) requested a spoilers thread in {guild_name} to discuss {}",
+        msg.user.name,
+        title.unwrap_or_default(),
+    );
+    let mythic_spoiler_url = msg
+        .message
+        .embeds
+        .first()
+        .and_then(|e| e.url.as_deref())
+        .and_then(|url| url.parse().ok());
+    let fetch_card = OptionFuture::from(title.map(|title| async move {
+        match scryfall::Card::named_fuzzy(title).await {
+            Ok(card) => Some(Card {
+                thumbnail: card
+                    .image_uris
+                    .and_then(|i| i.png.or(i.large).or(i.normal).or(i.small).or(i.border_crop)),
+                scryfall_uri: Some(card.scryfall_uri),
+                rest: match card.card_faces {
+                    Some(faces) if !faces.is_empty() => faces
+                        .into_iter()
+                        .map(|f| CardText {
+                            name: Some(f.name),
+                            type_line: f.type_line,
+                            text: f.oracle_text,
                         })
-                    })
-                    .transpose();
+                        .collect(),
+                    _ => {
+                        vec![CardText {
+                            name: Some(card.name),
+                            type_line: card.type_line,
+                            text: card.oracle_text,
+                        }]
+                    }
+                },
+            }),
+            Err(e) => {
+                if !matches!(&e, scryfall::Error::ScryfallError(e) if e.status == 404) {
+                    tracing::error!(?e, "failed to fetch oracle text for {title:?}");
+                }
+                let scraped_card =
+                    OptionFuture::from(mythic_spoiler_url.map(mtg_spoilers::mythic::get_card_text))
+                        .await
+                        .map(|card| {
+                            card.map(|card| Card {
+                                rest: card,
+                                ..Default::default()
+                            })
+                        })
+                        .transpose();
 
-                    match scraped_card {
-                        Ok(scraped_card) => scraped_card.filter(|card| !card.rest.is_empty()),
-                        Err(e) => {
-                            tracing::error!(?e, "failed to scrape oracle text for {title:?}");
-                            None
-                        }
+                match scraped_card {
+                    Ok(scraped_card) => scraped_card.filter(|card| !card.rest.is_empty()),
+                    Err(e) => {
+                        tracing::error!(?e, "failed to scrape oracle text for {title:?}");
+                        None
                     }
                 }
             }
-        }));
-        let thread = msg.channel_id.create_thread_from_message(
-            ctx,
-            msg.message.id,
-            CreateThread::new(title.unwrap_or("discussion")),
-        );
-
-        let (card, thread) = join(fetch_card, thread).await;
-        let thread = match thread {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::error!(?e);
-                return;
-            }
-        };
-        if let Some(Card {
-            thumbnail,
-            scryfall_uri,
-            rest,
-        }) = card.flatten()
-        {
-            let thread = thread
-                .send_message(
-                    ctx,
-                    CreateMessage::new().embed({
-                        let mut embed = CreateEmbed::new();
-                        if let Some(image) = thumbnail {
-                            embed = embed.thumbnail(image);
-                        }
-                        if let Some(url) = scryfall_uri {
-                            embed = embed.url(url);
-                        }
-                        let title = rest.iter().filter_map(|c| c.name.as_deref()).format(" // ");
-                        let desc = match rest.as_slice() {
-                            [face] => {
-                                format!(
-                                    "{}\n{}",
-                                    face.type_line.as_deref().unwrap_or_default(),
-                                    face.text.as_deref().unwrap_or_default(),
-                                )
-                            }
-                            multi_face => multi_face
-                                .iter()
-                                .map(|face| {
-                                    format!(
-                                        "{}\n{}\n{}",
-                                        face.name.as_deref().unwrap_or_default(),
-                                        face.type_line.as_deref().unwrap_or_default(),
-                                        face.text.as_deref().unwrap_or_default(),
-                                    )
-                                })
-                                .format("\n")
-                                .to_string(),
-                        };
-
-                        embed.title(title.to_string()).description(desc)
-                    }),
-                )
-                .await;
-            if let Err(e) = thread {
-                tracing::error!(
-                    %e,
-                    card = ?title,
-                    "failed to send oracle text to discussion thread"
-                );
-            }
         }
+    }));
+    println!("creating thread");
+    let thread = msg.channel_id.create_thread_from_message(
+        ctx,
+        msg.message.id,
+        CreateThread::new(title.unwrap_or("discussion")),
+    );
+
+    let (card, thread) = join(fetch_card, thread).await;
+    let thread = match thread {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!(?e);
+            return;
+        }
+    };
+    let Some(Card {
+        thumbnail,
+        scryfall_uri,
+        rest,
+    }) = card.flatten()
+    else {
+        return;
+    };
+    let thread = thread
+        .send_message(
+            ctx,
+            CreateMessage::new().embed({
+                let mut embed = CreateEmbed::new();
+                if let Some(image) = thumbnail {
+                    embed = embed.thumbnail(image);
+                }
+                if let Some(url) = scryfall_uri {
+                    embed = embed.url(url);
+                }
+                let title = rest.iter().filter_map(|c| c.name.as_deref()).format(" // ");
+                let desc = match rest.as_slice() {
+                    [face] => {
+                        format!(
+                            "{}\n{}",
+                            face.type_line.as_deref().unwrap_or_default(),
+                            face.text.as_deref().unwrap_or_default(),
+                        )
+                    }
+                    multi_face => multi_face
+                        .iter()
+                        .map(|face| {
+                            format!(
+                                "{}\n{}\n{}",
+                                face.name.as_deref().unwrap_or_default(),
+                                face.type_line.as_deref().unwrap_or_default(),
+                                face.text.as_deref().unwrap_or_default(),
+                            )
+                        })
+                        .format("\n")
+                        .to_string(),
+                };
+
+                embed.title(title.to_string()).description(desc)
+            }),
+        )
+        .await;
+    if let Err(e) = thread {
+        tracing::error!(
+            %e,
+            card = ?title,
+            "failed to send oracle text to discussion thread"
+        );
     }
 }
 

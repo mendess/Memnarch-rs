@@ -8,7 +8,7 @@ use itertools::Itertools;
 use json_db::GlobalDatabase;
 use poise::{CreateReply, command};
 use serde::{Deserialize, Serialize};
-use serenity::all::{CreateAttachment, CreateEmbed, Http};
+use serenity::all::{Attachment, CreateAttachment, CreateEmbed, Http};
 use serenity::model::id::GuildId;
 use simsearch::SimSearch;
 use songbird::input::Input;
@@ -142,27 +142,17 @@ async fn list(ctx: super::Context<'_>) -> anyhow::Result<()> {
 
 /// Saves a new sfx file
 #[command(slash_command, guild_only)]
-async fn add(ctx: super::Context<'_>) -> anyhow::Result<()> {
-    let command = match ctx {
-        poise::Context::Application(application_context) => application_context.interaction,
-        poise::Context::Prefix(_) => unreachable!(),
-    };
-    for opt in command.data.options().iter() {
-        let attachment = match opt.value {
-            serenity::all::ResolvedValue::Attachment(attachment) => attachment,
-            _ => continue,
-        };
-        if attachment.size > 1024 * 1024 {
-            return Err(anyhow::anyhow!(
-                "File size too high, please keep it under 1Mb."
-            ));
-        }
-        let bytes = attachment.download().await?;
-        let path = sfx_path(&attachment.filename).await?;
-        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-        file.write_all(&bytes)?;
-        ctx.say("File added!").await?;
+async fn add(ctx: super::Context<'_>, attachment: Attachment) -> anyhow::Result<()> {
+    if !cfg!(debug_assertions) && attachment.size > 1024 * 1024 {
+        return Err(anyhow::anyhow!(
+            "File size too high, please keep it under 1Mb."
+        ));
     }
+    let bytes = attachment.download().await?;
+    let path = sfx_path(&attachment.filename).await?;
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    file.write_all(&bytes)?;
+    ctx.say("File added!").await?;
     Ok(())
 }
 
@@ -229,8 +219,13 @@ async fn play_impl(ctx: super::Context<'_>, search_string: &str) -> anyhow::Resu
     let mut file = PathBuf::new();
     play_sfx(ctx, || async {
         file = find_file(search_string).await?;
-        ctx.say(&format!("Playing {}", file.display())).await?;
+        ctx.say(&format!(
+            "**Playing:** {}",
+            file.file_name().unwrap().display()
+        ))
+        .await?;
         tracing::info!("Playing sfx: {:?}", file);
+        std::fs::File::open(file.clone()).unwrap();
         Ok(songbird::input::File::new(file.clone()).into())
     })
     .await?;

@@ -24,7 +24,7 @@ pub mod command_groups {
     pub use sfx::sfx;
     pub use tts::tts;
 
-    pub fn all() -> Vec<Command> {
+    pub fn all() -> impl Iterator<Item = Command> {
         global()
             .chain(mtg_spoilers())
             .chain(moderation())
@@ -32,6 +32,5 @@ pub mod command_groups {
             .chain(quotes())
             .chain([sfx()])
             .chain([tts()])
-            .collect()
     }
 }

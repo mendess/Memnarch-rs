@@ -117,7 +117,26 @@ async fn main() -> anyhow::Result<()> {
             .options(poise::FrameworkOptions {
                 post_command: |c| after(c).boxed(),
                 on_error: |e| on_dispatch_error(e).boxed(),
-                commands: command_groups::all(),
+                commands: command_groups::all().inspect(|c| {
+                    println!(
+                        "- {:<25} [guild_only: {:<5}, dm_only: {:<5}, owner_only: {:<5}, needed_permissions: {}]",
+                        c.name,
+                        c.guild_only,
+                        c.dm_only,
+                        c.owners_only,
+                        c.default_member_permissions,
+                    );
+                    for c in &c.subcommands {
+                        println!(
+                            "  - {:<23} [guild_only: {:<5}, dm_only: {:<5}, owner_only: {:<5}, needed_permissions: {}]",
+                            c.name,
+                            c.guild_only,
+                            c.dm_only,
+                            c.owners_only,
+                            c.default_member_permissions,
+                        );
+                    }
+                }).collect(),
                 ..Default::default()
             })
             .setup(|ctx, ready, _framework| post_init_bot(ctx, ready).boxed())
@@ -163,31 +182,25 @@ async fn post_init_bot(
 ) -> anyhow::Result<Marc<Bot>> {
     poise::builtins::register_globally(ctx, &command_groups::global().collect::<Vec<_>>()).await?;
 
+    const MEINKRAFT: u64 = 136220994812641280;
+    const TEST_SERVER: u64 = 352399774818762759;
+    const MONO_BLACK: u64 = 797882422884433940;
+
     for g in &ready.guilds {
-        if g.id.get() == 136220994812641280 || g.id.get() == 352399774818762759 {
-            poise::builtins::register_in_guild(
-                ctx,
-                &command_groups::quotes()
-                    .chain([
-                        command_groups::sfx(),
-                        command_groups::tts(),
-                        command_groups::bday(),
-                    ])
-                    .collect::<Vec<_>>(),
-                g.id,
-            )
-            .await?
+        let mut commands = Vec::new();
+        if g.id.get() == MEINKRAFT || g.id.get() == TEST_SERVER {
+            println!("instaling quotes/sfx/tts/bday in {}", g.id);
+            commands.extend(command_groups::quotes().chain([
+                command_groups::sfx(),
+                command_groups::tts(),
+                command_groups::bday(),
+            ]));
         }
-        if g.id.get() == 797882422884433940 || g.id.get() == 352399774818762759 {
-            poise::builtins::register_in_guild(
-                ctx,
-                &command_groups::moderation()
-                    .chain(command_groups::mtg_spoilers())
-                    .collect::<Vec<_>>(),
-                g.id,
-            )
-            .await?
+        if g.id.get() == MONO_BLACK || g.id.get() == TEST_SERVER {
+            println!("instaling moderation/mtg_spoilers in {}", g.id);
+            commands.extend(command_groups::moderation().chain(command_groups::mtg_spoilers()));
         }
+        poise::builtins::register_in_guild(ctx, &commands, g.id).await?;
         tracing::info!("registered commands to {}", g.id);
     }
 

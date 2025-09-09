@@ -6,7 +6,8 @@ use itertools::Itertools as _;
 use num_traits::FromPrimitive as _;
 use poise::{CreateReply, command};
 use serenity::all::{
-    ChannelId, CreateEmbed, CreateEmbedFooter, Member, Mentionable as _, RoleId, UserId,
+    ChannelId, CreateAllowedMentions, CreateEmbed, CreateEmbedFooter, Member, Mentionable as _,
+    RoleId, UserId,
 };
 
 #[command(
@@ -234,8 +235,12 @@ async fn add(ctx: Context<'_>, user: UserId, date: NaiveDate) -> anyhow::Result<
     let old = crate::birthdays::add_bday(gid, user, date).await?;
     match old {
         Some(date) => {
-            ctx.say(format!("Updated {} birthday, was {}", user.mention(), date))
-                .await?
+            ctx.send(
+                CreateReply::default()
+                    .content(format!("Updated {} birthday, was {}", user.mention(), date))
+                    .allowed_mentions(CreateAllowedMentions::new().empty_users()),
+            )
+            .await?
         }
         None => ctx.say("Birthday added!").await?,
     };
