@@ -58,6 +58,8 @@ fn config_logger() {
         .pretty()
         .with_writer(io::stderr);
 
+    std::fs::create_dir_all("logs").unwrap();
+
     let file = tracing_subscriber::fmt::layer().with_writer(|| {
         OpenOptions::new()
             .append(true)
@@ -70,7 +72,7 @@ fn config_logger() {
         OpenOptions::new()
             .append(true)
             .create(true)
-            .open("/logs/memnarch_critical_error.log")
+            .open("logs/memnarch_critical_error.log")
             .expect("can't create critical log file")
     });
 

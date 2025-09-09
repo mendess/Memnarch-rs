@@ -7,10 +7,11 @@ use actix_web::{
     web::{self, Data},
 };
 use request_types::{Dm, MessageBody};
-use serenity::all::{Cache, CreateEmbed, CreateMessage, Http};
+use serenity::all::{Cache, ChannelId, CreateEmbed, CreateMessage, Http};
 
 #[derive(Debug)]
 enum Error {
+    UrlParseError(String),
     Serenity(String),
 }
 
@@ -24,6 +25,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Serenity(e) => write!(f, "serenity error: {e}"),
+            Error::UrlParseError(e) => write!(f, "url parse error: {e}"),
         }
     }
 }
@@ -31,7 +33,7 @@ impl fmt::Display for Error {
 impl ResponseError for Error {
     fn status_code(&self) -> reqwest::StatusCode {
         match self {
-            Error::Serenity(_) => reqwest::StatusCode::BAD_REQUEST,
+            Error::UrlParseError(_) | Error::Serenity(_) => reqwest::StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -84,11 +86,18 @@ async fn send_song(
         url,
     }): web::Json<request_types::Banger>,
 ) -> Result<impl Responder, Error> {
-    crate::features::music_channel_broadcast::broadcast(
+    let url = url
+        .parse::<reqwest::Url>()
+        .map_err(|e| Error::UrlParseError(e.to_string()))?;
+    crate::features::music_channel_broadcast::send_to(
         (&cache_http.0, &*cache_http.1),
         author,
-        channel_id,
+        ChannelId::new(1414964946416177333),
         &url,
+        channel_id,
+        crate::features::music_channel_broadcast::SpotifyScrape::of(&url)
+            .await
+            .as_ref(),
     )
     .await
     .map_err(|e| Error::Serenity(e.to_string()))?;
