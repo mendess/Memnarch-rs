@@ -79,6 +79,19 @@ async fn run(
 ) -> anyhow::Result<()> {
     const ONLINE_EMOJI: &str = "-🟢";
     const OFFLINE_EMOJI: &str = "-🔴";
+    const PLAYER_COUNT_EMOJIS: &[&str] = &[
+        "",
+        "-1️⃣",
+        "-2️⃣",
+        "-3️⃣",
+        "-4️⃣",
+        "-5️⃣",
+        "-6️⃣",
+        "-7️⃣",
+        "-8️⃣",
+        "-9️⃣",
+        "-9️⃣➕",
+    ];
 
     tracing::debug!("checking");
     let data = cache_and_http(data);
@@ -105,18 +118,26 @@ async fn run(
     let update = {
         let (name_emoji, topic) = match check_result {
             Ok(s) => (
-                ONLINE_EMOJI,
+                format!(
+                    "{ONLINE_EMOJI}{}",
+                    PLAYER_COUNT_EMOJIS
+                        [(s.players.online as usize).clamp(0, PLAYER_COUNT_EMOJIS.len() - 1)]
+                ),
                 format!("server is online with {} players", s.players.online),
             ),
-            Err(e) => (OFFLINE_EMOJI, format!("server is offline because: {e}")),
+            Err(e) => (
+                OFFLINE_EMOJI.to_string(),
+                format!("server is offline because: {e}"),
+            ),
         };
 
-        let new_name = if let Some(name) = channel.name().strip_suffix(ONLINE_EMOJI) {
-            format!("{name}{name_emoji}")
-        } else if let Some(name) = channel.name().strip_suffix(OFFLINE_EMOJI) {
-            format!("{name}{name_emoji}")
+        let channel_name = channel.name();
+        let new_name = if let Some(end) = channel_name.find(ONLINE_EMOJI) {
+            format!("{}{name_emoji}", &channel_name[..end])
+        } else if let Some(end) = channel_name.find(OFFLINE_EMOJI) {
+            format!("{}{name_emoji}", &channel_name[..end])
         } else {
-            format!("{}{name_emoji}", channel.name())
+            format!("{channel_name}{name_emoji}")
         };
         Update {
             ch_name: new_name,
