@@ -60,7 +60,7 @@ impl Daemon<true> for McChecker {
 
     async fn interval(&self) -> Duration {
         if self.0 {
-            Duration::from_secs(60 * 10)
+            Duration::from_mins(10)
         } else {
             Duration::ZERO
         }
