@@ -123,11 +123,14 @@ async fn run(
                     PLAYER_COUNT_EMOJIS
                         [(s.players.online as usize).clamp(0, PLAYER_COUNT_EMOJIS.len() - 1)]
                 ),
-                format!("server is online with {} players", s.players.online),
+                format!(
+                    "server is online with {} players | https://minecraft.mendess.xyz",
+                    s.players.online
+                ),
             ),
             Err(e) => (
                 OFFLINE_EMOJI.to_string(),
-                format!("server is offline because: {e}"),
+                format!("server is offline because: {e} | https://minecraft.mendess.xyz"),
             ),
         };
 
