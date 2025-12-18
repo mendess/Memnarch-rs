@@ -1,6 +1,6 @@
 # inspiration: https://dev.to/rogertorres/first-steps-with-docker-rust-30oi
 
-FROM rust:1.89-bookworm as build
+FROM rust:1.92-bookworm as build
 
 RUN apt update -y && apt install cmake libpython3-dev -y
 

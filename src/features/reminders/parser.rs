@@ -14,8 +14,8 @@ use regex::Regex;
 use std::{ops::RangeBounds, str::FromStr, sync::LazyLock};
 
 pub fn dbg_dmp<'a, F, O, E: std::fmt::Debug>(
-    mut f: F,
-    context: &'static str,
+    #[cfg_attr(not(debug_assertions), allow(unused_mut))] mut f: F,
+    #[cfg_attr(not(debug_assertions), allow(unused_variables))] context: &'static str,
 ) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
 where
     F: FnMut(&'a str) -> IResult<&'a str, O, E>,
