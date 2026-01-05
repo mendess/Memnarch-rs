@@ -1,13 +1,17 @@
 use crate::{
+    features::owner::notify_owner,
     in_files,
     util::daemons::{DaemonManager, cache_and_http},
 };
 use anyhow::Context;
 use daemons::{Daemon, async_trait};
+use itertools::Itertools;
 use json_db::GlobalDatabase;
 use mappable_rc::Marc;
 use serde::{Deserialize, Serialize};
-use serenity::all::{ChannelId, EditChannel, Http};
+use serenity::all::{
+    ChannelId, Colour, CreateEmbed, CreateMessage, EditChannel, EditMessage, Http, MessageId,
+};
 use std::{
     collections::HashMap, io, net::ToSocketAddrs, ops::ControlFlow, sync::Arc, time::Duration,
 };
@@ -27,7 +31,10 @@ struct TrackedServer {
 }
 
 static CHANNELS: GlobalDatabase<HashMap<ChannelId, TrackedServer>> =
-    GlobalDatabase::new(in_files!("mc-checker.json"));
+    GlobalDatabase::new(in_files!("mc/ch-list.json"));
+
+static MESSAGES: GlobalDatabase<HashMap<ChannelId, MessageId>> =
+    GlobalDatabase::new(in_files!("mc/player-list-messages.json"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct McChecker(bool);
@@ -55,6 +62,9 @@ impl Daemon<true> for McChecker {
                 tracing::error!(error = ?e, "failed to update server info")
             }
         }
+        if let Err(e) = update_main_channel_message(data, "mendess.xyz:50001").await {
+            tracing::error!(error = ?e, "failed to update player list in server's discord server");
+        }
         ControlFlow::Continue(())
     }
 
@@ -69,6 +79,75 @@ impl Daemon<true> for McChecker {
     async fn name(&self) -> String {
         "mc-checker".into()
     }
+}
+
+async fn fetch_server_info(server_addr: &str) -> anyhow::Result<mccli::types::server::Status> {
+    timeout(
+        Duration::from_secs(30),
+        mccli::fetch_server_info(
+            server_addr
+                .to_socket_addrs()?
+                .next()
+                .with_context(|| format!("no socket addresses for {}", server_addr))?,
+        ),
+    )
+    .await
+    .context("timed out pinging the server")
+    .and_then(|r| r)
+}
+
+async fn update_main_channel_message(
+    data: &<McChecker as Daemon<true>>::Data,
+    server_addr: &str,
+) -> anyhow::Result<()> {
+    const CHANNEL_ID: ChannelId = ChannelId::new(1457687073539752031);
+    let status = fetch_server_info(server_addr).await;
+
+    let data = cache_and_http(data);
+
+    let embed = match status {
+        Ok(s) if s.players.online == 0 => CreateEmbed::new()
+            .color(Colour::RED)
+            .title("players online")
+            .description("no one is playing right now"),
+        Ok(s) => CreateEmbed::new()
+            .color(Colour::DARK_GREEN)
+            .title("players online")
+            .description(
+                s.players
+                    .sample
+                    .into_iter()
+                    .map(|p| format!(" - {}", p.name))
+                    .format("\n")
+                    .to_string(),
+            ),
+        Err(e) => {
+            if let Err(e) = notify_owner(data, format!("minecraft server is down: {e:?}")).await {
+                tracing::error!(error = ?e, "failed to notify owner");
+            }
+            CreateEmbed::new()
+                .color(Colour::DARK_RED)
+                .title("server is offline")
+                .description("server owner has been notified")
+        }
+    };
+
+    let mut messages = MESSAGES.load().await?;
+    match messages.get(&CHANNEL_ID) {
+        Some(m) => {
+            CHANNEL_ID
+                .edit_message(data, *m, EditMessage::new().embed(embed))
+                .await?;
+        }
+        None => {
+            let m = CHANNEL_ID
+                .send_message(data, CreateMessage::new().embed(embed))
+                .await?;
+            messages.insert(CHANNEL_ID, m.id);
+        }
+    }
+
+    Ok(())
 }
 
 #[tracing::instrument(skip(data))]
@@ -95,19 +174,7 @@ async fn run(
 
     tracing::debug!("checking");
     let data = cache_and_http(data);
-    let check_result = timeout(
-        Duration::from_secs(30),
-        mccli::fetch_server_info(
-            server
-                .addr
-                .to_socket_addrs()?
-                .next()
-                .with_context(|| format!("no socket addresses for {}", server.addr))?,
-        ),
-    )
-    .await
-    .context("timed out pinging the server")
-    .and_then(|r| r);
+    let check_result = fetch_server_info(&server.addr).await;
 
     let mut channel = cid
         .to_channel(data)

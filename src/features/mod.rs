@@ -5,5 +5,6 @@ pub mod mc;
 pub mod moderation;
 pub mod mtg_spoilers;
 pub mod music_channel_broadcast;
+pub mod owner;
 pub mod quotes;
 pub mod reminders;
