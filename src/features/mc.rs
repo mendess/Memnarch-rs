@@ -4,6 +4,7 @@ use crate::{
     util::daemons::{DaemonManager, cache_and_http},
 };
 use anyhow::Context;
+use chrono::Timelike;
 use daemons::{Daemon, async_trait};
 use itertools::Itertools;
 use json_db::GlobalDatabase;
@@ -36,11 +37,19 @@ static CHANNELS: GlobalDatabase<HashMap<ChannelId, TrackedServer>> =
 static MESSAGES: GlobalDatabase<HashMap<ChannelId, MessageId>> =
     GlobalDatabase::new(in_files!("mc/player-list-messages.json"));
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct McChecker(bool);
+#[derive(Debug)]
+struct McChecker {
+    first_interval: std::sync::atomic::AtomicBool,
+}
 
 pub async fn initialize(manager: &Marc<Mutex<DaemonManager>>) -> io::Result<()> {
-    manager.lock().await.add_daemon(McChecker(false)).await;
+    manager
+        .lock()
+        .await
+        .add_daemon(McChecker {
+            first_interval: true.into(),
+        })
+        .await;
     Ok(())
 }
 
@@ -49,7 +58,6 @@ impl Daemon<true> for McChecker {
     type Data = (Arc<serenity::cache::Cache>, Arc<Http>);
 
     async fn run(&mut self, data: &Self::Data) -> daemons::ControlFlow {
-        self.0 = true;
         let mut channels = match CHANNELS.load().await {
             Ok(c) => c,
             Err(e) => {
@@ -69,10 +77,13 @@ impl Daemon<true> for McChecker {
     }
 
     async fn interval(&self) -> Duration {
-        if self.0 {
-            Duration::from_mins(10)
-        } else {
+        if self
+            .first_interval
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
             Duration::ZERO
+        } else {
+            Duration::from_mins(10)
         }
     }
 
@@ -122,7 +133,9 @@ async fn update_main_channel_message(
                     .to_string(),
             ),
         Err(e) => {
-            if let Err(e) = notify_owner(data, format!("minecraft server is down: {e:?}")).await {
+            if chrono::Utc::now().time().hour() != 4
+                && let Err(e) = notify_owner(data, format!("minecraft server is down: {e:?}")).await
+            {
                 tracing::error!(error = ?e, "failed to notify owner");
             }
             CreateEmbed::new()
