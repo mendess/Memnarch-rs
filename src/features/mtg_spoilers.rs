@@ -16,7 +16,7 @@ use futures::{
 };
 use itertools::Itertools;
 use mtg_spoilers::{CardText, Spoiler, SpoilerSource};
-use pubsub::{events, subscribe};
+use pubsub::events;
 use serenity::{
     all::{
         ActionRowComponent, Button, ButtonKind, CacheHttp, ChannelId, CreateActionRow,
@@ -296,25 +296,30 @@ async fn delete_discuss_button(ctx: &Context, t: &GuildChannel) {
     }
 }
 
-pub async fn initialize(d: &Marc<Mutex<DaemonManager>>) -> io::Result<()> {
+pub async fn initialize(
+    d: &Marc<Mutex<DaemonManager>>,
+    events: &pubsub::EventBus,
+) -> io::Result<()> {
     tokio::fs::create_dir_all(paths::BASE).await?;
     d.lock().await.add_daemon(SpoilerChecker::default()).await;
-    subscribe::<events::InteractionCreate, _>(|ctx, i| {
-        async move {
-            create_thread(ctx, i).await;
-            ControlFlow::Continue(())
-        }
-        .boxed()
-    })
-    .await;
-    subscribe::<events::ThreadCreate, _>(|ctx, t| {
-        async move {
-            delete_discuss_button(ctx, t).await;
-            ControlFlow::Continue(())
-        }
-        .boxed()
-    })
-    .await;
+    events
+        .subscribe::<events::InteractionCreate, _>(|ctx, i| {
+            async move {
+                create_thread(&ctx.serenity, i).await;
+                ControlFlow::Continue(())
+            }
+            .boxed()
+        })
+        .await;
+    events
+        .subscribe::<events::ThreadCreate, _>(|ctx, t| {
+            async move {
+                delete_discuss_button(&ctx.serenity, t).await;
+                ControlFlow::Continue(())
+            }
+            .boxed()
+        })
+        .await;
     Ok(())
 }
 

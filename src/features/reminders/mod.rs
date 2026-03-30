@@ -108,7 +108,10 @@ pub async fn reminders(u: UserId) -> io::Result<impl Iterator<Item = (String, Da
         .map(|r| (r.message, r.when)))
 }
 
-pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
+pub async fn load_reminders(
+    daemons: &mut DaemonManager,
+    events: &pubsub::EventBus,
+) -> io::Result<()> {
     use pubsub::events::{ReactionAdd, ReactionRemove};
     use serenity::model::channel::Reaction;
 
@@ -162,57 +165,59 @@ pub async fn load_reminders(daemons: &mut DaemonManager) -> io::Result<()> {
             blocked,
         ))
     }
-    pubsub::subscribe::<ReactionAdd, _>(|ctx, arg| {
-        async move {
-            match intervenients(ctx, arg, |set, blocked| {
-                set.insert(blocked).then_some(blocked)
-            })
-            .await
-            {
-                Ok(Some(u)) => {
-                    let blocker = arg.user_id.expect("cache");
-                    tracing::info!("User {} blocked {}", blocker, u);
-                    if let Err(e) = arg
-                        .channel_id
-                        .say(ctx, format!("blocked: {}", u.mention()))
-                        .await
-                    {
-                        tracing::error!("failed to inform user: {}", e);
+    events
+        .subscribe::<ReactionAdd, _>(|ctx, arg| {
+            async move {
+                match intervenients(&ctx.serenity, arg, |set, blocked| {
+                    set.insert(blocked).then_some(blocked)
+                })
+                .await
+                {
+                    Ok(Some(u)) => {
+                        let blocker = arg.user_id.expect("cache");
+                        tracing::info!("User {} blocked {}", blocker, u);
+                        if let Err(e) = arg
+                            .channel_id
+                            .say(&ctx.serenity, format!("blocked: {}", u.mention()))
+                            .await
+                        {
+                            tracing::error!("failed to inform user: {}", e);
+                        }
                     }
+                    Ok(None) => (),
+                    Err(e) => tracing::error!("{:?}", e),
                 }
-                Ok(None) => (),
-                Err(e) => tracing::error!("{:?}", e),
+                ControlFlow::Continue(())
             }
-            ControlFlow::Continue(())
-        }
-        .boxed()
-    })
-    .await;
-    pubsub::subscribe::<ReactionRemove, _>(|ctx, arg| {
-        async move {
-            match intervenients(ctx, arg, |set, blocked| {
-                set.remove(&blocked).then_some(blocked)
-            })
-            .await
-            {
-                Ok(Some(u)) => {
-                    let blocker = arg.user_id.expect("cache");
-                    tracing::info!("User {} unblocked {}", blocker, u);
-                    if let Err(e) = arg
-                        .channel_id
-                        .say(ctx, format!("unblocked: {}", u.mention()))
-                        .await
-                    {
-                        tracing::error!("failed to inform user: {}", e);
+            .boxed()
+        })
+        .await;
+    events
+        .subscribe::<ReactionRemove, _>(|ctx, arg| {
+            async move {
+                match intervenients(&ctx.serenity, arg, |set, blocked| {
+                    set.remove(&blocked).then_some(blocked)
+                })
+                .await
+                {
+                    Ok(Some(u)) => {
+                        let blocker = arg.user_id.expect("cache");
+                        tracing::info!("User {} unblocked {}", blocker, u);
+                        if let Err(e) = arg
+                            .channel_id
+                            .say(&ctx.serenity, format!("unblocked: {}", u.mention()))
+                            .await
+                        {
+                            tracing::error!("failed to inform user: {}", e);
+                        }
                     }
+                    Ok(None) => (),
+                    Err(e) => tracing::error!("{:?}", e),
                 }
-                Ok(None) => (),
-                Err(e) => tracing::error!("{:?}", e),
+                ControlFlow::Continue(())
             }
-            ControlFlow::Continue(())
-        }
-        .boxed()
-    })
-    .await;
+            .boxed()
+        })
+        .await;
     Ok(())
 }

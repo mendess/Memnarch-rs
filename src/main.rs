@@ -140,17 +140,18 @@ async fn main() -> anyhow::Result<()> {
             .build(),
     )
     .register_songbird()
-    .event_handler(pubsub::event_handler::Handler::new(Default::default()))
+    .event_handler(pubsub::event_handler::Handler::new(&memnarch_rs::EVENT_BUS, pubsub::event_handler::HandlerOptions { include_bot_generated_events: false }))
     .await
     .expect("Err creating client");
-    pubsub::subscribe::<events::GuildCreate, _>(|_, events::GuildCreate { guild, .. }| {
-        async move {
-            tracing::info!("found guild {}::{}", guild.name, guild.id);
-            ControlFlow::Continue(())
-        }
-        .boxed()
-    })
-    .await;
+    memnarch_rs::EVENT_BUS
+        .subscribe::<events::GuildCreate, _>(|_, events::GuildCreate { guild, .. }| {
+            async move {
+                tracing::info!("found guild {}::{}", guild.name, guild.id);
+                ControlFlow::Continue(())
+            }
+            .boxed()
+        })
+        .await;
     let task = tokio::task::Builder::new()
         .name("bot-api")
         .spawn(features::api::start((

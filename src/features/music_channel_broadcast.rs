@@ -239,7 +239,7 @@ pub async fn broadcast(
     broadcast_impl(&channels, ctx, author, source_channel_id, url).await
 }
 
-pub async fn initialize() {
+pub async fn initialize(events: &pubsub::EventBus) {
     use pubsub::events;
 
     async fn handler(ctx: &Context, message: &Message) -> anyhow::Result<()> {
@@ -263,19 +263,20 @@ pub async fn initialize() {
         Ok(())
     }
 
-    pubsub::subscribe::<events::Message, _>(|ctx: &Context, message: &Message| {
-        async move {
-            if let Err(error) = handler(ctx, message).await {
-                tracing::error!(
-                    ?error,
-                    "failed to handle message that might have come from a music channel"
-                );
+    events
+        .subscribe::<events::Message, _>(|ctx, message: &Message| {
+            async move {
+                if let Err(error) = handler(&ctx.serenity, message).await {
+                    tracing::error!(
+                        ?error,
+                        "failed to handle message that might have come from a music channel"
+                    );
+                }
+                ControlFlow::Continue(())
             }
-            ControlFlow::Continue(())
-        }
-        .boxed()
-    })
-    .await;
+            .boxed()
+        })
+        .await;
 }
 
 fn parse_urls_from_message(content: &str) -> impl Iterator<Item = Match<'_>> {

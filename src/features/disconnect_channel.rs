@@ -3,9 +3,9 @@ use pubsub::events;
 use serenity::all::{ChannelId, Context, GuildId};
 use std::ops::ControlFlow;
 
-pub async fn initialize() {
-    pubsub::subscribe::<events::VoiceStateUpdate, _>(
-        |ctx, events::VoiceStateUpdate { new, .. }| {
+pub async fn initialize(events: &pubsub::EventBus) {
+    events
+        .subscribe::<events::VoiceStateUpdate, _>(|ctx, events::VoiceStateUpdate { new, .. }| {
             async move {
                 // Disconnect channel of mirrodin
                 if let (Some(gid @ 352399774818762759), Some(id @ 707561909846802462)) = (
@@ -13,6 +13,7 @@ pub async fn initialize() {
                     new.channel_id.map(|i| i.get()),
                 ) {
                     async fn f(id: ChannelId, gid: GuildId, ctx: &Context) -> anyhow::Result<()> {
+                        #[allow(clippy::result_large_err)]
                         let c = id.to_channel(ctx).await.and_then(|c| {
                             c.guild()
                                 .ok_or(serenity::Error::Other("Not a guild channel"))
@@ -31,14 +32,13 @@ pub async fn initialize() {
                             .await;
                         Ok(())
                     }
-                    if let Err(e) = f(id.into(), gid.into(), ctx).await {
+                    if let Err(e) = f(id.into(), gid.into(), &ctx.serenity).await {
                         tracing::error!("Failed to disconnect user: {}", e);
                     }
                 }
                 ControlFlow::Continue(())
             }
             .boxed()
-        },
-    )
-    .await;
+        })
+        .await;
 }

@@ -33,6 +33,8 @@ impl Config {
     }
 }
 
+pub static EVENT_BUS: pubsub::EventBus = pubsub::EventBus::new();
+
 #[derive(Debug)]
 pub struct Bot {
     pub daemons: Mutex<DaemonManager>,
@@ -45,8 +47,8 @@ impl TypeMapKey for Bot {
 }
 
 macro_rules! try_init {
-    ($($m:ident)::*, $d:expr) => {
-        if let std::result::Result::Err(e) = $($m)::*::initialize(&$d).await {
+    ($($m:ident)::*, $($d:expr),*$(,)?) => {
+        if let std::result::Result::Err(e) = $($m)::*::initialize($(&$d),*).await {
             tracing::error!("Failed to initialize {}: {:?}", stringify!($($m)::*), e);
         } else {
             tracing::info!("{} initialized!", stringify!($($m)::*));
@@ -58,14 +60,14 @@ impl Bot {
     pub async fn init(ctx: &serenity::all::Context) -> anyhow::Result<Marc<Self>> {
         let mut daemon_manager =
             DaemonManager::spawn(Arc::new((ctx.cache.clone(), ctx.http.clone())));
-        features::reminders::load_reminders(&mut daemon_manager)
+        features::reminders::load_reminders(&mut daemon_manager, &EVENT_BUS)
             .await
             .context("loading reminders")?;
-        features::moderation::reaction_roles::initialize()
+        features::moderation::reaction_roles::initialize(&EVENT_BUS)
             .await
             .context("initializing reaction roles")?;
-        features::music_channel_broadcast::initialize().await;
-        features::disconnect_channel::initialize().await;
+        features::music_channel_broadcast::initialize(&EVENT_BUS).await;
+        features::disconnect_channel::initialize(&EVENT_BUS).await;
 
         let this = Marc::new(Bot {
             daemons: Mutex::new(daemon_manager),
@@ -80,7 +82,7 @@ impl Bot {
         {
             let daemons = Marc::map(this.clone(), |b| &b.daemons);
             try_init!(features::birthdays, daemons);
-            try_init!(features::mtg_spoilers, daemons);
+            try_init!(features::mtg_spoilers, daemons, EVENT_BUS);
             try_init!(features::mc, daemons);
         }
 

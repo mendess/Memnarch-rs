@@ -50,7 +50,7 @@ async fn migrate_schema(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub async fn initialize() -> io::Result<()> {
+pub async fn initialize(events: &pubsub::EventBus) -> io::Result<()> {
     match fs::read_dir(BASE).await {
         Ok(mut read_dir) => {
             let mut db = HashMap::new();
@@ -115,22 +115,24 @@ pub async fn initialize() -> io::Result<()> {
             tracing::error!("failed to add role: {e:?}");
         }
     }
-    pubsub::subscribe::<ReactionAdd, _>(|ctx: &Context, args: &Reaction| {
-        async move {
-            handler::<true>(ctx, args).await;
-            ControlFlow::Continue(())
-        }
-        .boxed()
-    })
-    .await;
-    pubsub::subscribe::<ReactionRemove, _>(|ctx: &Context, args: &Reaction| {
-        async move {
-            handler::<false>(ctx, args).await;
-            ControlFlow::Continue(())
-        }
-        .boxed()
-    })
-    .await;
+    events
+        .subscribe::<ReactionAdd, _>(|ctx, args: &Reaction| {
+            async move {
+                handler::<true>(&ctx.serenity, args).await;
+                ControlFlow::Continue(())
+            }
+            .boxed()
+        })
+        .await;
+    events
+        .subscribe::<ReactionRemove, _>(|ctx, args: &Reaction| {
+            async move {
+                handler::<false>(&ctx.serenity, args).await;
+                ControlFlow::Continue(())
+            }
+            .boxed()
+        })
+        .await;
     // events::pubsub::register::<GuildRoleDelete, _>(
     //     |ctx: &Context, (gid, rid, role): &(GuildId, RoleId, Option<Role>)| {
     //         async move { if let Some(g) = REACTION_ROLES.get(gid) {

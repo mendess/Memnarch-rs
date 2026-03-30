@@ -1,4 +1,4 @@
-use crate::util::daemons::DaemonManager;
+use crate::{EVENT_BUS, util::daemons::DaemonManager};
 use anyhow::Context as _;
 use futures::prelude::*;
 use pubsub::{self, events::VoiceStateUpdate};
@@ -66,35 +66,38 @@ async fn init_voice_leave() {
     static INIT_VOICE_LEAVE: OnceCell<()> = OnceCell::const_new();
     INIT_VOICE_LEAVE
         .get_or_init(|| async {
-            pubsub::subscribe::<VoiceStateUpdate, _>(|ctx, VoiceStateUpdate { old, new }| {
-                async move {
-                    async fn alone(id: ChannelId, ctx: &Context) -> Option<bool> {
-                        let members = id.to_channel(ctx).await.ok()?.guild()?.members(ctx).ok()?;
-                        Some(members.iter().all(|m| m.user.bot))
-                    }
-                    if let Some(id) = old.as_ref().and_then(|vs| vs.channel_id)
-                        && alone(id, ctx).await == Some(true)
-                        && let Some(guild_id) = new.guild_id
-                    {
-                        let sb = songbird::get(ctx).await.expect("Songbird not initialized");
-                        tracing::debug!("Leaving voice channel: {}", guild_id);
-                        if let Err(e) = sb.remove(guild_id).await {
-                            tracing::error!("Could not leave voice channel: {}", e);
-                        } else {
-                            let data = ctx.data.read().await;
-                            let bot = data.get::<crate::Bot>().unwrap();
-                            bot.leave_voice
-                                .lock()
-                                .await
-                                .remove(&mut *bot.daemons.lock().await, guild_id)
-                                .await;
+            EVENT_BUS
+                .subscribe::<VoiceStateUpdate, _>(|ctx, VoiceStateUpdate { old, new }| {
+                    async move {
+                        async fn alone(id: ChannelId, ctx: &Context) -> Option<bool> {
+                            let members =
+                                id.to_channel(ctx).await.ok()?.guild()?.members(ctx).ok()?;
+                            Some(members.iter().all(|m| m.user.bot))
                         }
-                    };
-                    ControlFlow::Continue(())
-                }
-                .boxed()
-            })
-            .await;
+                        let ctx = &ctx.serenity;
+                        if let Some(id) = old.as_ref().and_then(|vs| vs.channel_id)
+                            && alone(id, ctx).await == Some(true)
+                            && let Some(guild_id) = new.guild_id
+                        {
+                            let sb = songbird::get(ctx).await.expect("Songbird not initialized");
+                            tracing::debug!("Leaving voice channel: {}", guild_id);
+                            if let Err(e) = sb.remove(guild_id).await {
+                                tracing::error!("Could not leave voice channel: {}", e);
+                            } else {
+                                let data = ctx.data.read().await;
+                                let bot = data.get::<crate::Bot>().unwrap();
+                                bot.leave_voice
+                                    .lock()
+                                    .await
+                                    .remove(&mut *bot.daemons.lock().await, guild_id)
+                                    .await;
+                            }
+                        };
+                        ControlFlow::Continue(())
+                    }
+                    .boxed()
+                })
+                .await;
         })
         .await;
 }
