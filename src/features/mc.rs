@@ -133,7 +133,7 @@ async fn update_main_channel_message(
                     .to_string(),
             ),
         Err(e) => {
-            if chrono::Local::now().time().hour() != 4
+            if dbg!(dbg!(dbg!(chrono::Local::now()).time()).hour()) != 4
                 && let Err(e) = notify_owner(data, format!("minecraft server is down: {e:?}")).await
             {
                 tracing::error!(error = ?e, "failed to notify owner");

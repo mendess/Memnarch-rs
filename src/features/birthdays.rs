@@ -305,7 +305,7 @@ fn deser(v: &[u8]) -> Result<BTreeMap<BDay, Vec<BDayBoy>>, Error> {
         })
 }
 
-type BDayChecker<F, Fut> = Cron<F, Fut, 0, 0, 30>;
+type BDayChecker<F, Fut> = Cron<F, Fut, 1, 0, 0>;
 
 async fn check_bday(http: Arc<Http>, dm: Marc<Mutex<DaemonManager>>) -> daemons::ControlFlow {
     let today = BDay::from(Utc::now().naive_utc().date());
@@ -356,6 +356,15 @@ async fn check_bday(http: Arc<Http>, dm: Marc<Mutex<DaemonManager>>) -> daemons:
                                 .content(format!("Parabens! {}", user.id.mention())),
                         )
                         .await;
+                    let _ = channel
+                        .send_message(
+                            &http,
+                            CreateMessage::new().content(
+                                "-# Quem mandar parabens depois desta msg não é um berdadeiro amigo",
+                            ),
+                        )
+                        .await;
+
                     if let Err(e) = r {
                         tracing::error!(
                             "Failed to send happy birthday to {:?} in {}: {:?}",
