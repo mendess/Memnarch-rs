@@ -1,5 +1,5 @@
 use crate::in_files;
-use rand::seq::SliceRandom as _;
+use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use std::{io, path::PathBuf};
 use tokio::{
@@ -41,7 +41,7 @@ impl QuoteManager {
     }
 
     pub fn choose(&self) -> Option<&str> {
-        self.0.choose(&mut rand::thread_rng()).map(|x| x.as_str())
+        self.0.choose(&mut rand::rng()).map(|x| x.as_str())
     }
 
     pub async fn add(&mut self, quote: String) -> std::io::Result<()> {
