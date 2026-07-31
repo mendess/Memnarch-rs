@@ -103,7 +103,7 @@ impl SpotifyScrape {
 
             let resp = CLIENT
                 .get(format!(
-                    "https://mendess.xyz/api/v1/playlist/search/{}?download=false",
+                    "https://blind-eternities.mendess.xyz/playlist/yt-search/{}",
                     Title(title.trim().as_bytes())
                 ))
                 .bearer_auth(&*BEARER_TOKEN)
