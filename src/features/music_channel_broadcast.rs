@@ -52,7 +52,16 @@ pub struct SpotifyScrape {
 
 impl SpotifyScrape {
     pub async fn of(url: &Url) -> Option<Self> {
-        static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+        static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+            reqwest::Client::builder()
+                .user_agent(format!(
+                    "{}/{}",
+                    env!("CARGO_PKG_NAME"),
+                    env!("CARGO_PKG_VERSION")
+                ))
+                .build()
+                .unwrap()
+        });
         static TITLE_REGEX: LazyLock<Regex> =
             LazyLock::new(|| Regex::new("<title>([^<]+)</title>").unwrap());
         static BEARER_TOKEN: LazyLock<String> =
