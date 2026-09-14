@@ -284,7 +284,8 @@ fn parse_urls_from_message(content: &str) -> impl Iterator<Item = Match<'_>> {
     let is_url = IS_URL.get_or_init(|| Regex::new(r"https?://[^\s]+").unwrap());
     fn is_valid(s: &Match<'_>) -> bool {
         static INVALID_URLS: OnceLock<[Regex; 1]> = OnceLock::new();
-        let invalid_urls = INVALID_URLS.get_or_init(|| [Regex::new(r"tenor\.com").unwrap()]);
+        let invalid_urls =
+            INVALID_URLS.get_or_init(|| [Regex::new(r"tenor\.com|klipy\.com").unwrap()]);
         invalid_urls.iter().all(|m| !m.is_match(s.as_str()))
     }
     is_url.find_iter(content).filter(is_valid)
