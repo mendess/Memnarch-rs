@@ -1,5 +1,4 @@
 use crate::{
-    features::owner::notify_owner,
     in_files,
     util::daemons::{DaemonManager, cache_and_http},
 };
@@ -132,17 +131,10 @@ async fn update_main_channel_message(
                     .format("\n")
                     .to_string(),
             ),
-        Err(e) => {
-            if chrono::Local::now().time().hour() != 4
-                && let Err(e) = notify_owner(data, format!("minecraft server is down: {e:?}")).await
-            {
-                tracing::error!(error = ?e, "failed to notify owner");
-            }
-            CreateEmbed::new()
-                .color(Colour::DARK_RED)
-                .title("server is offline")
-                .description("server owner has been notified")
-        }
+        Err(e) => CreateEmbed::new()
+            .color(Colour::DARK_RED)
+            .title("server is offline")
+            .description("server owner has been notified"),
     };
 
     let mut messages = MESSAGES.load().await?;
